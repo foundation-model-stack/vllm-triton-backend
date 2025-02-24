@@ -1,0 +1,44 @@
+import torch
+from ibm_triton_lib.kernels import paged_attention_2d, prefill_flash_attention
+from .base import DecodeCaller
+
+
+class Triton2dAttentionDecodeCaller(DecodeCaller):
+    @staticmethod
+    def make_call_func(
+        output,
+        query,
+        key_cache,
+        value_cache,
+        num_seqs,
+        seq_lens,
+        max_seq_len,
+        scale,
+        block_tables,
+        alibi_slopes,
+        kv_cache_dtype,  # unused
+    ):
+        num_query_heads = query.shape[1]
+        num_kv_heads = key_cache.shape[1]
+        block_size = key_cache.shape[3]
+        num_queries_per_kv = num_query_heads // num_kv_heads
+        max_num_blocks_per_seq = block_tables.shape[1]
+        head_size = key_cache.shape[2]
+
+        call_func_under_test = lambda: paged_attention_2d(
+            output,
+            query,
+            key_cache,
+            value_cache,
+            scale,
+            block_tables,
+            seq_lens,
+            alibi_slopes,
+            block_size,
+            num_seqs,
+            num_query_heads,
+            num_queries_per_kv,
+            head_size,
+        )
+
+        return call_func_under_test

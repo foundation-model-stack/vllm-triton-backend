@@ -1,0 +1,6 @@
+[submodule "triton"]
+	path = triton
+	url = https://github.com/triton-lang/triton.git
+[submodule "triton-dejavu"]
+	path = triton-dejavu
+	url = https://github.com/IBM/triton-dejavu.git

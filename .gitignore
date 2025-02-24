@@ -1,0 +1,12 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+
+results
+*.swp
+*.swo
+
+all-git.tar
+vllm-all.tar
+
+.vscode/settings.json
+
