@@ -17,7 +17,7 @@ This repository can be used as microbenchmark framework and as vLLM plugin. In t
 
 To build the docker image:
 ```
-git clone --recursive git@github.ibm.com:ai-foundation/vllm-triton-backend.git
+git clone --recursive https://github.com/foundation-model-stack/vllm-triton-backend.git
 cd vllm-triton-backend
 make build
 ```
@@ -57,7 +57,7 @@ docker run -it --rm --gpus all /path/to/models:/models vllm-triton-backend-$(id 
 The Triton-only attention backend can be used within our [Docker container](#dev-environment) or outside. 
 To install this plugin in any other environment:
 ```
-git clone git@github.ibm.com:ai-foundation/vllm-triton-backend.git
+git clone https://github.com/foundation-model-stack/vllm-triton-backend.git
 pip install ./vllm-triton-backend
 ```
 
