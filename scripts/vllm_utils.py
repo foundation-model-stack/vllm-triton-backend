@@ -57,7 +57,6 @@ def create_kv_caches_with_random(
         if cache_dtype in ["auto", "half", "bfloat16", "float"]:
             key_cache.uniform_(-max_value, max_value)
         elif cache_dtype == "fp8":
-            # FIXME
             _generate_random_fp8(key_cache, -max_value, max_value)
         else:
             raise ValueError(f"Does not support key cache of type {cache_dtype}")
@@ -72,7 +71,6 @@ def create_kv_caches_with_random(
         if cache_dtype in ["auto", "half", "bfloat16", "float"]:
             value_cache.uniform_(-max_value, max_value)
         elif cache_dtype == "fp8":
-            # FIXME
             _generate_random_fp8(value_cache, -max_value, max_value)
         else:
             raise ValueError(f"Does not support value cache of type {cache_dtype}")
@@ -87,11 +85,20 @@ def ref_masked_attention(
     scale: float,
     attn_mask: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
-    attn_weights = scale * torch.einsum("qhd,khd->hqk", query, key).float()
+    intermediate_dtype = value.dtype
+    if value.dtype in [torch.float8_e4m3fn, torch.float8_e5m2, torch.uint8]:
+        intermediate_dtype = torch.float16
+    attn_weights = (
+        scale
+        * torch.einsum(
+            "qhd,khd->hqk", query.to(intermediate_dtype), key.to(intermediate_dtype)
+        ).float()
+    )
     if attn_mask is not None:
         attn_weights = attn_weights + attn_mask.float()
-    attn_weights = torch.softmax(attn_weights, dim=-1).to(value.dtype)
-    out = torch.einsum("hqk,khd->qhd", attn_weights, value)
+    attn_weights = torch.softmax(attn_weights, dim=-1).to(intermediate_dtype)
+    out = torch.einsum("hqk,khd->qhd", attn_weights, value.to(intermediate_dtype))
+    out = out.to(query.dtype)
     return out
 
 

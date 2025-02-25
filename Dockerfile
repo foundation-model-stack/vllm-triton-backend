@@ -88,13 +88,13 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 # to avaoid incompatibility with our custom triton build
 #  see also https://github.com/vllm-project/vllm/issues/12219
-RUN uv pip install -U torch>=2.6 torchvision>=2.6 torchaudio>=2.6
+# RUN uv pip install -U torch>=2.6 torchvision>=2.6 torchaudio>=2.6
 
-# Install Triton (will replace version that vllm/pytorch installed)
-COPY --from=triton-builder /workspace/*.whl .
-RUN --mount=type=cache,target=/root/.cache/pip \
-    --mount=type=cache,target=/root/.cache/uv \
-    uv pip install triton-*.whl
+# # Install Triton (will replace version that vllm/pytorch installed)
+# COPY --from=triton-builder /workspace/*.whl .
+# RUN --mount=type=cache,target=/root/.cache/pip \
+#     --mount=type=cache,target=/root/.cache/uv \
+#     uv pip install triton-*.whl
 
 # force using the python venv's cuda runtime libraries
 ENV LD_LIBRARY_PATH="${VIRTUAL_ENV}/lib/python${PYTHON_VERSION}/site-packages/nvidia/cuda_nvrtc/lib:${LD_LIBRARY_PATH}"

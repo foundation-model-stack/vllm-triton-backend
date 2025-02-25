@@ -52,7 +52,8 @@ class BenchmarkMode(Enum):
 
 
 # DTYPES = [torch.half, torch.bfloat16, torch.float]
-DTYPES = [torch.float16]
+# DTYPES = [torch.float16]
+DTYPES = [torch.float8_e4m3fn, torch.float8_e5m2]
 SEEDS = [0]
 
 # BATCH_SIZES = [1, 2, 4, 8, 16, 32, 64, 128]
@@ -228,6 +229,14 @@ def test_decode_attention(
         pytest.skip("unsupported configuration")
     if implementation == Implementation.XFORMERS and gqa_mode:
         pytest.skip()
+    if implementation in [
+        Implementation.TRITON_2D,
+        Implementation.TRITON_3D,
+        Implementation.BASELINE_TRITON,
+        Implementation.XFORMERS,
+        Implementation.FLASH_ATTN,
+    ] and dtype in [torch.float8_e4m3fn, torch.float8_e5m2]:
+        pytest.skip()
 
     RTOL = 0
     ATOL = min(3.1e-3 * max_value, 1e-3)
@@ -249,6 +258,8 @@ def test_decode_attention(
             break
 
     kv_cache_dtype = "auto"
+    if dtype in [torch.float8_e4m3fn, torch.float8_e5m2]:
+        kv_cache_dtype = "fp8"
     scale = float(1.0 / (head_size**0.5))  # as done by vLLM
     num_query_heads, num_kv_heads = num_heads
     use_alignment_optimization = False
@@ -268,8 +279,9 @@ def test_decode_attention(
 
     inner_exception = None
     try:
-        query = torch.empty(batch_size, num_query_heads, head_size, dtype=dtype)
+        query = torch.empty(batch_size, num_query_heads, head_size)
         query.uniform_(-max_value, max_value)
+        query = query.to(dtype)
 
         assert num_query_heads % num_kv_heads == 0
         num_queries_per_kv = num_query_heads // num_kv_heads
