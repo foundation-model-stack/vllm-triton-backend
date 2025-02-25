@@ -108,12 +108,15 @@ RUN  microdnf install -y \
         # amdgpu-dkms \
         # rocm \
         miopen-hip \
+        miopen-hip-devel \
         openmp-extras-runtime \
         rocm-core \
         rocm-hip-libraries \
         rocminfo \
         rocm-hip-sdk \ 
         findutils \
+        roctracer6.3.1 \
+        roctracer-devel6.3.1 \
         && microdnf clean all
 
 
@@ -239,7 +242,13 @@ ARG MAX_JOBS
 # install rocm pytorch
 RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=cache,target=/root/.cache/uv \
-    uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm6.2.4
+    uv pip install torch>2.6 torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm6.2.4
+
+# Install pytorch and rocm flash attention
+# COPY --from=pytorch-builder /workspace/install/*.whl /workspace/install
+# RUN --mount=type=cache,target=/root/.cache/pip \
+#     --mount=type=cache,target=/root/.cache/uv \
+#     uv pip install /workspace/install/*.whl
 
 # install build dependencies
 RUN --mount=type=cache,target=/root/.cache/pip \
@@ -271,7 +280,8 @@ RUN cd vllm \
     && python3 -m pip install -r requirements-rocm.txt
 
 # RUN ls -al /usr/locals
-RUN find / | grep -i miopen | grep cmake
+# RUN find / | grep -i miopen | grep cmake
+# RUN find / | grep -i miopen 
 
 ENV CMAKE_PREFIX_PATH="/opt/rocm/;/opt/rocm/hip;$(python3 -c 'import sys; print(sys.prefix)')"
 RUN cd vllm \
@@ -305,6 +315,32 @@ ENV CCACHE_DIR=/root/.cache/ccache
 RUN --mount=type=cache,target=/root/.cache/ccache \
     python3 setup.py bdist_wheel --dist-dir=/workspace/
 
+## flash attention Builder #################################################################
+FROM common-builder AS fa-builder
+ARG MAX_JOBS
+
+ARG FA_BRANCH
+ARG FA_REPO
+
+ARG PYTORCH_ROCM_ARCH=gfx90a;gfx942
+ENV PYTORCH_ROCM_ARCH=${PYTORCH_ROCM_ARCH}
+
+RUN --mount=type=cache,target=/root/.cache/pip \
+    --mount=type=cache,target=/root/.cache/uv \
+    uv pip install packaging
+
+# install rocm pytorch
+RUN --mount=type=cache,target=/root/.cache/pip \
+    --mount=type=cache,target=/root/.cache/uv \
+    uv pip install torch>2.6 torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm6.2.4
+
+    RUN git clone ${FA_REPO}
+RUN cd flash-attention \
+    && git checkout ${FA_BRANCH} \
+    && git submodule update --init \
+    && MAX_JOBS=64 GPU_ARCHS=${PYTORCH_ROCM_ARCH} python3 setup.py bdist_wheel --dist-dir=dist
+RUN mkdir -p /workspace/install && cp /workspace/flash-attention/dist/*.whl /workspace/install
+
 ## Runtime #################################################################
 FROM base AS runtime
 
@@ -323,7 +359,15 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=cache,target=/root/.cache/uv \
     uv pip install vllm-*.whl
 
-# Install pytorch 
+# install ck flash attention
+# TODO: difference?
+# Install rocm flash attention
+COPY --from=fa-builder /workspace/install/*.whl /workspace/install
+RUN --mount=type=cache,target=/root/.cache/pip \
+    --mount=type=cache,target=/root/.cache/uv \
+    uv pip install /workspace/install/*.whl
+
+# Install pytorch and rocm flash attention
 # COPY --from=pytorch-builder /workspace/install/*.whl /workspace/install
 # RUN --mount=type=cache,target=/root/.cache/pip \
 #     --mount=type=cache,target=/root/.cache/uv \
@@ -331,10 +375,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # install rocm pytorch
 RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=cache,target=/root/.cache/uv \
-    uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm6.2.4
-
-# install ck flash attention
-# TODO
+    uv pip install torch>2.6 torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm6.2.4
 
 
 # Install Triton (will replace version that vllm installed)
@@ -344,14 +385,14 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     uv pip install triton-*.whl
 
 # force using the python venv's cuda runtime libraries
-ENV LD_LIBRARY_PATH="${VIRTUAL_ENV}/lib/python${PYTHON_VERSION}/site-packages/nvidia/cuda_nvrtc/lib:${LD_LIBRARY_PATH}"
-ENV LD_LIBRARY_PATH="${VIRTUAL_ENV}/lib/python${PYTHON_VERSION}/site-packages/nvidia/cuda_runtime/lib:${LD_LIBRARY_PATH}"
-ENV LD_LIBRARY_PATH="${VIRTUAL_ENV}/lib/python${PYTHON_VERSION}/site-packages/nvidia/nvtx/lib:${LD_LIBRARY_PATH}"
-ENV LD_LIBRARY_PATH="${VIRTUAL_ENV}/lib/python${PYTHON_VERSION}/site-packages/nvidia/cuda_cupti/lib:${LD_LIBRARY_PATH}"
+# ENV LD_LIBRARY_PATH="${VIRTUAL_ENV}/lib/python${PYTHON_VERSION}/site-packages/nvidia/cuda_nvrtc/lib:${LD_LIBRARY_PATH}"
+# ENV LD_LIBRARY_PATH="${VIRTUAL_ENV}/lib/python${PYTHON_VERSION}/site-packages/nvidia/cuda_runtime/lib:${LD_LIBRARY_PATH}"
+# ENV LD_LIBRARY_PATH="${VIRTUAL_ENV}/lib/python${PYTHON_VERSION}/site-packages/nvidia/nvtx/lib:${LD_LIBRARY_PATH}"
+# ENV LD_LIBRARY_PATH="${VIRTUAL_ENV}/lib/python${PYTHON_VERSION}/site-packages/nvidia/cuda_cupti/lib:${LD_LIBRARY_PATH}"
 
 # TODO, currently necessary for smac
 # https://github.com/automl/auto-sklearn/issues/314
-RUN microdnf install -y wget tar zlib-devel automake g++ && microdnf clean all
+RUN microdnf install -y wget tar zlib-devel automake g++ gzip && microdnf clean all
 RUN wget https://downloads.sourceforge.net/project/swig/swig/swig-3.0.12/swig-3.0.12.tar.gz && \
     tar -xzf swig-3.0.12.tar.gz && \
     cd swig-3.0.12 && \
@@ -392,14 +433,14 @@ COPY vllm/vllm  ${VIRTUAL_ENV}/lib64/python${PYTHON_VERSION}/site-packages/vllm/
 COPY vllm/vllm  ${VIRTUAL_ENV}/lib/python${PYTHON_VERSION}/site-packages/vllm/
 
 # Install FlashInfer
-RUN PYTHON_VERSION_STR=$(echo ${PYTHON_VERSION} | sed 's/\.//g') && \
-    echo "export PYTHON_VERSION_STR=${PYTHON_VERSION_STR}" >> /etc/environment
+# RUN PYTHON_VERSION_STR=$(echo ${PYTHON_VERSION} | sed 's/\.//g') && \
+#     echo "export PYTHON_VERSION_STR=${PYTHON_VERSION_STR}" >> /etc/environment
+# 
+# RUN --mount=type=cache,target=/root/.cache/pip \
+#     . /etc/environment && \
+#     python3 -m pip install https://github.com/flashinfer-ai/flashinfer/releases/download/v0.1.6/flashinfer-0.1.6+cu121torch2.4-cp${PYTHON_VERSION_STR}-cp${PYTHON_VERSION_STR}-linux_x86_64.whl
 
-RUN --mount=type=cache,target=/root/.cache/pip \
-    . /etc/environment && \
-    python3 -m pip install https://github.com/flashinfer-ai/flashinfer/releases/download/v0.1.6/flashinfer-0.1.6+cu121torch2.4-cp${PYTHON_VERSION_STR}-cp${PYTHON_VERSION_STR}-linux_x86_64.whl
-
-RUN ln -s ${VIRTUAL_ENV}/lib/python${PYTHON_VERSION}/site-packages/nvidia/cuda_cupti/lib/libcupti.so.12  ${VIRTUAL_ENV}/lib/python${PYTHON_VERSION}/site-packages/nvidia/cuda_cupti/lib/libcupti.so
+# RUN ln -s ${VIRTUAL_ENV}/lib/python${PYTHON_VERSION}/site-packages/nvidia/cuda_cupti/lib/libcupti.so.12  ${VIRTUAL_ENV}/lib/python${PYTHON_VERSION}/site-packages/nvidia/cuda_cupti/lib/libcupti.so
 
 # Install IBM kernels 
 # (here for now, since they should change frequently)
