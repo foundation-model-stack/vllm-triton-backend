@@ -1,7 +1,7 @@
 TAG := vllm-triton-backend-$(shell id -un)
 MAX_JOBS := 64
 
-.PHONY: all build clean format build-custom
+.PHONY: all build clean format build-custom rocm
 
 all: build
 
@@ -19,6 +19,9 @@ build: Dockerfile
 	docker build --progress=plain --build-arg MAX_JOBS=$(MAX_JOBS) . -t ${TAG}
 	@echo "Built docker image with tag: ${TAG}"
 
+rocm: vllm-all.tar all-git.tar Dockerfile.rocm
+	docker build --progress=plain --build-arg MAX_JOBS=$(MAX_JOBS) . -t ${TAG} -f Dockerfile.rocm
+	@echo "Built docker image with tag: ${TAG}"
 
 clean:
 	rm -f vllm-all.tar all-git.tar

@@ -1,0 +1,363 @@
+## Global Args #################################################################
+ARG BASE_UBI_IMAGE_TAG=9.4
+ARG PYTHON_VERSION=3.12
+ARG MAX_JOBS=64
+
+ARG RCCL_BRANCH="648a58d"
+ARG RCCL_REPO="https://github.com/ROCm/rccl"
+# ARG TRITON_BRANCH="e5be006"
+# ARG TRITON_REPO="https://github.com/triton-lang/triton.git"
+ARG PYTORCH_BRANCH="8d4926e"
+ARG PYTORCH_VISION_BRANCH="v0.19.1"
+ARG PYTORCH_REPO="https://github.com/pytorch/pytorch.git"
+ARG PYTORCH_VISION_REPO="https://github.com/pytorch/vision.git"
+ARG FA_BRANCH="b7d29fb"
+ARG FA_REPO="https://github.com/ROCm/flash-attention.git"
+
+ARG ROCM_VERSION=6.3.1
+
+ARG USE_CYTHON="0"
+ARG BUILD_RPD="1"
+
+## Base Layer ##################################################################
+FROM registry.access.redhat.com/ubi9/ubi-minimal:${BASE_UBI_IMAGE_TAG} AS base
+ARG PYTHON_VERSION
+ENV PYTHON_VERSION=${PYTHON_VERSION}
+RUN microdnf -y update && microdnf install -y \
+    python${PYTHON_VERSION}-devel python${PYTHON_VERSION}-pip python${PYTHON_VERSION}-wheel \
+    && microdnf clean all
+
+WORKDIR /workspace
+
+ENV LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8
+
+
+## ROCM Base Layer ##################################################################
+# based on https://github.com/redhat-et/aihw-triton/blob/main/blog2-triton-rh-amd/Containerfile.ubi
+FROM base as rocm-base
+ARG PYTHON_VERSION
+ARG ROCM_VERSION
+
+# Set environment variables for ROCm
+ENV LC_ALL=C.UTF-8 \
+    LANG=C.UTF-8 \
+    ROCM_PATH=/opt/rocm \
+    LD_LIBRARY_PATH=/usr/lib64:/usr/lib \
+    PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    PATH=/opt/rocm/bin:/opt/rocm/llvm/bin:$PATH \
+    LD_LIBRARY_PATH=/usr/lib64:/usr/lib:/opt/rocm/lib:/opt/rocm/llvm/lib
+
+# Install system dependencies
+RUN microdnf update -y && \
+    microdnf install -y \
+    wget \
+    tar \
+    gcc \
+    gcc-c++ \
+    make \
+    libstdc++ \
+    git \
+    pciutils \
+    lsof \
+    libyaml \
+    llvm clang clang-libs \
+    && microdnf clean all
+
+
+# Set the right default python
+RUN alternatives --install /usr/bin/python3 python3 /usr/bin/python${PYTHON_VERSION} 1
+RUN update-alternatives --install /usr/bin/python python /usr/bin/python3 1
+
+# Add the ROCm repository
+RUN wget -qO - http://repo.radeon.com/rocm/rocm.gpg.key | gpg --dearmor -o /etc/pki/rpm-gpg/ROCm.gpg && \
+    echo -e "[ROCm]\nname=ROCm\nbaseurl=http://repo.radeon.com/rocm/el9/$ROCM_VERSION/main\nenabled=1\ngpgcheck=0\ngpgkey=file:///etc/pki/rpm-gpg/ROCm.gpg" > /etc/yum.repos.d/rocm.repo
+
+# Install ROCm libraries and tools
+# RUN dnf install -y rocm-hip rocm-opencl rocm-rpm-macros rocm-runtime rocm-smi rocminfo amd-smi rocm
+RUN  microdnf install -y \
+        # amd-smi-lib \
+        # amd-smi \
+        miopen-hip \
+        openmp-extras-runtime \
+        rocm-core \
+        rocm-hip-libraries \
+        rocminfo \
+        && microdnf clean all
+
+
+## Common Builder #################################################################
+FROM rocm-base AS common-builder
+ARG PYTHON_VERSION
+
+ENV VIRTUAL_ENV=/opt/build
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+
+# create new venv to build vllm
+RUN python${PYTHON_VERSION} -m venv $VIRTUAL_ENV \
+    && pip install --no-cache -U pip wheel uv
+
+# install compiler cache to speed up compilation leveraging local or remote caching
+# git is required for the cutlass kernels
+RUN rpm -ivh https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm && rpm -ql epel-release && microdnf install -y git ccache && microdnf clean all
+
+## rccl Builder #################################################################
+FROM common-builder AS rccl-builder
+ARG MAX_JOBS
+
+RUN git clone ${RCCL_REPO}
+RUN cd rccl \
+    && git checkout ${RCCL_BRANCH} \
+    && ./install.sh -p --amdgpu_targets ${PYTORCH_ROCM_ARCH}
+RUN mkdir -p /workspace/install && cp /workspace/rccl/build/release/*.deb /workspace/install
+
+## rccl Builder #################################################################
+FROM common-builder AS pytorch-builder
+ARG MAX_JOBS
+
+ARG PYTORCH_BRANCH
+ARG PYTORCH_VISION_BRANCH
+ARG PYTORCH_REPO
+ARG PYTORCH_VISION_REPO
+ARG FA_BRANCH
+ARG FA_REPO
+
+ARG PYTORCH_ROCM_ARCH=gfx90a;gfx942
+ENV PYTORCH_ROCM_ARCH=${PYTORCH_ROCM_ARCH}
+
+RUN git clone ${PYTORCH_REPO} pytorch
+RUN cd pytorch && git checkout ${PYTORCH_BRANCH} && \
+    pip install -r requirements.txt && git submodule update --init --recursive \
+    && python3 tools/amd_build/build_amd.py \
+    && CMAKE_PREFIX_PATH=$(python3 -c 'import sys; print(sys.prefix)') python3 setup.py bdist_wheel --dist-dir=dist \
+    && pip install dist/*.whl
+RUN git clone ${PYTORCH_VISION_REPO} vision
+RUN cd vision && git checkout ${PYTORCH_VISION_BRANCH} \
+    && python3 setup.py bdist_wheel --dist-dir=dist \
+    && pip install dist/*.whl
+RUN git clone ${FA_REPO}
+RUN cd flash-attention \
+    && git checkout ${FA_BRANCH} \
+    && git submodule update --init \
+    && MAX_JOBS=64 GPU_ARCHS=${PYTORCH_ROCM_ARCH} python3 setup.py bdist_wheel --dist-dir=dist
+RUN mkdir -p /workspace/install && cp /workspace/pytorch/dist/*.whl /workspace/install \
+    && cp /workspace/vision/dist/*.whl /workspace/install \
+    && cp /workspace/flash-attention/dist/*.whl /workspace/install
+
+
+## vLLM Builder #################################################################
+FROM common-builder AS vllm-builder
+ARG MAX_JOBS
+
+# install CUDA
+# RUN curl -Lo /etc/yum.repos.d/cuda-rhel9.repo \
+#         https://developer.download.nvidia.com/compute/cuda/repos/rhel9/x86_64/cuda-rhel9.repo
+# 
+# RUN microdnf install -y \
+#         cuda-nvcc-12-4 cuda-nvtx-12-4 cuda-libraries-devel-12-4 tar && \
+#     microdnf clean all
+# 
+# ENV CUDA_HOME="/usr/local/cuda" 
+# \
+#     PATH="${CUDA_HOME}/bin:${PATH}" \
+#     LD_LIBRARY_PATH="${CUDA_HOME}/lib64:${CUDA_HOME}/extras/CUPTI/lib64:${LD_LIBRARY_PATH}"
+
+# install build dependencies
+# RUN --mount=type=cache,target=/root/.cache/pip \
+#     --mount=type=cache,target=/root/.cache/uv \
+#     --mount=type=bind,source=vllm/requirements-build.txt,target=requirements-build.txt \
+#     uv pip install -r requirements-build.txt
+# 
+#     COPY vllm/requirements* /workspace/
+# RUN --mount=type=cache,target=/root/.cache/pip \
+#     --mount=type=cache,target=/root/.cache/uv \
+#     # --mount=type=bind,source=vllm/requirements-rocm.txt,target=requirements-rocm.txt \
+#     uv pip install -r requirements-rocm.txt
+
+
+# # set env variables for build
+# ENV PATH=/usr/local/cuda/bin:$PATH
+# ENV TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 8.9 9.0+PTX"
+# ENV VLLM_FA_CMAKE_GPU_ARCHES="80-real;90-real"
+# ENV MAX_JOBS=${MAX_JOBS}
+# ENV NVCC_THREADS=2
+# ENV VLLM_INSTALL_PUNICA_KERNELS=1
+
+# copy git stuff
+# WORKDIR /workspace/.git
+# COPY all-git.tar .
+# RUN tar -xf all-git.tar && \
+#     rm all-git.tar
+# 
+# # copy tarball of last commit
+# WORKDIR /workspace/vllm
+# 
+# COPY vllm-all.tar .
+# RUN tar -xf vllm-all.tar && \
+#     rm vllm-all.tar
+# 
+# # build vllm wheel
+# ENV CCACHE_DIR=/root/.cache/ccache
+# RUN --mount=type=cache,target=/root/.cache/ccache \
+#     --mount=type=bind,source=vllm/.git,target=/workspace/vllm/.git \
+#     env CFLAGS="-march=haswell" \
+#         CXXFLAGS="$CFLAGS $CXXFLAGS" \
+#         CMAKE_BUILD_TYPE=Release \
+#         python3 setup.py bdist_wheel --dist-dir=/workspace/
+
+ARG VLLM_REPO="https://github.com/ROCm/vllm.git"
+ARG VLLM_BRANCH="main"
+RUN git clone ${VLLM_REPO} \
+	    && cd vllm \
+	    && git checkout ${VLLM_BRANCH}
+
+ARG USE_CYTHON
+ENV CUDA_HOME='/opt/rocm/'
+# Build vLLM
+RUN cd vllm \
+    && python3 -m pip install -r requirements-rocm.txt \
+    && python3 setup.py clean --all  \
+    && if [ ${USE_CYTHON} -eq "1" ]; then python3 setup_cython.py build_ext --inplace; fi \
+    && python3 setup.py bdist_wheel --dist-dir=/workspace/
+
+## Triton Builder #################################################################
+FROM common-builder AS triton-builder
+
+# Triton build deps
+RUN --mount=type=cache,target=/root/.cache/pip \
+    --mount=type=cache,target=/root/.cache/uv \
+    uv pip install ninja cmake wheel pybind11 setuptools
+
+COPY triton triton
+
+WORKDIR /workspace/triton/python
+
+# needed to build triton
+RUN microdnf install -y zlib-devel gcc gcc-c++ \
+    && microdnf clean all
+
+# Build Triton
+ENV TRITON_BUILD_WITH_CCACHE=true
+ENV CCACHE_DIR=/root/.cache/ccache
+RUN --mount=type=cache,target=/root/.cache/ccache \
+    python3 setup.py bdist_wheel --dist-dir=/workspace/
+
+## Runtime #################################################################
+FROM base AS runtime
+
+ENV VIRTUAL_ENV=/opt/runtime
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+
+# create new venv to build vllm
+RUN python${PYTHON_VERSION} -m venv $VIRTUAL_ENV \
+    && pip install --no-cache -U pip wheel uv
+
+WORKDIR /workspace
+
+# Install vllm
+COPY --from=vllm-builder /workspace/*.whl .
+RUN --mount=type=cache,target=/root/.cache/pip \
+    --mount=type=cache,target=/root/.cache/uv \
+    uv pip install vllm-*.whl
+
+# Install pytorch 
+COPY --from=pytorch-builder /workspace/install/*.whl /workspace/install
+RUN --mount=type=cache,target=/root/.cache/pip \
+    --mount=type=cache,target=/root/.cache/uv \
+    uv pip install /workspace/install/*.whl
+
+# Install Triton (will replace version that vllm installed)
+COPY --from=triton-builder /workspace/*.whl .
+RUN --mount=type=cache,target=/root/.cache/pip \
+    --mount=type=cache,target=/root/.cache/uv \
+    uv pip install triton-*.whl
+
+# force using the python venv's cuda runtime libraries
+ENV LD_LIBRARY_PATH="${VIRTUAL_ENV}/lib/python${PYTHON_VERSION}/site-packages/nvidia/cuda_nvrtc/lib:${LD_LIBRARY_PATH}"
+ENV LD_LIBRARY_PATH="${VIRTUAL_ENV}/lib/python${PYTHON_VERSION}/site-packages/nvidia/cuda_runtime/lib:${LD_LIBRARY_PATH}"
+ENV LD_LIBRARY_PATH="${VIRTUAL_ENV}/lib/python${PYTHON_VERSION}/site-packages/nvidia/nvtx/lib:${LD_LIBRARY_PATH}"
+ENV LD_LIBRARY_PATH="${VIRTUAL_ENV}/lib/python${PYTHON_VERSION}/site-packages/nvidia/cuda_cupti/lib:${LD_LIBRARY_PATH}"
+
+# TODO, currently necessary for smac
+# https://github.com/automl/auto-sklearn/issues/314
+RUN microdnf install -y wget tar zlib-devel automake g++ && microdnf clean all
+RUN wget https://downloads.sourceforge.net/project/swig/swig/swig-3.0.12/swig-3.0.12.tar.gz && \
+    tar -xzf swig-3.0.12.tar.gz && \
+    cd swig-3.0.12 && \
+    bash autogen.sh && \
+    wget https://downloads.sourceforge.net/project/pcre/pcre/8.45/pcre-8.45.tar.gz && \
+    bash Tools/pcre-build.sh && \
+    bash ./configure && \
+    make && \
+    make install
+
+# copy requirements before to avoid reinstall
+COPY triton-dejavu/requirements-opt.txt dejavu-requirements-opt.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    --mount=type=cache,target=/root/.cache/uv \
+    uv pip install -r dejavu-requirements-opt.txt
+
+    # dejavu
+COPY triton-dejavu triton-dejavu
+RUN --mount=type=cache,target=/root/.cache/pip \
+    --mount=type=cache,target=/root/.cache/uv \
+    uv pip install ./triton-dejavu/
+
+## Benchmarking #################################################################
+FROM runtime AS benchmark
+
+WORKDIR /workspace
+
+RUN microdnf install -y git nano gcc vim \
+    && microdnf clean all
+
+RUN --mount=type=cache,target=/root/.cache/pip \
+    --mount=type=cache,target=/root/.cache/uv \
+    uv pip install pytest llnl-hatchet debugpy
+
+# copy python stuff of vllm
+#  (here or above? faster here, logical above?)
+COPY vllm/vllm  ${VIRTUAL_ENV}/lib64/python${PYTHON_VERSION}/site-packages/vllm/
+COPY vllm/vllm  ${VIRTUAL_ENV}/lib/python${PYTHON_VERSION}/site-packages/vllm/
+
+# Install FlashInfer
+RUN PYTHON_VERSION_STR=$(echo ${PYTHON_VERSION} | sed 's/\.//g') && \
+    echo "export PYTHON_VERSION_STR=${PYTHON_VERSION_STR}" >> /etc/environment
+
+RUN --mount=type=cache,target=/root/.cache/pip \
+    . /etc/environment && \
+    python3 -m pip install https://github.com/flashinfer-ai/flashinfer/releases/download/v0.1.6/flashinfer-0.1.6+cu121torch2.4-cp${PYTHON_VERSION_STR}-cp${PYTHON_VERSION_STR}-linux_x86_64.whl
+
+RUN ln -s ${VIRTUAL_ENV}/lib/python${PYTHON_VERSION}/site-packages/nvidia/cuda_cupti/lib/libcupti.so.12  ${VIRTUAL_ENV}/lib/python${PYTHON_VERSION}/site-packages/nvidia/cuda_cupti/lib/libcupti.so
+
+# Install IBM kernels 
+# (here for now, since they should change frequently)
+COPY ibm_triton_lib ibm_triton_lib/ibm_triton_lib
+COPY setup.py ibm_triton_lib
+RUN --mount=type=cache,target=/root/.cache/pip \
+    --mount=type=cache,target=/root/.cache/uv \
+    uv pip install ./ibm_triton_lib \
+    && rm -rf ibm_triton_lib
+
+
+ENV STORE_TEST_RESULT_PATH=/results
+
+# Copy thid-party kernels and insert into path
+COPY third_party third_party
+ENV PYTHONPATH /workspace
+
+# see https://github.com/IBM/triton-dejavu?tab=readme-ov-file#environment-variables
+ENV TRITON_PRINT_AUTOTUNING=1
+ENV TRITON_DEJAVU_DEBUG=1
+# set as default
+ENV TRITON_DEJAVU_STORAGE=/storage
+ENV NGL_EXP_FALLBACK=next
+# ENV TRITON_DEJAVU_USE_ONLY_RESTORED=0
+ENV TRITON_DEJAVU_FORCE_FALLBACK=1
+ENV TRITON_DEJAVU_TAG='default'
+ENV TRITON_DEJAVU_HASH_SEARCH_PARAMS=0
+
+# open debugpy port
+EXPOSE 5679
+
+ENTRYPOINT ["python"]
