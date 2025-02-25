@@ -105,7 +105,7 @@ The main differences are:
     - `flop/s`: `flops_per_invocations * number_of_invocations / duration_of_all_invocations`
     - `flops`: `flops_per_invocations * number_of_invocations`
 3. It adds the support for average flops and average flop/s.
-5. It makes the list of available metrics informative: 
+4. It makes the list of available metrics informative: 
 
 ```
 $ python3 /scripts/roofline/proton_viewer.py -l ./matmul.hatchet 
