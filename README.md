@@ -73,8 +73,13 @@ If using `ibm_triton_lib` outside from our container, the following needs to be 
 This repo also contains a container aimed at development and using a custom vllm build. 
 This development container can be build with:
 ```
+make clean
 make dev
 ```
+
+Please note that this build process is designed to avoid lengthy re-compilation of the CUDA/C++ sources of vllm (which could take up to 30min). Therefore, the current setup triggers a rebuild of vllm **only** if `git add`, `git rm`, or `git commit` affecting files inside the vllm submodule are executed (or the complete submodule is updated, c.f. [`git-updated-index`](https://git-scm.com/docs/git-update-index)). If files in the vllm submodule are "just" changed (and *not* marked for commit or committed), only the copy of the vllm python files into the site-packages happens during build of the image. This minor inconsistency during `make build` is intended, since our focus are triton kernels, not debugging vLLM CUDA.
+
+To ensure a clean build (that reflects all changes to local files), `make clean` can be executed, which forces a re-build of vLLM C sources (if not the exact build is already present in the docker cache).
 
 The development image is also based on `ubi9-minimal` and the vllm and triton builds are isolated, both from each other, and the runtime. 
 This allows us to ensure that runtime dependencies are minimal, and allows us to clearly see the different places that CUDA gets pulled in.
