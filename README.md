@@ -93,3 +93,40 @@ All 3 of these versions can potentially be different, but need to be compatible.
 See figure below:
 
 ![dev environment](./doc/dev-env.png)
+
+
+## Improved Proton Viewer
+
+This repo contains a custom version of tritons proton viewer: [`./scripts/roofline/proton_viewer.py`](./scripts/roofline/proton_viewer.py)
+
+The main differences are:
+1. It adds a real roofline analysis by introducing the metrics `util_flops` and `util_bytes`.
+2. It fixes the confusion of the metrics `flop/s` vs `flops`. 
+    - `flop/s`: `flops_per_invocations * number_of_invocations / duration_of_all_invocations`
+    - `flops`: `flops_per_invocations * number_of_invocations`
+3. It adds the support for average flops and average flop/s.
+5. It makes the list of available metrics informative: 
+
+```
+$ python3 /scripts/roofline/proton_viewer.py -l ./matmul.hatchet 
+Available raw metrics:
+- bytes
+- count
+- flops16
+- time
+Derivable metrics:
+- {g,t,avg_,avg_g,avg_t}byte/s
+- {g,t,avg_,avg_g,avg_t}flop/s
+- {g,t,avg_,avg_g,avg_t}flop16/s
+- {g,t,avg_,avg_g,avg_t}flops
+- {g,t,avg_,avg_g,avg_t}flops16
+- avg_time/[s,ms,us,ns]
+- util
+- util_flops
+- util_bytes
+- bytes/%
+- count/%
+- flops16/%
+- time/%
+(All values without 'avg_' are cumulative.)
+```
