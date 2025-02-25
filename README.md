@@ -68,3 +68,28 @@ If using `ibm_triton_lib` outside from our container, the following needs to be 
 - the vllm-triton-backend depends on [triton-dejavu](https://github.com/IBM/triton-dejavu)
 
 
+## Dev Environment
+
+This repo also contains a container aimed at development and using a custom vllm build. 
+This development container can be build with:
+```
+make dev
+```
+
+The development image is also based on `ubi9-minimal` and the vllm and triton builds are isolated, both from each other, and the runtime. 
+This allows us to ensure that runtime dependencies are minimal, and allows us to clearly see the different places that CUDA gets pulled in.
+
+During build, vLLM requires a system installation of the CUDA toolkit. We install it from the system package manager.
+On the other hand, Triton automatically downloads its own version of CUDA and PTX during build, we do not control this. 
+It does not require CUDA to be installed in the system or otherwise.
+
+At runtime, there are three different CUDA-related things that we need to be aware of:
+1. The CUDA runtime that gets installed via pip (e.g., due to pytorch dependencies).
+2. The PTX version that is bundled inside the Triton wheel.
+3. The CUDA driver version that is running on the host machine (e.g., outside of docker container).
+
+All 3 of these versions can potentially be different, but need to be compatible. 
+
+See figure below:
+
+![dev environment](./doc/dev-env.png)

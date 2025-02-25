@@ -1,7 +1,7 @@
 TAG := vllm-triton-backend-$(shell id -un)
 MAX_JOBS := 64
 
-.PHONY: all build clean format build-custom
+.PHONY: all build clean format dev
 
 all: build
 
@@ -11,8 +11,8 @@ vllm-all.tar: .git/modules/vllm/index
 all-git.tar: .git/index
 	cd .git; ls -A | xargs tar --mtime='1970-01-01' -cf ../all-git.tar
 
-build-custom: vllm-all.tar all-git.tar Dockerfile
-	docker build --progress=plain --build-arg MAX_JOBS=$(MAX_JOBS) . -t ${TAG}
+dev: vllm-all.tar all-git.tar Dockerfile.dev
+	docker build --progress=plain --build-arg MAX_JOBS=$(MAX_JOBS) . -t ${TAG} -f Dockerfile.dev
 	@echo "Built docker image with tag: ${TAG}"
 
 build: Dockerfile
