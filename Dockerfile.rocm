@@ -38,6 +38,7 @@ ENV LANG=C.UTF-8 \
 FROM base as rocm-base
 ARG PYTHON_VERSION
 ARG ROCM_VERSION
+ARG BASE_UBI_IMAGE_TAG
 
 # Set environment variables for ROCm
 ENV LC_ALL=C.UTF-8 \
@@ -61,28 +62,58 @@ RUN microdnf update -y && \
     pciutils \
     lsof \
     libyaml \
+    rsync \ 
+    # dnf \
     llvm clang clang-libs \
     && microdnf clean all
+
+
+# https://rocm.docs.amd.com/projects/install-on-linux/en/latest/install/quick-start.html
+# RUN wget https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm \ 
+#     && rpm -ivh epel-release-latest-9.noarch.rpm 
+
+# RUN wget https://repo.radeon.com/amdgpu-install/6.3.3/rhel/9.4/amdgpu-install-6.3.60303-1.el9.noarch.rpm \
+#     && rpm -ivh amdgpu-install-6.3.60303-1.el9.noarch.rpm
+
+
+# && crb enable 
+# RUN microdnf install dnf-plugin-config-manager  
+# RUN microdnf install "kernel-headers-$(uname -r)" "kernel-devel-$(uname -r)" "kernel-devel-matched-$(uname -r)"
+# RUN microdnf install "kernel-headers" "kernel-devel" "kernel-devel-matched"
+
+# Add the ROCm repository
+RUN wget -qO - http://repo.radeon.com/rocm/rocm.gpg.key | gpg --dearmor -o /etc/pki/rpm-gpg/ROCm.gpg && \
+    echo -e "[ROCm]\nname=ROCm\nbaseurl=http://repo.radeon.com/rocm/el9/$ROCM_VERSION/main\nenabled=1\ngpgcheck=0\ngpgkey=file:///etc/pki/rpm-gpg/ROCm.gpg" > /etc/yum.repos.d/rocm.repo
+    
+RUN echo -e "[amdgpu]\nname=amdgpu\nbaseurl=https://repo.radeon.com/amdgpu/$ROCM_VERSION/el/$BASE_UBI_IMAGE_TAG/main/x86_64\nenabled=1\ngpgcheck=0\ngpgkey=file:///etc/pki/rpm-gpg/ROCm.gpg" > /etc/yum.repos.d/amdgpu.repo
+
+
+# RUN microdnf install https://repo.radeon.com/amdgpu-install/6.3.3/rhel/9.4/amdgpu-install-6.3.60303-1.el9.noarch.rpm \
+#     && microdnf clean all
+# RUN microdnf install amdgpu-dkms rocm rocm-hip-libraries rocminfo \ 
+#     && microdnf clean all
+
+#     sudo usermod -a -G render,video $LOGNAME # Add the current user to the render and video groups
 
 
 # Set the right default python
 RUN alternatives --install /usr/bin/python3 python3 /usr/bin/python${PYTHON_VERSION} 1
 RUN update-alternatives --install /usr/bin/python python /usr/bin/python3 1
 
-# Add the ROCm repository
-RUN wget -qO - http://repo.radeon.com/rocm/rocm.gpg.key | gpg --dearmor -o /etc/pki/rpm-gpg/ROCm.gpg && \
-    echo -e "[ROCm]\nname=ROCm\nbaseurl=http://repo.radeon.com/rocm/el9/$ROCM_VERSION/main\nenabled=1\ngpgcheck=0\ngpgkey=file:///etc/pki/rpm-gpg/ROCm.gpg" > /etc/yum.repos.d/rocm.repo
-
-# Install ROCm libraries and tools
-# RUN dnf install -y rocm-hip rocm-opencl rocm-rpm-macros rocm-runtime rocm-smi rocminfo amd-smi rocm
+# # Install ROCm libraries and tools
+# # RUN dnf install -y rocm-hip rocm-opencl rocm-rpm-macros rocm-runtime rocm-smi rocminfo amd-smi rocm
 RUN  microdnf install -y \
-        # amd-smi-lib \
+        amd-smi-lib \
         # amd-smi \
+        # amdgpu-dkms \
+        # rocm \
         miopen-hip \
         openmp-extras-runtime \
         rocm-core \
         rocm-hip-libraries \
         rocminfo \
+        rocm-hip-sdk \ 
+        findutils \
         && microdnf clean all
 
 
@@ -95,7 +126,7 @@ ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
 # create new venv to build vllm
 RUN python${PYTHON_VERSION} -m venv $VIRTUAL_ENV \
-    && pip install --no-cache -U pip wheel uv
+    && pip install --no-cache -U pip wheel uv ninja cmake pybind11
 
 # install compiler cache to speed up compilation leveraging local or remote caching
 # git is required for the cutlass kernels
@@ -111,39 +142,39 @@ RUN cd rccl \
     && ./install.sh -p --amdgpu_targets ${PYTORCH_ROCM_ARCH}
 RUN mkdir -p /workspace/install && cp /workspace/rccl/build/release/*.deb /workspace/install
 
-## rccl Builder #################################################################
-FROM common-builder AS pytorch-builder
-ARG MAX_JOBS
-
-ARG PYTORCH_BRANCH
-ARG PYTORCH_VISION_BRANCH
-ARG PYTORCH_REPO
-ARG PYTORCH_VISION_REPO
-ARG FA_BRANCH
-ARG FA_REPO
-
-ARG PYTORCH_ROCM_ARCH=gfx90a;gfx942
-ENV PYTORCH_ROCM_ARCH=${PYTORCH_ROCM_ARCH}
-
-RUN git clone ${PYTORCH_REPO} pytorch
-RUN cd pytorch && git checkout ${PYTORCH_BRANCH} && \
-    pip install -r requirements.txt && git submodule update --init --recursive \
-    && python3 tools/amd_build/build_amd.py \
-    && CMAKE_PREFIX_PATH=$(python3 -c 'import sys; print(sys.prefix)') python3 setup.py bdist_wheel --dist-dir=dist \
-    && pip install dist/*.whl
-RUN git clone ${PYTORCH_VISION_REPO} vision
-RUN cd vision && git checkout ${PYTORCH_VISION_BRANCH} \
-    && python3 setup.py bdist_wheel --dist-dir=dist \
-    && pip install dist/*.whl
-RUN git clone ${FA_REPO}
-RUN cd flash-attention \
-    && git checkout ${FA_BRANCH} \
-    && git submodule update --init \
-    && MAX_JOBS=64 GPU_ARCHS=${PYTORCH_ROCM_ARCH} python3 setup.py bdist_wheel --dist-dir=dist
-RUN mkdir -p /workspace/install && cp /workspace/pytorch/dist/*.whl /workspace/install \
-    && cp /workspace/vision/dist/*.whl /workspace/install \
-    && cp /workspace/flash-attention/dist/*.whl /workspace/install
-
+## pytorch Builder #################################################################
+# FROM common-builder AS pytorch-builder
+# ARG MAX_JOBS
+# 
+# ARG PYTORCH_BRANCH
+# ARG PYTORCH_VISION_BRANCH
+# ARG PYTORCH_REPO
+# ARG PYTORCH_VISION_REPO
+# ARG FA_BRANCH
+# ARG FA_REPO
+# 
+# ARG PYTORCH_ROCM_ARCH=gfx90a;gfx942
+# ENV PYTORCH_ROCM_ARCH=${PYTORCH_ROCM_ARCH}
+# 
+# RUN git clone ${PYTORCH_REPO} pytorch
+# RUN cd pytorch && git checkout ${PYTORCH_BRANCH} && \
+#     pip install -r requirements.txt && git submodule update --init --recursive \
+#     && python3 tools/amd_build/build_amd.py \
+#     && CMAKE_PREFIX_PATH=$(python3 -c 'import sys; print(sys.prefix)') python3 setup.py bdist_wheel --dist-dir=dist \
+#     && pip install dist/*.whl
+# RUN git clone ${PYTORCH_VISION_REPO} vision
+# RUN cd vision && git checkout ${PYTORCH_VISION_BRANCH} \
+#     && python3 setup.py bdist_wheel --dist-dir=dist \
+#     && pip install dist/*.whl
+# RUN git clone ${FA_REPO}
+# RUN cd flash-attention \
+#     && git checkout ${FA_BRANCH} \
+#     && git submodule update --init \
+#     && MAX_JOBS=64 GPU_ARCHS=${PYTORCH_ROCM_ARCH} python3 setup.py bdist_wheel --dist-dir=dist
+# RUN mkdir -p /workspace/install && cp /workspace/pytorch/dist/*.whl /workspace/install \
+#     && cp /workspace/vision/dist/*.whl /workspace/install \
+#     && cp /workspace/flash-attention/dist/*.whl /workspace/install
+# 
 
 ## vLLM Builder #################################################################
 FROM common-builder AS vllm-builder
@@ -205,6 +236,26 @@ ARG MAX_JOBS
 #         CMAKE_BUILD_TYPE=Release \
 #         python3 setup.py bdist_wheel --dist-dir=/workspace/
 
+# install rocm pytorch
+RUN --mount=type=cache,target=/root/.cache/pip \
+    --mount=type=cache,target=/root/.cache/uv \
+    uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm6.2.4
+
+# install build dependencies
+RUN --mount=type=cache,target=/root/.cache/pip \
+    --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --upgrade numba scipy huggingface-hub[cli,hf_transfer] setuptools_scm
+
+RUN --mount=type=cache,target=/root/.cache/pip \
+    --mount=type=cache,target=/root/.cache/uv \
+    uv pip install "numpy<2"
+
+RUN --mount=type=cache,target=/root/.cache/pip \
+    --mount=type=cache,target=/root/.cache/uv \
+    uv pip install /opt/rocm/share/amd_smi
+
+RUN git clone https://github.com/ROCm/rocm-cmake.git && cd rocm-cmake && mkdir build && cd build && cmake .. && cmake --build . && cmake --build . --target install
+
 ARG VLLM_REPO="https://github.com/ROCm/vllm.git"
 ARG VLLM_BRANCH="main"
 RUN git clone ${VLLM_REPO} \
@@ -212,13 +263,25 @@ RUN git clone ${VLLM_REPO} \
 	    && git checkout ${VLLM_BRANCH}
 
 ARG USE_CYTHON
-ENV CUDA_HOME='/opt/rocm/'
+# ENV CUDA_HOME='/opt/rocm/'
+ENV PYTORCH_ROCM_ARCH="gfx90a;gfx942"
 # Build vLLM
 RUN cd vllm \
-    && python3 -m pip install -r requirements-rocm.txt \
+    && export PYTORCH_ROCM_ARCH=${PYTORCH_ROCM_ARCH} \
+    && python3 -m pip install -r requirements-rocm.txt
+
+# RUN ls -al /usr/locals
+RUN find / | grep -i miopen | grep cmake
+
+ENV CMAKE_PREFIX_PATH="/opt/rocm/;/opt/rocm/hip;$(python3 -c 'import sys; print(sys.prefix)')"
+RUN cd vllm \
+    && export PYTORCH_ROCM_ARCH=${PYTORCH_ROCM_ARCH} \
     && python3 setup.py clean --all  \
-    && if [ ${USE_CYTHON} -eq "1" ]; then python3 setup_cython.py build_ext --inplace; fi \
-    && python3 setup.py bdist_wheel --dist-dir=/workspace/
+    && CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH} python3 setup.py bdist_wheel --dist-dir=/workspace/
+    # && CMAKE_PREFIX_PATH="/opt/rocm/;/opt/rocm/hip;$(python3 -c 'import sys; print(sys.prefix)')" python3 setup.py bdist_wheel --dist-dir=/workspace/
+    # && python3 setup.py develop 
+    # && python3 setup.py bdist_wheel --dist-dir=/workspace/
+    # && export CMAKE_PREFIX_PATH=/opt/rocm/lib/cmake \
 
 ## Triton Builder #################################################################
 FROM common-builder AS triton-builder
@@ -261,10 +324,18 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     uv pip install vllm-*.whl
 
 # Install pytorch 
-COPY --from=pytorch-builder /workspace/install/*.whl /workspace/install
+# COPY --from=pytorch-builder /workspace/install/*.whl /workspace/install
+# RUN --mount=type=cache,target=/root/.cache/pip \
+#     --mount=type=cache,target=/root/.cache/uv \
+#     uv pip install /workspace/install/*.whl
+# install rocm pytorch
 RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=cache,target=/root/.cache/uv \
-    uv pip install /workspace/install/*.whl
+    uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm6.2.4
+
+# install ck flash attention
+# TODO
+
 
 # Install Triton (will replace version that vllm installed)
 COPY --from=triton-builder /workspace/*.whl .
