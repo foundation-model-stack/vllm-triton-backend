@@ -362,10 +362,12 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # install ck flash attention
 # TODO: difference?
 # Install rocm flash attention
-COPY --from=fa-builder /workspace/install/*.whl /workspace/install
+RUN mkdir -p /workspace/fa-install
+COPY --from=fa-builder /workspace/install/*.whl /workspace/fa-install
+# RUN ls -al /workspace/fa-install/
 RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=cache,target=/root/.cache/uv \
-    uv pip install /workspace/install/*.whl
+    uv pip install /workspace/fa-install/*.whl
 
 # Install pytorch and rocm flash attention
 # COPY --from=pytorch-builder /workspace/install/*.whl /workspace/install
