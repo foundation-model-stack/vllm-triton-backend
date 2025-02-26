@@ -17,7 +17,7 @@
 
 
 import torch
-from ibm_triton_lib.kernels import paged_attention_2d, prefill_flash_attention
+from ibm_triton_lib.kernels import paged_attention_2d
 from .base import DecodeCaller
 
 
