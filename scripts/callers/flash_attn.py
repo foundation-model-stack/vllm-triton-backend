@@ -18,11 +18,10 @@
 
 import torch
 
-# TODO: will be necessary for AMD
-# if torch.version.hip:
-#     from flash_attn import flash_attn_varlen_func, flash_attn_func
-# else:
-from vllm.vllm_flash_attn import flash_attn_with_kvcache, flash_attn_varlen_func
+if torch.version.hip:
+    from flash_attn import flash_attn_with_kvcache, flash_attn_varlen_func
+else:
+    from vllm.vllm_flash_attn import flash_attn_with_kvcache, flash_attn_varlen_func
 from .base import DecodeCaller, PrefillCaller
 
 
