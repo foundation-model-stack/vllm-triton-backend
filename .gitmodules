@@ -4,3 +4,6 @@
 [submodule "triton-dejavu"]
 	path = triton-dejavu
 	url = https://github.com/IBM/triton-dejavu.git
+[submodule "vllm"]
+	path = vllm
+	url = https://github.com/vllm-project/vllm.git

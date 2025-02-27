@@ -1,3 +1,21 @@
+#  /*******************************************************************************
+#   * Copyright 2025 IBM Corporation
+#   *
+#   * Licensed under the Apache License, Version 2.0 (the "License");
+#   * you may not use this file except in compliance with the License.
+#   * You may obtain a copy of the License at
+#   *
+#   *     http://www.apache.org/licenses/LICENSE-2.0
+#   *
+#   * Unless required by applicable law or agreed to in writing, software
+#   * distributed under the License is distributed on an "AS IS" BASIS,
+#   * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#   * See the License for the specific language governing permissions and
+#   * limitations under the License.
+#  *******************************************************************************/
+#
+
+
 import sys
 import os
 from typing import List, Optional, Tuple, Union
@@ -55,11 +73,12 @@ class BenchmarkMode(Enum):
 DTYPES = [torch.float16]
 SEEDS = [0]
 
-BATCH_SIZES = [1, 2, 4, 8, 16, 32, 64, 128]
+# BATCH_SIZES = [1, 2, 4, 8, 16, 32, 64, 128]
 # BATCH_SIZES = [128]
 # BATCH_SIZES = [64]
 # BATCH_SIZES = [1, 2]
 # BATCH_SIZES = [1, 2, 4, 8, 16, 32, 64, 128, 256]
+BATCH_SIZES = [1, 2, 3, 4, 5, 7, 8, 12, 16, 32, 64, 128]
 
 # order:  num_query_heads, num_kv_heads
 NUM_HEADS = [(32, 32), (32, 8)]
@@ -222,7 +241,7 @@ def test_decode_attention(
         pytest.skip("unsupported configuration")
 
     if implementation == Implementation.TRITON_FP8 and (
-        seqlen % block_size != 0 or realistic_prompt_mode or seqlen == 16
+        seqlen % block_size != 0 or seqlen == 16
     ):
         pytest.skip("unsupported configuration")
     if implementation == Implementation.XFORMERS and gqa_mode:
