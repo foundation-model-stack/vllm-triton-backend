@@ -11,8 +11,8 @@ vllm-all.tar: .git/modules/vllm/index
 all-git.tar: .git/index
 	cd .git; ls -A | xargs tar --mtime='1970-01-01' -cf ../all-git.tar
 
-dev: vllm-all.tar all-git.tar Dockerfile.dev
-	docker build --progress=plain --build-arg MAX_JOBS=$(MAX_JOBS) . -t ${TAG} -f Dockerfile.dev
+dev: vllm-all.tar all-git.tar Dockerfile
+	docker build --progress=plain --build-arg MAX_JOBS=$(MAX_JOBS) --build-arg VLLM_SOURCE=custom . -t ${TAG} 
 	@echo "Built docker image with tag: ${TAG}"
 
 build: Dockerfile
