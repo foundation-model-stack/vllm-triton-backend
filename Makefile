@@ -19,7 +19,8 @@ build: Dockerfile
 	docker build --progress=plain --build-arg MAX_JOBS=$(MAX_JOBS) . -t ${TAG}
 	@echo "Built docker image with tag: ${TAG}"
 
-rocm: vllm-all.tar all-git.tar Dockerfile.rocm
+rocm: Dockerfile.rocm
+	@echo "using https://github.com/ROCm/vllm repository; vllm submodule CURRENTLY IGNORED"
 	docker build --progress=plain --build-arg MAX_JOBS=$(MAX_JOBS) . -t ${TAG} -f Dockerfile.rocm
 	@echo "Built docker image with tag: ${TAG}"
 
