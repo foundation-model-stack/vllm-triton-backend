@@ -9,6 +9,7 @@ ARG PYTHON_VERSION
 ENV PYTHON_VERSION=${PYTHON_VERSION}
 RUN microdnf -y update && microdnf install -y \
     python${PYTHON_VERSION}-devel python${PYTHON_VERSION}-pip python${PYTHON_VERSION}-wheel \
+    gzip tar git\
     && microdnf clean all
 
 WORKDIR /workspace
@@ -29,7 +30,7 @@ RUN python${PYTHON_VERSION} -m venv $VIRTUAL_ENV \
 
 # install compiler cache to speed up compilation leveraging local or remote caching
 # git is required for the cutlass kernels
-RUN rpm -ivh https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm && rpm -ql epel-release && microdnf install -y git ccache && microdnf clean all
+RUN rpm -ivh https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm && rpm -ql epel-release && microdnf install -y ccache && microdnf clean all
 
 ## vLLM Builder #################################################################
 FROM common-builder AS vllm-builder
