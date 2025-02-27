@@ -91,9 +91,15 @@ RUN --mount=type=cache,target=/root/.cache/ccache \
 
 ## fake vLLM Builder #################################################################
 FROM common-builder AS vllm-builder_pip
+ARG PIP_VLLM_VERSION
 
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip download --download-cache="/workspace/" vllm==${PIP_VLLM_VERSION}
+    pip download vllm==${PIP_VLLM_VERSION} --no-deps
+
+## merge vLLM Builder #################################################################
+FROM vllm-builder_${VLLM_SOURCE} AS vllm-builder
+
+RUN ls -al /workspace/vllm-*
 
 ## Triton Builder #################################################################
 FROM common-builder AS triton-builder
@@ -143,20 +149,17 @@ RUN wget https://downloads.sourceforge.net/project/swig/swig/swig-3.0.12/swig-3.
 WORKDIR /workspace
 
 # Install vllm
-# TODO
-COPY --from=vllm-builder_{VLLM_SOURCE} /workspace/*.whl .
+COPY --from=vllm-builder /workspace/*.whl .
 RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=cache,target=/root/.cache/uv \
     uv pip install vllm-*.whl
 
-    # copy python stuff of vllm
-#  (here or above? faster here, logical above?)
-# TODO
-# COPY vllm/vllm  ${VIRTUAL_ENV}/lib64/python${PYTHON_VERSION}/site-packages/vllm/
-# COPY vllm/vllm  ${VIRTUAL_ENV}/lib/python${PYTHON_VERSION}/site-packages/vllm/
+# copy python stuff of vllm
 RUN mkdir -p /workspace/vllm
 COPY vllm/vllm /workspace/vllm
-RUN if [ "$VLLM_SOURCE" = "custom" ] ; then cp -r /workspace/vllm ${VIRTUAL_ENV}/lib/python${PYTHON_VERSION}/site-packages/vllm/; fi
+RUN if [ "$VLLM_SOURCE" = "custom" ] ; then cp -r /workspace/vllm/* ${VIRTUAL_ENV}/lib/python${PYTHON_VERSION}/site-packages/vllm/  \
+    && cp -r /workspace/vllm/* ${VIRTUAL_ENV}/lib64/python${PYTHON_VERSION}/site-packages/vllm/; fi
+RUN rm -rf /workspace/vllm
 
 # to avaoid incompatibility with our custom triton build
 #  see also https://github.com/vllm-project/vllm/issues/12219

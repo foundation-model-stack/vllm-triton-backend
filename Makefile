@@ -16,8 +16,6 @@ dev: vllm-all.tar all-git.tar Dockerfile
 	@echo "Built docker image with tag: ${TAG}"
 
 build: Dockerfile
-	touch vllm-all.tar
-	touch all-git.tar
 	docker build --progress=plain --build-arg MAX_JOBS=$(MAX_JOBS) . -t ${TAG}
 	@echo "Built docker image with tag: ${TAG}"
 
