@@ -4,6 +4,10 @@ ARG PYTHON_VERSION=3.12
 ARG MAX_JOBS=64
 ARG PIP_VLLM_VERSION=0.7.2
 
+# ARG USE_CUSTOM_VLLM_BUILD
+ARG VLLM_SOURCE=pip 
+# or custom? 
+
 ## Base Layer ##################################################################
 FROM registry.access.redhat.com/ubi9/ubi-minimal:${BASE_UBI_IMAGE_TAG} AS base
 ARG PYTHON_VERSION
@@ -32,6 +36,64 @@ RUN python${PYTHON_VERSION} -m venv $VIRTUAL_ENV \
 # install compiler cache to speed up compilation leveraging local or remote caching
 # git is required for the cutlass kernels
 RUN rpm -ivh https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm && rpm -ql epel-release && microdnf install -y ccache && microdnf clean all
+
+## vLLM Builder #################################################################
+FROM common-builder AS vllm-builder_custom
+ARG MAX_JOBS
+
+# install CUDA
+RUN curl -Lo /etc/yum.repos.d/cuda-rhel9.repo \
+        https://developer.download.nvidia.com/compute/cuda/repos/rhel9/x86_64/cuda-rhel9.repo
+
+RUN microdnf install -y \
+        cuda-nvcc-12-4 cuda-nvtx-12-4 cuda-libraries-devel-12-4 tar && \
+    microdnf clean all
+
+ENV CUDA_HOME="/usr/local/cuda" \
+    PATH="${CUDA_HOME}/bin:${PATH}" \
+    LD_LIBRARY_PATH="${CUDA_HOME}/lib64:${CUDA_HOME}/extras/CUPTI/lib64:${LD_LIBRARY_PATH}"
+
+# install build dependencies
+RUN --mount=type=cache,target=/root/.cache/pip \
+    --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=bind,source=vllm/requirements-build.txt,target=requirements-build.txt \
+    uv pip install -r requirements-build.txt
+
+# set env variables for build
+ENV PATH=/usr/local/cuda/bin:$PATH
+ENV TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 8.9 9.0+PTX"
+ENV VLLM_FA_CMAKE_GPU_ARCHES="80-real;90-real"
+ENV MAX_JOBS=${MAX_JOBS}
+ENV NVCC_THREADS=2
+ENV VLLM_INSTALL_PUNICA_KERNELS=1
+
+# copy git stuff
+WORKDIR /workspace/.git
+COPY all-git.tar .
+RUN tar -xf all-git.tar && \
+    rm all-git.tar
+
+# copy tarball of last commit
+WORKDIR /workspace/vllm
+
+COPY vllm-all.tar .
+RUN tar -xf vllm-all.tar && \
+    rm vllm-all.tar
+
+# build vllm wheel
+ENV CCACHE_DIR=/root/.cache/ccache
+RUN --mount=type=cache,target=/root/.cache/ccache \
+    --mount=type=bind,source=vllm/.git,target=/workspace/vllm/.git \
+    env CFLAGS="-march=haswell" \
+        CXXFLAGS="$CFLAGS $CXXFLAGS" \
+        CMAKE_BUILD_TYPE=Release \
+        python3 setup.py bdist_wheel --dist-dir=/workspace/
+
+## fake vLLM Builder #################################################################
+FROM common-builder AS vllm-builder_pip
+
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip download --download-cache="/workspace/" vllm==${PIP_VLLM_VERSION}
 
 ## Triton Builder #################################################################
 FROM common-builder AS triton-builder
@@ -81,14 +143,25 @@ RUN wget https://downloads.sourceforge.net/project/swig/swig/swig-3.0.12/swig-3.
 WORKDIR /workspace
 
 # Install vllm
-ARG PIP_VLLM_VERSION
+# TODO
+COPY --from=vllm-builder_{VLLM_SOURCE} /workspace/*.whl .
 RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=cache,target=/root/.cache/uv \
-    uv pip install vllm==${PIP_VLLM_VERSION}
+    uv pip install vllm-*.whl
+
+    # copy python stuff of vllm
+#  (here or above? faster here, logical above?)
+# TODO
+# COPY vllm/vllm  ${VIRTUAL_ENV}/lib64/python${PYTHON_VERSION}/site-packages/vllm/
+# COPY vllm/vllm  ${VIRTUAL_ENV}/lib/python${PYTHON_VERSION}/site-packages/vllm/
+RUN mkdir -p /workspace/vllm
+COPY vllm/vllm /workspace/vllm
+RUN if [ "$VLLM_SOURCE" = "custom" ] ; then cp -r /workspace/vllm ${VIRTUAL_ENV}/lib/python${PYTHON_VERSION}/site-packages/vllm/; fi
 
 # to avaoid incompatibility with our custom triton build
 #  see also https://github.com/vllm-project/vllm/issues/12219
 RUN uv pip install -U torch>=2.6 torchvision>=2.6 torchaudio>=2.6
+
 
 # Install Triton (will replace version that vllm/pytorch installed)
 COPY --from=triton-builder /workspace/*.whl .
@@ -114,6 +187,15 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=cache,target=/root/.cache/uv \
     uv pip install ./triton-dejavu/
 
+# Install IBM kernels and vllm plugin
+#  must be after vllm!
+COPY ibm_triton_lib ibm_triton_lib/ibm_triton_lib
+COPY setup.py ibm_triton_lib
+RUN --mount=type=cache,target=/root/.cache/pip \
+    --mount=type=cache,target=/root/.cache/uv \
+    uv pip install ./ibm_triton_lib \
+    && rm -rf ibm_triton_lib
+
 ## Benchmarking #################################################################
 FROM runtime AS benchmark
 
@@ -126,6 +208,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=cache,target=/root/.cache/uv \
     uv pip install pytest llnl-hatchet debugpy
 
+
 # Install FlashInfer
 RUN PYTHON_VERSION_STR=$(echo ${PYTHON_VERSION} | sed 's/\.//g') && \
     echo "export PYTHON_VERSION_STR=${PYTHON_VERSION_STR}" >> /etc/environment
@@ -136,15 +219,6 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 RUN ln -s ${VIRTUAL_ENV}/lib/python${PYTHON_VERSION}/site-packages/nvidia/cuda_cupti/lib/libcupti.so.12  ${VIRTUAL_ENV}/lib/python${PYTHON_VERSION}/site-packages/nvidia/cuda_cupti/lib/libcupti.so
 
-# Install IBM kernels and vllm plugin
-#  must be after vllm!
-# (here for now, since they should change frequently)
-COPY ibm_triton_lib ibm_triton_lib/ibm_triton_lib
-COPY setup.py ibm_triton_lib
-RUN --mount=type=cache,target=/root/.cache/pip \
-    --mount=type=cache,target=/root/.cache/uv \
-    uv pip install ./ibm_triton_lib \
-    && rm -rf ibm_triton_lib
 
 
 ENV STORE_TEST_RESULT_PATH=/results
