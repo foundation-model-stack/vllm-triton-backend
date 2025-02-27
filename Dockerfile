@@ -4,9 +4,8 @@ ARG PYTHON_VERSION=3.12
 ARG MAX_JOBS=64
 ARG PIP_VLLM_VERSION=0.7.2
 
-# ARG USE_CUSTOM_VLLM_BUILD
 ARG VLLM_SOURCE=pip 
-# or custom? 
+# or VLLM_SOURCE=custom 
 
 ## Base Layer ##################################################################
 FROM registry.access.redhat.com/ubi9/ubi-minimal:${BASE_UBI_IMAGE_TAG} AS base
@@ -165,7 +164,6 @@ RUN rm -rf /workspace/vllm
 #  see also https://github.com/vllm-project/vllm/issues/12219
 RUN uv pip install -U torch>=2.6 torchvision>=2.6 torchaudio>=2.6
 
-
 # Install Triton (will replace version that vllm/pytorch installed)
 COPY --from=triton-builder /workspace/*.whl .
 RUN --mount=type=cache,target=/root/.cache/pip \
@@ -211,7 +209,6 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=cache,target=/root/.cache/uv \
     uv pip install pytest llnl-hatchet debugpy
 
-
 # Install FlashInfer
 RUN PYTHON_VERSION_STR=$(echo ${PYTHON_VERSION} | sed 's/\.//g') && \
     echo "export PYTHON_VERSION_STR=${PYTHON_VERSION_STR}" >> /etc/environment
@@ -221,7 +218,6 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     python3 -m pip install https://github.com/flashinfer-ai/flashinfer/releases/download/v0.1.6/flashinfer-0.1.6+cu121torch2.4-cp${PYTHON_VERSION_STR}-cp${PYTHON_VERSION_STR}-linux_x86_64.whl
 
 RUN ln -s ${VIRTUAL_ENV}/lib/python${PYTHON_VERSION}/site-packages/nvidia/cuda_cupti/lib/libcupti.so.12  ${VIRTUAL_ENV}/lib/python${PYTHON_VERSION}/site-packages/nvidia/cuda_cupti/lib/libcupti.so
-
 
 
 ENV STORE_TEST_RESULT_PATH=/results
