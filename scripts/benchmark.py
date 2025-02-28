@@ -92,8 +92,11 @@ NUM_HEADS = [(32, 32), (32, 8)]
 # SEQUENCE_LENGTHS = [4321]
 SEQUENCE_LENGTHS = [16, 128, 512, 1024, 2048, 4096]
 
-CONTEXT_LENGTHS = [16, 128, 512, 1024, 2048, 4096]
-QUERY_LENGTHS = [1, 16, 128, 512, 1024, 2048, 4096]
+# CONTEXT_LENGTHS = [16, 128, 512, 1024, 2048, 4096]
+# QUERY_LENGTHS = [1, 16, 128, 512, 1024, 2048, 4096]
+# QUERY_LENGTHS = [1, 1024]
+PREFIX_PREFILL_SHARE_OF_DECODE = [0.5]
+PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL = [0.0, 0.5]
 
 # HEAD_SIZES_FLASH = [32, 64, 128]  # only powers of 2!
 HEAD_SIZES = [128]  # only powers of 2! for llama2 & 3
@@ -824,8 +827,11 @@ def test_prefill_attention(
 
 @pytest.mark.parametrize("batch_size", BATCH_SIZES)
 @pytest.mark.parametrize("num_heads", NUM_HEADS)
-@pytest.mark.parametrize("querylen", QUERY_LENGTHS)
-@pytest.mark.parametrize("ctxlen", CONTEXT_LENGTHS)
+# @pytest.mark.parametrize("querylen", QUERY_LENGTHS)
+# @pytest.mark.parametrize("ctxlen", CONTEXT_LENGTHS)
+@pytest.mark.parametrize("seqlen", SEQUENCE_LENGTHS)
+@pytest.mark.parametrize("decode_share", PREFIX_PREFILL_SHARE_OF_DECODE)
+@pytest.mark.parametrize("partial_prefill_share", PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL)
 @pytest.mark.parametrize("head_size", HEAD_SIZES)
 @pytest.mark.parametrize("block_size", BLOCK_SIZES)
 @pytest.mark.parametrize("num_blocks", NUM_BLOCKS)
@@ -841,8 +847,11 @@ def test_prefix_prefill_attention(
     request,
     batch_size,
     num_heads,
-    querylen,  # max querylen
-    ctxlen,  # max contextlen
+    # querylen,  # max querylen
+    # ctxlen,  # max contextlen
+    seqlen,
+    decode_share,
+    partial_prefill_share,
     head_size,
     block_size,
     num_blocks,
@@ -872,11 +881,19 @@ def test_prefix_prefill_attention(
     torch.set_default_device(tdev)
 
     len_fraction = itertools.cycle(prompt_pattern)
-    query_lens = [
-        int(np.ceil(querylen * next(len_fraction))) for _ in range(batch_size)
-    ]  # will always be at least 1
-    len_fraction = itertools.cycle(prompt_pattern)  # reset
-    ctx_lens = [int(np.ceil(ctxlen * next(len_fraction))) for _ in range(batch_size)]
+    init_seq_lens = [int(np.ceil(seqlen* next(len_fraction))) for _ in range(batch_size)]
+    decode_seqs = int(np.ceil(batch_size * decode_share))
+    prefill_seqs = batch_size - decode_seqs
+    query_lens = [1]*decode_seqs + init_seq_lens[decode_seqs:]
+    partial_prefill_seqs = int(np.ceil(prefill_seqs * partial_prefill_share))
+    full_prefill_seqs = prefill_seqs - partial_prefill_seqs
+    ctx_lens = init_seq_lens[:decode_seqs] + init_seq_lens[decode_seqs:decode_seqs+partial_prefill_seqs] + [0] * full_prefill_seqs
+    assert len(ctx_lens) == len(query_lens)
+    # query_lens = [
+    #     int(np.ceil(querylen * next(len_fraction))) for _ in range(batch_size)
+    # ]  # will always be at least 1
+    # len_fraction = itertools.cycle(prompt_pattern)  # reset
+    # ctx_lens = [int(np.ceil(ctxlen * next(len_fraction))) for _ in range(batch_size)]
     seq_lens = [a + b for a, b in zip(query_lens, ctx_lens)]
 
     # NOTE(ngl): Some/all implementations (VLLM_CUDA_V1, XFORMERS, some triton version) assume
@@ -1162,8 +1179,11 @@ def test_prefix_prefill_attention(
                 "batch_size": batch_size,
                 "num_query_heads": num_query_heads,
                 "num_kv_heads": num_kv_heads,
-                "querylen": querylen,
-                "ctxlen": ctxlen,
+                # "querylen": querylen,
+                # "ctxlen": ctxlen,
+                "seqlen": seqlen,
+                "decode_share": decode_share,
+                "partial_prefill_share": partial_prefill_share,
                 "head_size": head_size,
                 "block_size": block_size,
                 "num_blocks": num_blocks,
