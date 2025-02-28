@@ -110,7 +110,7 @@ class BaselineTritonPrefixPrefillCaller(PrefixPrefillCaller):
                 k=key,
                 v=value,
                 o=output,
-                kv_cache_dtype="fp16", #TODO
+                kv_cache_dtype="fp16",  # TODO
                 k_cache=key_cache,
                 v_cache=value_cache,
                 b_loc=block_tables,
@@ -121,7 +121,7 @@ class BaselineTritonPrefixPrefillCaller(PrefixPrefillCaller):
                 k_scale=k_scale,
                 v_scale=v_scale,
                 alibi_slopes=None,  # TODO
-                sliding_window=None, #TODO
+                sliding_window=None,  # TODO
                 sm_scale=softmax_scale,
             )
 

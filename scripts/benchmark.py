@@ -1007,8 +1007,11 @@ def test_prefix_prefill_attention(
         # transpose K_cache[num_blocks, block_size, num_kv_heads, head_size]
         # to K_cache[num_blocks, num_kv_heads, head_size/8, block_size, 8]
         if use_alignment_optimization:
-            key_cache = key_cache.view(-1, block_size, num_kv_heads, head_size // 8,
-                                   8).permute(0, 2, 3, 1, 4).contiguous()
+            key_cache = (
+                key_cache.view(-1, block_size, num_kv_heads, head_size // 8, 8)
+                .permute(0, 2, 3, 1, 4)
+                .contiguous()
+            )
         else:
             key_cache = (
                 key_cache.view(-1, block_size, num_kv_heads, head_size)
