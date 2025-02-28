@@ -95,7 +95,8 @@ SEQUENCE_LENGTHS = [16, 128, 512, 1024, 2048, 4096]
 # CONTEXT_LENGTHS = [16, 128, 512, 1024, 2048, 4096]
 # QUERY_LENGTHS = [1, 16, 128, 512, 1024, 2048, 4096]
 # QUERY_LENGTHS = [1, 1024]
-PREFIX_PREFILL_SHARE_OF_DECODE = [0.5]
+# PREFIX_PREFILL_SHARE_OF_DECODE = [0.5]
+PREFIX_PREFILL_SHARE_OF_DECODE = [0.0, 0.5, 1.0]
 PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL = [0.0, 0.5]
 
 # HEAD_SIZES_FLASH = [32, 64, 128]  # only powers of 2!
@@ -831,7 +832,9 @@ def test_prefill_attention(
 # @pytest.mark.parametrize("ctxlen", CONTEXT_LENGTHS)
 @pytest.mark.parametrize("seqlen", SEQUENCE_LENGTHS)
 @pytest.mark.parametrize("decode_share", PREFIX_PREFILL_SHARE_OF_DECODE)
-@pytest.mark.parametrize("partial_prefill_share", PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL)
+@pytest.mark.parametrize(
+    "partial_prefill_share", PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL
+)
 @pytest.mark.parametrize("head_size", HEAD_SIZES)
 @pytest.mark.parametrize("block_size", BLOCK_SIZES)
 @pytest.mark.parametrize("num_blocks", NUM_BLOCKS)
@@ -881,13 +884,25 @@ def test_prefix_prefill_attention(
     torch.set_default_device(tdev)
 
     len_fraction = itertools.cycle(prompt_pattern)
-    init_seq_lens = [int(np.ceil(seqlen* next(len_fraction))) for _ in range(batch_size)]
+    init_seq_lens = [
+        int(np.ceil(seqlen * next(len_fraction))) for _ in range(batch_size)
+    ]
     decode_seqs = int(np.ceil(batch_size * decode_share))
     prefill_seqs = batch_size - decode_seqs
-    query_lens = [1]*decode_seqs + init_seq_lens[decode_seqs:]
     partial_prefill_seqs = int(np.ceil(prefill_seqs * partial_prefill_share))
     full_prefill_seqs = prefill_seqs - partial_prefill_seqs
-    ctx_lens = init_seq_lens[:decode_seqs] + init_seq_lens[decode_seqs:decode_seqs+partial_prefill_seqs] + [0] * full_prefill_seqs
+    partial_prefill_ctx_lens = [int(np.ceil(l//block_size * 0.5)) for l in init_seq_lens[decode_seqs : decode_seqs + partial_prefill_seqs]]
+    partial_prefill_q_lens = [int(np.floor(l//block_size * 0.5)) for l in init_seq_lens[decode_seqs : decode_seqs + partial_prefill_seqs]]
+    query_lens = [1] * decode_seqs + partial_prefill_q_lens[decode_seqs:decode_seqs + partial_prefill_seqs] + init_seq_lens[decode_seqs + partial_prefill_seqs:]
+    ctx_lens = (
+        init_seq_lens[:decode_seqs]
+        + partial_prefill_ctx_lens[decode_seqs : decode_seqs + partial_prefill_seqs]
+        + [0] * full_prefill_seqs
+    )
+    # print(f"{decode_seqs} {prefill_seqs} {partial_prefill_seqs} {full_prefill_seqs}")
+    # print(init_seq_lens)
+    # print(query_lens)
+    # print(ctx_lens)
     assert len(ctx_lens) == len(query_lens)
     # query_lens = [
     #     int(np.ceil(querylen * next(len_fraction))) for _ in range(batch_size)
@@ -895,6 +910,8 @@ def test_prefix_prefill_attention(
     # len_fraction = itertools.cycle(prompt_pattern)  # reset
     # ctx_lens = [int(np.ceil(ctxlen * next(len_fraction))) for _ in range(batch_size)]
     seq_lens = [a + b for a, b in zip(query_lens, ctx_lens)]
+    max_seq_len = max(seq_lens)
+    assert seqlen * 0.9 < max_seq_len <= seqlen
 
     # NOTE(ngl): Some/all implementations (VLLM_CUDA_V1, XFORMERS, some triton version) assume
     #   there is at least one page per request. That's why apparently the numerical error is
@@ -944,7 +961,6 @@ def test_prefix_prefill_attention(
         num_queries_per_kv = num_query_heads // num_kv_heads
         alibi_slopes = None
 
-        max_seq_len = max(seq_lens)
         b_seq_lens = torch.tensor(
             seq_lens, dtype=torch.int
         )  # vllm unit test uses long, but that doesn't work with flash_attn
@@ -1043,22 +1059,24 @@ def test_prefix_prefill_attention(
             .contiguous()
         )
 
-        ref_output = torch.empty_like(query)
-        # ref_prefix_prefill(
-        #     ref_output,
-        #     query,
-        #     num_queries_per_kv,
-        #     key_cache,
-        #     value_cache,
-        #     key,
-        #     value,
-        #     block_table_t,
-        #     b_seq_lens,
-        #     b_start_loc,
-        #     batch_size,
-        #     scale,
-        #     dtype,
-        # )
+        # ref_output = torch.empty_like(query)
+        ref_output = ref_prefix_prefill(
+            # ref_output,
+            query,
+            num_queries_per_kv,
+            key_cache,
+            value_cache,
+            key,
+            value,
+            block_table_t,
+            b_seq_lens,
+            b_ctx_lens,
+            b_query_lens,
+            b_start_loc,
+            batch_size,
+            scale,
+            dtype,
+        )
 
         if implementation == Implementation.FLASH_ATTN:
             from callers import FlashAttnPrefixPrefillCaller as Caller

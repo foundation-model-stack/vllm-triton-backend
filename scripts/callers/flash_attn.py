@@ -175,9 +175,10 @@ class FlashAttnPrefixPrefillCaller(PrefixPrefillCaller):
                 max_seqlen_k=max_seqlen,
                 softmax_scale=softmax_scale,
                 causal=True,
-                window_size=(-1, 1),
                 block_table=block_tables,
-                softcap=0,
+                # window_size=(-1, 1),
+                # softcap=0,
+                # fa_version=
             )
 
         return call_and_process_output
