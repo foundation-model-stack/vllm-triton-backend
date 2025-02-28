@@ -206,3 +206,110 @@ def ref_multi_query_kv_attention(
         ref_outputs.append(ref_output)
 
     return torch.cat(ref_outputs, dim=0)
+
+
+def ref_prefix_prefill(
+    output: torch.Tensor,
+    query: torch.Tensor,
+    num_queries_per_kv: int,
+    key_cache: torch.Tensor,
+    value_cache: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    block_tables: torch.Tensor,
+    seq_lens: torch.Tensor,
+    start_loc: torch.Tensor,
+    batch_size,
+    scale: float,      
+    dtype: torch.dtype,
+    ):
+    num_query_heads = query.shape[1]
+    num_kv_heads = value_cache.shape[1]
+    head_size = value_cache.shape[2]
+    block_size = value_cache.shape[3]
+    num_seqs = batch_size
+
+    block_tables_lst = block_tables.cpu().tolist()
+    seq_lens_lst = seq_lens.cpu().tolist()
+    start_loc_lst = start_loc.cpu().tolist()
+    for i in range(num_seqs):
+        cur_batch_seq_len = seq_lens_lst[i]
+        cur_batch_in_all_start_index = start_loc_lst[i]
+        cur_batch_in_all_stop_index = start_loc_lst[i+1]
+        cur_batch_query_len = (cur_batch_in_all_stop_index - cur_batch_in_all_start_index)
+        cur_batch_ctx_len = cur_batch_seq_len - cur_batch_query_len
+        
+        if cur_batch_query_len == 1:
+            # normal decode
+            q = query[i].unsqueeze(0)
+            block_table = block_tables_lst[i]
+            seq_len = int(seq_lens_lst[i])
+            keys_lst: List[torch.Tensor] = []
+            values_lst: List[torch.Tensor] = []
+            for j in range(seq_len):
+                block_number = int(block_table[j // block_size])
+                block_offset = j % block_size
+                k = key_cache[block_number, :, :, block_offset]
+                k = k.reshape(num_kv_heads, head_size)
+                keys_lst.append(k)
+                v = value_cache[block_number, :, :, block_offset]
+                values_lst.append(v)
+            keys = torch.stack(keys_lst, dim=0)
+            values = torch.stack(values_lst, dim=0)
+            if num_queries_per_kv > 1:
+                # Handle MQA and GQA
+                keys = torch.repeat_interleave(keys, num_queries_per_kv, dim=1)
+                values = torch.repeat_interleave(values, num_queries_per_kv, dim=1)
+            out = ref_masked_attention(q, keys, values, scale)
+            out = out.view(num_query_heads, head_size)
+            output[i].copy_(out, non_blocking=True)
+        elif cur_batch_ctx_len == 0:
+            # normal prefill
+            # Create attention mask.
+            attn_mask = torch.triu(torch.ones(seq_len, seq_len, dtype=dtype), diagonal=1)
+            attn_mask = attn_mask * torch.finfo(dtype).min
+            attn_mask = attn_mask.to(dtype=dtype)
+
+            out = ref_masked_attention(
+                query[cur_batch_in_all_start_index:cur_batch_in_all_stop_index],
+                key[cur_batch_in_all_start_index:cur_batch_in_all_stop_index],
+                value[cur_batch_in_all_start_index:cur_batch_in_all_stop_index],
+                scale,
+                attn_mask=attn_mask,
+            )
+            out = out.view(num_query_heads, head_size)
+            output[i].copy_(out, non_blocking=True)
+        else:
+            # prefix prefill
+            # construct continous context
+            block_table = block_tables_lst[i]
+            seq_len = int(seq_lens_lst[i])
+            keys_lst: List[torch.Tensor] = []
+            values_lst: List[torch.Tensor] = []
+            for j in range(seq_len):
+                block_number = int(block_table[j // block_size])
+                block_offset = j % block_size
+                k = key_cache[block_number, :, :, block_offset]
+                k = k.reshape(num_kv_heads, head_size)
+                keys_lst.append(k)
+                v = value_cache[block_number, :, :, block_offset]
+                values_lst.append(v)
+            reconstructed_keys = torch.stack(keys_lst, dim=0)
+            reconstructed_values = torch.stack(values_lst, dim=0)
+            if num_queries_per_kv > 1:
+                # Handle MQA and GQA
+                reconstructed_keys = torch.repeat_interleave(reconstructed_keys, num_queries_per_kv, dim=1)
+                reconstructed_values = torch.repeat_interleave(reconstructed_values, num_queries_per_kv, dim=1)
+            all_keys = [reconstructed_keys, key[cur_batch_in_all_start_index:cur_batch_in_all_stop_index]]
+            all_values = [reconstructed_values, value[cur_batch_in_all_start_index:cur_batch_in_all_stop_index]]
+            all_keys_t = torch.cat(all_keys, dim=0)
+            all_values_t = torch.cat(all_values, dim=0)
+            # Create attention mask.
+            attn_mask = torch.triu(torch.ones(seq_len, seq_len, dtype=dtype), diagonal=1)
+            attn_mask = attn_mask * torch.finfo(dtype).min
+            attn_mask = attn_mask.to(dtype=dtype)
+            # compute attention
+            out = ref_masked_attention(query[cur_batch_in_all_start_index:cur_batch_in_all_stop_index], 
+                                       all_keys_t, all_values_t, scale)
+            out = out.view(num_query_heads, head_size)
+            output[i].copy_(out, non_blocking=True)

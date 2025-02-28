@@ -16,7 +16,7 @@
 #
 
 
-from .flash_attn import FlashAttnDecodeCaller, FlashAttnPrefillCaller
+from .flash_attn import FlashAttnDecodeCaller, FlashAttnPrefillCaller, FlashAttnPrefixPrefillCaller
 from .xformers import XformersCaller
 from .vllm_cuda_v2 import VllmCudaV2Caller
 from .vllm_cuda_v1 import VllmCudaV1Caller
