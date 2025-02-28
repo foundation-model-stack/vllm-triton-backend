@@ -237,7 +237,7 @@ def ref_prefix_prefill(
     query_lens_lst = query_lens.cpu().tolist()
     start_loc_lst = start_loc.cpu().tolist()
     ref_outputs: List[torch.Tensor] = []
-    
+
     for i in range(num_seqs):
         cur_batch_seq_len = seq_lens_lst[i]
         cur_batch_in_all_start_index = start_loc_lst[i]
@@ -279,14 +279,19 @@ def ref_prefix_prefill(
             )
             attn_mask = attn_mask * torch.finfo(dtype).min
             attn_mask = attn_mask.to(dtype=dtype)
-    
 
-            key_to_use =  key[cur_batch_in_all_start_index:cur_batch_in_all_stop_index]
-            value_to_use = value[cur_batch_in_all_start_index:cur_batch_in_all_stop_index]
+            key_to_use = key[cur_batch_in_all_start_index:cur_batch_in_all_stop_index]
+            value_to_use = value[
+                cur_batch_in_all_start_index:cur_batch_in_all_stop_index
+            ]
             if num_queries_per_kv > 1:
                 # Handle MQA and GQA
-                key_to_use = torch.repeat_interleave(key_to_use, num_queries_per_kv, dim=1)
-                value_to_use = torch.repeat_interleave(value_to_use, num_queries_per_kv, dim=1)
+                key_to_use = torch.repeat_interleave(
+                    key_to_use, num_queries_per_kv, dim=1
+                )
+                value_to_use = torch.repeat_interleave(
+                    value_to_use, num_queries_per_kv, dim=1
+                )
 
             out = ref_masked_attention(
                 query[cur_batch_in_all_start_index:cur_batch_in_all_stop_index],

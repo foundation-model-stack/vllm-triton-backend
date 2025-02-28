@@ -205,8 +205,7 @@ quantiles = [0.5, 0.2, 0.8]
 force_dump_dataframes = False
 # enforce_numerical_correctness = True
 enforce_numerical_correctness = False
-# do_profiling = True
-do_profiling = False
+do_profiling = True
 store_hatchet = False
 
 
@@ -891,9 +890,19 @@ def test_prefix_prefill_attention(
     prefill_seqs = batch_size - decode_seqs
     partial_prefill_seqs = int(np.ceil(prefill_seqs * partial_prefill_share))
     full_prefill_seqs = prefill_seqs - partial_prefill_seqs
-    partial_prefill_ctx_lens = [int(np.ceil(l//block_size * 0.5)) for l in init_seq_lens[decode_seqs : decode_seqs + partial_prefill_seqs]]
-    partial_prefill_q_lens = [int(np.floor(l//block_size * 0.5)) for l in init_seq_lens[decode_seqs : decode_seqs + partial_prefill_seqs]]
-    query_lens = [1] * decode_seqs + partial_prefill_q_lens[decode_seqs:decode_seqs + partial_prefill_seqs] + init_seq_lens[decode_seqs + partial_prefill_seqs:]
+    partial_prefill_ctx_lens = [
+        int(np.ceil(l // block_size * 0.5))
+        for l in init_seq_lens[decode_seqs : decode_seqs + partial_prefill_seqs]
+    ]
+    partial_prefill_q_lens = [
+        int(np.floor(l // block_size * 0.5))
+        for l in init_seq_lens[decode_seqs : decode_seqs + partial_prefill_seqs]
+    ]
+    query_lens = (
+        [1] * decode_seqs
+        + partial_prefill_q_lens[decode_seqs : decode_seqs + partial_prefill_seqs]
+        + init_seq_lens[decode_seqs + partial_prefill_seqs :]
+    )
     ctx_lens = (
         init_seq_lens[:decode_seqs]
         + partial_prefill_ctx_lens[decode_seqs : decode_seqs + partial_prefill_seqs]
@@ -1135,9 +1144,9 @@ def test_prefix_prefill_attention(
                 do_profiling
                 and implementation
                 in [
-                    Implementation.TRITON_2D,
-                    Implementation.TRITON_3D,
-                    Implementation.BASELINE_TRITON,
+                    # Implementation.TRITON_2D,
+                    # Implementation.TRITON_3D,
+                    # Implementation.BASELINE_TRITON,
                 ]
                 and benchmark_mode == BenchmarkMode.CUDA_EVENTS
             ):
