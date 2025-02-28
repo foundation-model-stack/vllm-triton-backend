@@ -96,6 +96,7 @@ SEQUENCE_LENGTHS = [16, 128, 512, 1024, 2048, 4096]
 # QUERY_LENGTHS = [1, 16, 128, 512, 1024, 2048, 4096]
 # QUERY_LENGTHS = [1, 1024]
 # PREFIX_PREFILL_SHARE_OF_DECODE = [0.5]
+# PREFIX_PREFILL_SHARE_OF_DECODE = [1.0]
 PREFIX_PREFILL_SHARE_OF_DECODE = [0.0, 0.5, 1.0]
 PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL = [0.0, 0.5]
 
@@ -920,7 +921,7 @@ def test_prefix_prefill_attention(
     # ctx_lens = [int(np.ceil(ctxlen * next(len_fraction))) for _ in range(batch_size)]
     seq_lens = [a + b for a, b in zip(query_lens, ctx_lens)]
     max_seq_len = max(seq_lens)
-    assert seqlen * 0.9 < max_seq_len <= seqlen
+    assert seqlen * 0.9 < max_seq_len <= seqlen * 1.1
 
     # NOTE(ngl): Some/all implementations (VLLM_CUDA_V1, XFORMERS, some triton version) assume
     #   there is at least one page per request. That's why apparently the numerical error is
@@ -935,6 +936,7 @@ def test_prefix_prefill_attention(
     scale = float(1.0 / (head_size**0.5))  # as done by vLLM
     num_query_heads, num_kv_heads = num_heads
     total_token_num = np.sum(seq_lens)
+    total_query_tokens = np.sum(query_lens)
     use_alignment_optimization = False
     if implementation == Implementation.BASELINE_TRITON:
         use_alignment_optimization = True
@@ -958,7 +960,7 @@ def test_prefix_prefill_attention(
 
     inner_exception = None
     try:
-        query = torch.empty(total_token_num, num_query_heads, head_size, dtype=dtype)
+        query = torch.empty(total_query_tokens, num_query_heads, head_size, dtype=dtype)
         query.uniform_(-max_value, max_value)
 
         key = torch.empty(total_token_num, num_kv_heads, head_size, dtype=dtype)
@@ -1118,6 +1120,9 @@ def test_prefix_prefill_attention(
 
         output_ = call_func_under_test()
         output = Caller.select_output(output, output_)
+        # print(query.shape)
+        # print(ref_output.shape)
+        # print(output.shape)
 
         if capsys is not None:
             captured_raw = capsys.readouterr()  # returns stdout, stderr
@@ -1125,7 +1130,6 @@ def test_prefix_prefill_attention(
                 if len(l) > 0:
                     # captured += l  # + '|'
                     captured += l + " "
-
         # compare
         if enforce_numerical_correctness:
             # for better reports

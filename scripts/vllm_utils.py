@@ -243,13 +243,14 @@ def ref_prefix_prefill(
         cur_batch_in_all_start_index = start_loc_lst[i]
         cur_batch_in_all_stop_index = start_loc_lst[i + 1]
         cur_batch_query_len = cur_batch_in_all_stop_index - cur_batch_in_all_start_index
+        assert cur_batch_query_len == query_lens_lst[i]
         cur_batch_ctx_len = cur_batch_seq_len - cur_batch_query_len
 
         if cur_batch_query_len == 1:
             # normal decode
             q = query[i].unsqueeze(0)
             block_table = block_tables_lst[i]
-            seq_len = int(seq_lens_lst[i])
+            seq_len = int(ctx_lens_lst[i])
             keys_lst: List[torch.Tensor] = []
             values_lst: List[torch.Tensor] = []
             for j in range(seq_len):
