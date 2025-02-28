@@ -778,7 +778,7 @@ def test_prefill_attention(
                 "captured": captured,
             }
             
-            if torch.version.hip:
+            if torch.version.hip and implementation == Implementation.FLASH_ATTN:
                 record['implementation'] = 'Implementation.ROCM_FLASH_ATTN'
 
             pytest.global_pds[my_name] = pd.concat(
