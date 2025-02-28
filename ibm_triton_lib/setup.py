@@ -60,5 +60,5 @@ setup(
         "ibm_triton_lib": dejavu_data,
     },
     include_package_data=True,
-    entry_points = {'vllm.platform_plugins': ["triton_attn = ibm_triton_lib.backend:register"]},
+    #entry_points = {'vllm.platform_plugins': ["triton_attn = ibm_triton_lib.backend:register"]},
 )
