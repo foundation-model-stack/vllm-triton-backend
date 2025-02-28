@@ -201,7 +201,8 @@ quantiles = [0.5, 0.2, 0.8]
 force_dump_dataframes = False
 # enforce_numerical_correctness = True
 enforce_numerical_correctness = False
-do_profiling = True
+# do_profiling = True
+do_profiling = False
 store_hatchet = False
 
 
@@ -892,6 +893,8 @@ def test_prefix_prefill_attention(
     num_query_heads, num_kv_heads = num_heads
     total_token_num = np.sum(seq_lens)
     use_alignment_optimization = False
+    if implementation == Implementation.BASELINE_TRITON:
+        use_alignment_optimization = True
 
     # to avoid 'local variable referenced before assignment' when trying to del them
     query = None
@@ -1003,13 +1006,15 @@ def test_prefix_prefill_attention(
                 block_id += 1
         # transpose K_cache[num_blocks, block_size, num_kv_heads, head_size]
         # to K_cache[num_blocks, num_kv_heads, head_size/8, block_size, 8]
-        # key_cache = key_cache.view(-1, block_size, num_kv_heads, head_size // 8,
-        #                        8).permute(0, 2, 3, 1, 4).contiguous()
-        key_cache = (
-            key_cache.view(-1, block_size, num_kv_heads, head_size)
-            .permute(0, 2, 3, 1)
-            .contiguous()
-        )
+        if use_alignment_optimization:
+            key_cache = key_cache.view(-1, block_size, num_kv_heads, head_size // 8,
+                                   8).permute(0, 2, 3, 1, 4).contiguous()
+        else:
+            key_cache = (
+                key_cache.view(-1, block_size, num_kv_heads, head_size)
+                .permute(0, 2, 3, 1)
+                .contiguous()
+            )
         # transpose V_cache[num_blocks, block_size, num_kv_heads, head_size]
         # to V_cache[num_blocks, num_kv_heads, head_size, block_size]
         value_cache = (
@@ -1019,28 +1024,30 @@ def test_prefix_prefill_attention(
         )
 
         ref_output = torch.empty_like(query)
-        ref_prefix_prefill(
-            ref_output,
-            query,
-            num_queries_per_kv,
-            key_cache,
-            value_cache,
-            key,
-            value,
-            block_table_t,
-            b_seq_lens,
-            b_start_loc,
-            batch_size,
-            scale,
-            dtype,
-        )
+        # ref_prefix_prefill(
+        #     ref_output,
+        #     query,
+        #     num_queries_per_kv,
+        #     key_cache,
+        #     value_cache,
+        #     key,
+        #     value,
+        #     block_table_t,
+        #     b_seq_lens,
+        #     b_start_loc,
+        #     batch_size,
+        #     scale,
+        #     dtype,
+        # )
 
-        # if implementation == Implementation.TRITON_2D:
+        if implementation == Implementation.FLASH_ATTN:
+            from callers import FlashAttnPrefixPrefillCaller as Caller
+        elif implementation == Implementation.BASELINE_TRITON:
+            from callers import BaselineTritonPrefixPrefillCaller as Caller
+        # elif implementation == Implementation.TRITON_2D:
         #     from callers import Triton2dAttentionDecodeCaller as Caller
         # elif implementation == Implementation.TRITON_3D:
         #     from callers import Triton3dAttentionDecodeCaller as Caller
-        if implementation == Implementation.FLASH_ATTN:
-            from callers import FlashAttnPrefixPrefillCaller as Caller
 
         if Caller.requires_allocated_output:
             output = torch.empty_like(query)
