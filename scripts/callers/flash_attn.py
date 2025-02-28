@@ -140,7 +140,6 @@ class FlashAttnPrefixPrefillCaller(PrefixPrefillCaller):
         softmax_scale,
         # kv_cache_dtype,  # unused
     ):
-        
         """
         query: shape = [num_tokens, num_heads, head_size]
         key: shape = [num_tokens, num_kv_heads, head_size]
@@ -153,7 +152,7 @@ class FlashAttnPrefixPrefillCaller(PrefixPrefillCaller):
         # print(query.shape)
         # print(key_cache.shape)
         # print(value_cache.shape)
-        
+
         def transform_kv_cache(x):
             out = torch.transpose(x, 1, 3)
             out = torch.transpose(out, 2, 3)

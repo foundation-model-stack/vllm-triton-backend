@@ -839,7 +839,7 @@ def test_prefix_prefill_attention(
     request,
     batch_size,
     num_heads,
-    querylen, # max querylen
+    querylen,  # max querylen
     ctxlen,  # max contextlen
     head_size,
     block_size,
@@ -860,7 +860,6 @@ def test_prefix_prefill_attention(
     # TODO skip all others
     # TODO: add flash_attn caller add triton_baseline caller
 
-
     RTOL = 0
     ATOL = min(3.1e-3 * max_value, 1e-3)
 
@@ -871,7 +870,9 @@ def test_prefix_prefill_attention(
     torch.set_default_device(tdev)
 
     len_fraction = itertools.cycle(prompt_pattern)
-    query_lens = [int(np.ceil(querylen * next(len_fraction))) for _ in range(batch_size)]  # will always be at least 1
+    query_lens = [
+        int(np.ceil(querylen * next(len_fraction))) for _ in range(batch_size)
+    ]  # will always be at least 1
     len_fraction = itertools.cycle(prompt_pattern)  # reset
     ctx_lens = [int(np.ceil(ctxlen * next(len_fraction))) for _ in range(batch_size)]
     seq_lens = [a + b for a, b in zip(query_lens, ctx_lens)]
@@ -912,7 +913,7 @@ def test_prefix_prefill_attention(
     try:
         query = torch.empty(total_token_num, num_query_heads, head_size, dtype=dtype)
         query.uniform_(-max_value, max_value)
-        
+
         key = torch.empty(total_token_num, num_kv_heads, head_size, dtype=dtype)
         key.uniform_(-max_value, max_value)
         value = torch.empty(total_token_num, num_kv_heads, head_size, dtype=dtype)
@@ -923,15 +924,17 @@ def test_prefix_prefill_attention(
         alibi_slopes = None
 
         max_seq_len = max(seq_lens)
-        b_seq_lens = torch.tensor(seq_lens, dtype=torch.int)  # vllm unit test uses long, but that doesn't work with flash_attn
+        b_seq_lens = torch.tensor(
+            seq_lens, dtype=torch.int
+        )  # vllm unit test uses long, but that doesn't work with flash_attn
         b_ctx_lens = torch.tensor(ctx_lens, dtype=torch.int)
         b_query_lens = torch.tensor(query_lens, dtype=torch.int)
-        b_start_loc = torch.cumsum(torch.tensor([0] + query_lens,
-                                            dtype=torch.int),
-                               dim=0, dtype=torch.int) 
-        b_seq_start_loc = torch.cumsum(torch.tensor([0] + seq_lens[:-1],
-                                                dtype=torch.int),
-                                   dim=0, dtype=torch.int)
+        b_start_loc = torch.cumsum(
+            torch.tensor([0] + query_lens, dtype=torch.int), dim=0, dtype=torch.int
+        )
+        b_seq_start_loc = torch.cumsum(
+            torch.tensor([0] + seq_lens[:-1], dtype=torch.int), dim=0, dtype=torch.int
+        )
 
         # Create the block tables.
         max_num_blocks_per_seq = (max_seq_len + block_size - 1) // block_size
@@ -967,22 +970,18 @@ def test_prefix_prefill_attention(
         # create KV caches and fitting linear k and v
         k = torch.zeros(total_token_num, num_kv_heads, head_size, dtype=dtype)
         v = torch.zeros(total_token_num, num_kv_heads, head_size, dtype=dtype)
-        key_cache = torch.zeros(num_blocks,
-                          block_size,
-                          num_kv_heads,
-                          head_size,
-                          dtype=cache_dtype)
-        value_cache = torch.zeros(num_blocks,
-                          block_size,
-                          num_kv_heads,
-                          head_size,
-                          dtype=cache_dtype)
+        key_cache = torch.zeros(
+            num_blocks, block_size, num_kv_heads, head_size, dtype=cache_dtype
+        )
+        value_cache = torch.zeros(
+            num_blocks, block_size, num_kv_heads, head_size, dtype=cache_dtype
+        )
         for i in range(batch_size):
             for j in range(query_lens[i]):
-                k[b_start_loc[i] + j].copy_(key[b_seq_start_loc[i] + b_ctx_lens[i] +
-                                                j])
-                v[b_start_loc[i] + j].copy_(value[b_seq_start_loc[i] +
-                                                  b_ctx_lens[i] + j])
+                k[b_start_loc[i] + j].copy_(key[b_seq_start_loc[i] + b_ctx_lens[i] + j])
+                v[b_start_loc[i] + j].copy_(
+                    value[b_seq_start_loc[i] + b_ctx_lens[i] + j]
+                )
             cur_ctx = 0
             block_id = 0
             while cur_ctx < b_ctx_lens[i]:
@@ -993,24 +992,30 @@ def test_prefix_prefill_attention(
                     end_loc = start_loc + block_size
                 start_slot = block_table_t[i, block_id] * block_size
                 end_slot = start_slot + end_loc - start_loc
-                key_cache.view(-1, num_kv_heads,
-                             head_size)[start_slot:end_slot].copy_(
-                                 key[start_loc:end_loc])
-                value_cache.view(-1, num_kv_heads,
-                             head_size)[start_slot:end_slot].copy_(
-                                 value[start_loc:end_loc])
+                key_cache.view(-1, num_kv_heads, head_size)[start_slot:end_slot].copy_(
+                    key[start_loc:end_loc]
+                )
+                value_cache.view(-1, num_kv_heads, head_size)[
+                    start_slot:end_slot
+                ].copy_(value[start_loc:end_loc])
                 cur_ctx += block_size
                 block_id += 1
         # transpose K_cache[num_blocks, block_size, num_kv_heads, head_size]
         # to K_cache[num_blocks, num_kv_heads, head_size/8, block_size, 8]
         # key_cache = key_cache.view(-1, block_size, num_kv_heads, head_size // 8,
         #                        8).permute(0, 2, 3, 1, 4).contiguous()
-        key_cache = key_cache.view(-1, block_size, num_kv_heads, head_size).permute(0, 2, 3, 1).contiguous()
+        key_cache = (
+            key_cache.view(-1, block_size, num_kv_heads, head_size)
+            .permute(0, 2, 3, 1)
+            .contiguous()
+        )
         # transpose V_cache[num_blocks, block_size, num_kv_heads, head_size]
         # to V_cache[num_blocks, num_kv_heads, head_size, block_size]
-        value_cache = value_cache.view(-1, block_size, num_kv_heads,
-                               head_size).permute(0, 2, 3, 1).contiguous()
-
+        value_cache = (
+            value_cache.view(-1, block_size, num_kv_heads, head_size)
+            .permute(0, 2, 3, 1)
+            .contiguous()
+        )
 
         ref_output = torch.empty_like(query)
         ref_prefix_prefill(
