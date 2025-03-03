@@ -62,6 +62,9 @@ except ImportError:
         "WARNING: Created fake module to work-around missing triton-dejavu module. If you don't expect this warning, this is likely to become an error."
     )
 
+from .triton_chunked_prefill_paged_decode import (
+    chunked_prefill_paged_decode
+)
 from .triton_paged_decode_attention_2d import (
     paged_attention_triton_2d as paged_attention_2d,
 )

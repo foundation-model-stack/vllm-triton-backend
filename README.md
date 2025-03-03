@@ -2,12 +2,12 @@
 
 This repo contains:
 
-- A Triton-only attention backend for vLLM, implemented as [vLLM platform plugin](https://docs.vllm.ai/en/latest/design/plugin_system.html), see [`ibm_triton_lib/backend`](./ibm_triton_lib/backend/). 
-- New Triton kernels that implement different attention algorithms, see [`ibm_triton_lib/kernels`](./ibm_triton_lib/kernels/).
+- A Triton-only attention backend for vLLM, implemented as [vLLM platform plugin](https://docs.vllm.ai/en/latest/design/plugin_system.html), see [`ibm-triton-lib/ibm_triton_lib/backend`](./ibm-triton-lib/ibm_triton_lib/backend/). 
+- New Triton kernels that implement different attention algorithms, see [`ibm-triton-lib/ibm_triton_lib/kernels`](./ibm-triton-lib/ibm_triton_lib/kernels/).
 - Containerized development environment (vLLM + Triton built from source). 
 - A microbenchmarking framework for evaluating their performance. 
 
-Triton kernels require autotuning to achieve best possible performance, but naïve autotuning comes with a significant overhead at runtime. Therefore, this repository depends on [triton-dejavu](https://github.com/IBM/triton-dejavu) to reduce the overhead of autotuning to zero while still adapting triton kernels for each platform and request individually. The necessary dejavu data can be found in [`ibm_triton_lib/kernels/dejavu_data`](./ibm_triton_lib/kernels/dejavu_data/).
+Triton kernels require autotuning to achieve best possible performance, but naïve autotuning comes with a significant overhead at runtime. Therefore, this repository depends on [triton-dejavu](https://github.com/IBM/triton-dejavu) to reduce the overhead of autotuning to zero while still adapting triton kernels for each platform and request individually. The necessary dejavu data can be found in [`ibm-triton-lib/ibm_triton_lib/kernels/dejavu_data`](./ibm-triton-lib/ibm_triton_lib/kernels/dejavu_data/).
 
 ## How to use
 
@@ -32,15 +32,15 @@ mkdir results
 chmod o+w results
 docker run --gpus all -it --rm \
     -v $(pwd)/scripts:/scripts \
-    -v $(pwd)/ibm_triton_lib:/opt/runtime/lib64/python3.12/site-packages/ibm_triton_lib/ \
+    -v $(pwd)/ibm-triton-lib/ibm_triton_lib:/opt/runtime/lib64/python3.12/site-packages/ibm_triton_lib \
     -v $(pwd)/results:/results \
     vllm-triton-backend-$(id -un) /scripts/benchmark.py
 ```
 The results of the benchmark are written to the results folder. 
 One can edit the benchmark scripts and the kernel code without rebuilding the container.
 
-Since `ibm_triton_lib` is also installed as python package in the vllm-triton-backend image it can be used in python scripts with `import ibm_triton_lib`.
-However, if latest version of the `ibm_triton_lib` should be used, without frequently re-building the docker image, it could be mounted in the installed directory, which is currently `/opt/runtime/lib64/python3.12/site-packages/ibm_triton_lib/`, as shown above. Similar applies for the `triton_dejavu` or `vllm` module or the `scripts` folder.
+Since `ibm-triton-lib` is also installed as python package in the vllm-triton-backend image it can be used in python scripts with `import ibm-triton-lib`.
+However, if latest version of the `ibm-triton-lib` should be used, without frequently re-building the docker image, it could be mounted in the installed directory, which is currently `/opt/runtime/lib64/python3.12/site-packages/ibm-triton-lib/`, as shown above. Similar applies for the `triton_dejavu` or `vllm` module or the `scripts` folder.
 
 ### 3) run vllm triton-only backend
 
@@ -61,7 +61,7 @@ git clone https://github.com/foundation-model-stack/vllm-triton-backend.git
 pip install ./vllm-triton-backend
 ```
 
-If using `ibm_triton_lib` outside from our container, the following needs to be taken into account:
+If using `ibm-triton-lib` outside from our container, the following needs to be taken into account:
 
 - at least triton 3.2 is required, and therefore pytorch >= 2.6
 - our plugin must be installed after vllm (see [documentation](https://docs.vllm.ai/en/latest/design/plugin_system.html))

@@ -190,12 +190,11 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 # Install IBM kernels and vllm plugin
 #  must be after vllm!
-COPY ibm_triton_lib ibm_triton_lib/ibm_triton_lib
-COPY setup.py ibm_triton_lib
+COPY ibm-triton-lib ibm-triton-lib
 RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=cache,target=/root/.cache/uv \
-    uv pip install ./ibm_triton_lib \
-    && rm -rf ibm_triton_lib
+    uv pip install ./ibm-triton-lib \
+    && rm -rf ibm-triton-lib
 
 ## Benchmarking #################################################################
 FROM runtime AS benchmark
