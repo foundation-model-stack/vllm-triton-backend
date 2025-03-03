@@ -1,0 +1,5 @@
+Metadata-Version: 2.1
+Name: ibm_triton_lib
+Version: 0.0.1
+Summary: Triton-only backend for vLLM and Triton kernel library
+Requires-Python: >=3.8

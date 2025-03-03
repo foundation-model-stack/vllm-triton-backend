@@ -90,28 +90,30 @@ def kernel_paged_attention_2d(
     BLOCK_SIZE: tl.constexpr,  # int
     HEAD_SIZE: tl.constexpr,  # int, must be power of 2
     USE_ALIBI_SLOPES: tl.constexpr,  # bool
-    x: tl.constexpr,
-    stride_k_cache_0: tl.constexpr,
-    stride_k_cache_1: tl.constexpr,
-    stride_k_cache_2: tl.constexpr,
-    stride_k_cache_3: tl.constexpr,
-    stride_k_cache_4: tl.constexpr,
-    stride_v_cache_0: tl.constexpr,
-    stride_v_cache_1: tl.constexpr,
-    stride_v_cache_2: tl.constexpr,
-    stride_v_cache_3: tl.constexpr,
+    x: tl.constexpr, # int
+    stride_k_cache_0: tl.constexpr, # int
+    stride_k_cache_1: tl.constexpr, # int
+    stride_k_cache_2: tl.constexpr, # int
+    stride_k_cache_3: tl.constexpr, # int
+    stride_k_cache_4: tl.constexpr, # int
+    stride_v_cache_0: tl.constexpr, # int
+    stride_v_cache_1: tl.constexpr, # int
+    stride_v_cache_2: tl.constexpr, # int
+    stride_v_cache_3: tl.constexpr, # int
+    VLLM_USE_V1: tl.constexpr, # bool
 ):
     seq_idx = tl.program_id(0)
     query_head_idx = tl.program_id(1)
     kv_head_idx = query_head_idx // num_queries_per_kv
 
-    cur_batch_in_all_start_index = tl.load(cu_q_len_ptr + seq_idx)
-    cur_batch_in_all_stop_index = tl.load(cu_q_len_ptr + seq_idx + 1)
-    cur_batch_query_len = (cur_batch_in_all_stop_index -
-                           cur_batch_in_all_start_index)
+    if VLLM_USE_V1:
+        cur_batch_in_all_start_index = tl.load(cu_q_len_ptr + seq_idx)
+        cur_batch_in_all_stop_index = tl.load(cu_q_len_ptr + seq_idx + 1)
+        cur_batch_query_len = (cur_batch_in_all_stop_index -
+                               cur_batch_in_all_start_index)
 
-    if cur_batch_query_len > 1:
-        return
+        if cur_batch_query_len > 1:
+            return
 
     query_offset = seq_idx * query_stride_0 + query_head_idx * query_stride_1
 
