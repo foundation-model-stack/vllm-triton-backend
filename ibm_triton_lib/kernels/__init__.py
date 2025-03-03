@@ -15,6 +15,53 @@
 #  *******************************************************************************/
 #
 
+# create fake module if triton-dejavu is not present
+#  remove ASAP
+try:
+    import triton_dejavu
+except ImportError:
+    import sys
+
+    class Fake_autotuner(object):
+
+        def __init__(self, *args, **ignore_args):
+            pass
+
+        def __call__(self, *args, **kwds):
+            pass
+
+        def run(self, *args, **kwargs):
+            print(
+                "ERROR: triton-dejavu is called while not being installed. Please install triton-dejavu!"
+            )
+            raise ImportError
+
+        def __getitem__(self, grid):
+            print(
+                "ERROR: triton-dejavu is called while not being installed. Please install triton-dejavu!"
+            )
+            raise ImportError
+
+    class Fake_triton_dejavu(object):
+
+        def autotune(*args, **kwargs):
+            fake_decorator = lambda fn: Fake_autotuner(fn)
+            return fake_decorator
+
+        @staticmethod
+        def ConfigSpace(
+            kwargs_with_lists,
+            kwarg_conditions=None,
+            pre_hook=None,
+            **configuration_args,
+        ):
+            pass
+
+    sys.modules["triton_dejavu"] = Fake_triton_dejavu
+    print(
+        "WARNING: Created fake module to work-around missing triton-dejavu module. If you don't expect this warning, this is likely to become an error."
+    )
+
 from .triton_paged_decode_attention_2d import (
     paged_attention_triton_2d as paged_attention_2d,
 )
