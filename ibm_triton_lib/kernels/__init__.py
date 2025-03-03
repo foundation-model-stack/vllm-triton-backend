@@ -59,7 +59,7 @@ except ImportError:
 
     sys.modules["triton_dejavu"] = Fake_triton_dejavu
     print(
-        "WARNING: Crated fake module to gap missing triton-dejavu module. If you don't expect this warning, this is likely to become an error."
+        "WARNING: Created fake module to work-around missing triton-dejavu module. If you don't expect this warning, this is likely to become an error."
     )
 
 from .triton_paged_decode_attention_2d import (
