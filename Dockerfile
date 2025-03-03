@@ -196,8 +196,6 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     uv pip install ./ibm-triton-lib \
     && rm -rf ibm-triton-lib
 
-RUN python -c "from ibm_triton_lib.utils.triton_utils import get_runtime_label"
-
 ## Benchmarking #################################################################
 FROM runtime AS benchmark
 
