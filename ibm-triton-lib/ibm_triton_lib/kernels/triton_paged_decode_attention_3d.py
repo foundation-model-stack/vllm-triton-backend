@@ -296,11 +296,6 @@ def paged_attention_triton_3d(
     head_size,
     cu_q_len,
 ):
-    # option 1
-    # max_num_segments_per_seq = 1
-    # blocks_per_segment = (block_tables.stride(0) + max_num_segments_per_seq - 1) // max_num_segments_per_seq
-
-    # option 2
     blocks_per_segment = 16
     max_num_segments_per_seq = 1
     while max_num_segments_per_seq < (
