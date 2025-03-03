@@ -79,7 +79,6 @@ def kernel_paged_attention_2d(
     context_lens_ptr,  # [num_seqs]
     alibi_slopes_ptr,  # [num_query_heads]
     scale,  # float32
-    cu_q_len_ptr, # [num_seqs+1]
     num_query_heads: tl.constexpr,  # int
     num_queries_per_kv: tl.constexpr,  # int
     block_table_stride: tl.constexpr,  # int, should be equal to max_num_blocks_per_seq
@@ -100,15 +99,16 @@ def kernel_paged_attention_2d(
     stride_v_cache_1: tl.constexpr, # int
     stride_v_cache_2: tl.constexpr, # int
     stride_v_cache_3: tl.constexpr, # int
-    VLLM_USE_V1: tl.constexpr, # bool
+    filter_by_query_len: tl.constexpr, # bool
+    query_start_len_ptr, # [num_seqs+1]
 ):
     seq_idx = tl.program_id(0)
     query_head_idx = tl.program_id(1)
     kv_head_idx = query_head_idx // num_queries_per_kv
 
-    if VLLM_USE_V1:
-        cur_batch_in_all_start_index = tl.load(cu_q_len_ptr + seq_idx)
-        cur_batch_in_all_stop_index = tl.load(cu_q_len_ptr + seq_idx + 1)
+    if filter_by_query_len:
+        cur_batch_in_all_start_index = tl.load(query_start_len_ptr + seq_idx)
+        cur_batch_in_all_stop_index = tl.load(query_start_len_ptr + seq_idx + 1)
         cur_batch_query_len = (cur_batch_in_all_stop_index -
                                cur_batch_in_all_start_index)
 
@@ -215,7 +215,6 @@ def paged_attention_triton_2d(
     num_query_heads,
     num_queries_per_kv,
     head_size,
-    cu_q_len,
 ):
     use_alibi_slopes = alibi_slopes is not None
 
@@ -237,6 +236,7 @@ def paged_attention_triton_2d(
             key_cache.stride(1),
             key_cache.stride(2),
             key_cache.stride(3),
+            key_cache.stride(4) if len(key_cache.shape)==5 else 1,
         )
         print("output strides: ", output.stride(0), output.stride(1), output.stride(2))
         print(
@@ -264,7 +264,6 @@ def paged_attention_triton_2d(
         context_lens_ptr=context_lens,
         alibi_slopes_ptr=alibi_slopes,
         scale=scale,
-        cu_q_len_ptr=cu_q_len,
         num_query_heads=num_query_heads,
         num_queries_per_kv=num_queries_per_kv,
         block_table_stride=block_tables.stride(0),
@@ -275,14 +274,16 @@ def paged_attention_triton_2d(
         BLOCK_SIZE=block_size,
         HEAD_SIZE=head_size,
         USE_ALIBI_SLOPES=use_alibi_slopes,
-        x=key_cache.shape[4],
+        x=key_cache.shape[4] if len(key_cache.shape)==5 else 1,
         stride_k_cache_0=key_cache.stride(0),
         stride_k_cache_1=key_cache.stride(1),
         stride_k_cache_2=key_cache.stride(2),
         stride_k_cache_3=key_cache.stride(3),
-        stride_k_cache_4=key_cache.stride(4),
+        stride_k_cache_4=key_cache.stride(4) if len(key_cache.shape)==5 else 1,
         stride_v_cache_0=value_cache.stride(0),
         stride_v_cache_1=value_cache.stride(1),
         stride_v_cache_2=value_cache.stride(2),
         stride_v_cache_3=value_cache.stride(3),
+        filter_by_query_len=False,
+        query_start_len_ptr=None,
     )
