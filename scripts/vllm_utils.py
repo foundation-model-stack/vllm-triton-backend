@@ -248,7 +248,10 @@ def ref_prefix_prefill(
 
         if cur_batch_query_len == 1:
             # normal decode
-            q = query[i].unsqueeze(0)
+            # q = query[i].unsqueeze(0)
+            q = query[cur_batch_in_all_start_index:cur_batch_in_all_stop_index]
+            # print(q)
+            # print(q.shape)
             block_table = block_tables_lst[i]
             seq_len = int(ctx_lens_lst[i])
             keys_lst: List[torch.Tensor] = []
@@ -261,13 +264,13 @@ def ref_prefix_prefill(
                 keys_lst.append(k)
                 v = value_cache[block_number, :, :, block_offset]
                 values_lst.append(v)
-            keys = torch.stack(keys_lst, dim=0)
-            values = torch.stack(values_lst, dim=0)
+            reconstr_keys = torch.stack(keys_lst, dim=0)
+            reconstr_values = torch.stack(values_lst, dim=0)
             if num_queries_per_kv > 1:
                 # Handle MQA and GQA
-                keys = torch.repeat_interleave(keys, num_queries_per_kv, dim=1)
-                values = torch.repeat_interleave(values, num_queries_per_kv, dim=1)
-            out = ref_masked_attention(q, keys, values, scale)
+                reconstr_keys = torch.repeat_interleave(reconstr_keys, num_queries_per_kv, dim=1)
+                reconstr_values = torch.repeat_interleave(reconstr_values, num_queries_per_kv, dim=1)
+            out = ref_masked_attention(q, reconstr_keys, reconstr_values, scale)
             # out = out.view(num_query_heads, head_size)
             # output[i].copy_(out, non_blocking=True)
             ref_outputs.append(out)
