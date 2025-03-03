@@ -114,8 +114,10 @@ def kernel_paged_attention_2d(
 
         if cur_batch_query_len > 1:
             return
+    else:
+        cur_batch_in_all_start_index = seq_idx
 
-    query_offset = seq_idx * query_stride_0 + query_head_idx * query_stride_1
+    query_offset = cur_batch_in_all_start_index * query_stride_0 + query_head_idx * query_stride_1
 
     # Q : (HEAD_SIZE,)
     Q = tl.load(query_ptr + query_offset + tl.arange(0, HEAD_SIZE))
@@ -196,7 +198,7 @@ def kernel_paged_attention_2d(
     # epilogue
     acc = acc / l
 
-    output_offset = seq_idx * output_stride_0 + query_head_idx * output_stride_1
+    output_offset = cur_batch_in_all_start_index * output_stride_0 + query_head_idx * output_stride_1
 
     tl.store(output_ptr + output_offset + tl.arange(0, HEAD_SIZE), acc)
 
