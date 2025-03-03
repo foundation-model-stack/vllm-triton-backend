@@ -99,6 +99,7 @@ SEQUENCE_LENGTHS = [16, 128, 512, 1024, 2048, 4096]
 # PREFIX_PREFILL_SHARE_OF_DECODE = [1.0]
 PREFIX_PREFILL_SHARE_OF_DECODE = [0.0, 0.5, 1.0]
 PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL = [0.0, 0.5]
+# PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL = [0.5]
 
 # HEAD_SIZES_FLASH = [32, 64, 128]  # only powers of 2!
 HEAD_SIZES = [128]  # only powers of 2! for llama2 & 3
@@ -892,11 +893,11 @@ def test_prefix_prefill_attention(
     partial_prefill_seqs = int(np.ceil(prefill_seqs * partial_prefill_share))
     full_prefill_seqs = prefill_seqs - partial_prefill_seqs
     partial_prefill_ctx_lens = [
-        int(np.ceil(l // block_size * 0.5))
+        int(np.ceil(l // block_size * 0.5)) * block_size
         for l in init_seq_lens[decode_seqs : decode_seqs + partial_prefill_seqs]
     ]
     partial_prefill_q_lens = [
-        int(np.floor(l // block_size * 0.5))
+        int(np.floor(l // block_size * 0.5)) * block_size
         for l in init_seq_lens[decode_seqs : decode_seqs + partial_prefill_seqs]
     ]
     query_lens = (
@@ -909,8 +910,11 @@ def test_prefix_prefill_attention(
         + partial_prefill_ctx_lens[decode_seqs : decode_seqs + partial_prefill_seqs]
         + [0] * full_prefill_seqs
     )
+    # print(f"decode share: {decode_share}; prefill share {1-decode_share} -> of that: partial prefill share {partial_prefill_share}")
     # print(f"{decode_seqs} {prefill_seqs} {partial_prefill_seqs} {full_prefill_seqs}")
     # print(init_seq_lens)
+    # print(partial_prefill_q_lens)
+    # print(partial_prefill_ctx_lens)
     # print(query_lens)
     # print(ctx_lens)
     assert len(ctx_lens) == len(query_lens)
