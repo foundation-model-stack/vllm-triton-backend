@@ -322,6 +322,8 @@ def ref_prefix_prefill(
                 values_lst.append(v)
             reconstructed_keys = torch.stack(keys_lst, dim=0)
             reconstructed_values = torch.stack(values_lst, dim=0)
+            linear_key = key[cur_batch_in_all_start_index:cur_batch_in_all_stop_index]
+            linear_value = value[cur_batch_in_all_start_index:cur_batch_in_all_stop_index]
             if num_queries_per_kv > 1:
                 # Handle MQA and GQA
                 reconstructed_keys = torch.repeat_interleave(
@@ -330,13 +332,15 @@ def ref_prefix_prefill(
                 reconstructed_values = torch.repeat_interleave(
                     reconstructed_values, num_queries_per_kv, dim=1
                 )
+                linear_key = torch.repeat_interleave(key[cur_batch_in_all_start_index:cur_batch_in_all_stop_index], num_queries_per_kv, dim=1)
+                linear_value = torch.repeat_interleave(value[cur_batch_in_all_start_index:cur_batch_in_all_stop_index], num_queries_per_kv, dim=1)
             all_keys = [
                 reconstructed_keys,
-                key[cur_batch_in_all_start_index:cur_batch_in_all_stop_index],
+                linear_key,
             ]
             all_values = [
                 reconstructed_values,
-                value[cur_batch_in_all_start_index:cur_batch_in_all_stop_index],
+                linear_value
             ]
             all_keys_t = torch.cat(all_keys, dim=0)
             all_values_t = torch.cat(all_values, dim=0)
