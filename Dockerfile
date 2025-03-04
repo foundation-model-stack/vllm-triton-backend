@@ -190,12 +190,11 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 # Install IBM kernels and vllm plugin
 #  must be after vllm!
-COPY ibm_triton_lib ibm_triton_lib/ibm_triton_lib
-COPY setup.py ibm_triton_lib
+COPY ibm-triton-lib ibm-triton-lib
 RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=cache,target=/root/.cache/uv \
-    uv pip install ./ibm_triton_lib \
-    && rm -rf ibm_triton_lib
+    uv pip install ./ibm-triton-lib \
+    && rm -rf ibm-triton-lib
 
 ## Benchmarking #################################################################
 FROM runtime AS benchmark
@@ -218,6 +217,10 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     python3 -m pip install https://github.com/flashinfer-ai/flashinfer/releases/download/v0.1.6/flashinfer-0.1.6+cu121torch2.4-cp${PYTHON_VERSION_STR}-cp${PYTHON_VERSION_STR}-linux_x86_64.whl
 
 RUN ln -s ${VIRTUAL_ENV}/lib/python${PYTHON_VERSION}/site-packages/nvidia/cuda_cupti/lib/libcupti.so.12  ${VIRTUAL_ENV}/lib/python${PYTHON_VERSION}/site-packages/nvidia/cuda_cupti/lib/libcupti.so
+
+RUN --mount=type=cache,target=/root/.cache/pip \
+    --mount=type=cache,target=/root/.cache/uv \
+    git clone --depth 1 https://github.com/EleutherAI/lm-evaluation-harness && cd lm-evaluation-harness && uv pip install .
 
 
 ENV STORE_TEST_RESULT_PATH=/results

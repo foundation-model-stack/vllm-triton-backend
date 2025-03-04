@@ -14,16 +14,15 @@
 #   * limitations under the License.
 #  *******************************************************************************/
 #
+import os
 
-from .triton_paged_decode_attention_2d import (
-    paged_attention_triton_2d as paged_attention_2d,
-)
-from .triton_paged_decode_attention_3d import (
-    paged_attention_triton_3d as paged_attention_3d,
-)
-from .triton_flash_attention import (
-    triton_wrapper_forward_prefill as prefill_flash_attention,
-)
-from .fused_gqa_paged import (
-    paged_attention_triton_3d as paged_attention_fp8_3d,
-)
+def register():
+    """Register the triton attention platform."""
+
+    VLLM_USE_V1 = int(os.environ.get('VLLM_USE_V1', "0"))
+
+    # backend only works with v0 currently
+    if VLLM_USE_V1:
+        return None
+    else:
+        return "ibm_triton_lib.backend.platform.TritonPlatform"
