@@ -55,10 +55,18 @@ setup(
     # long_description_content_type="text/markdown",
     # author="Burkhard Ringlein, Tom Parnell, Jan van Lunteren, Chih Chieh Yang",
     python_requires=">=3.8",
-    packages=["ibm_triton_lib", "ibm_triton_lib.utils", "ibm_triton_lib.kernels", "ibm_triton_lib.backend", "ibm_triton_lib.kernels.fused_gqa_paged"],
+    packages=[
+        "ibm_triton_lib",
+        "ibm_triton_lib.utils",
+        "ibm_triton_lib.kernels",
+        "ibm_triton_lib.backend",
+        "ibm_triton_lib.kernels.fused_gqa_paged",
+    ],
     package_data={
         "ibm_triton_lib": dejavu_data,
     },
     include_package_data=True,
-    entry_points = {'vllm.platform_plugins': ["triton_attn = ibm_triton_lib.backend:register"]},
+    entry_points={
+        "vllm.platform_plugins": ["triton_attn = ibm_triton_lib.backend:register"]
+    },
 )
