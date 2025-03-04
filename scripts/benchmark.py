@@ -897,12 +897,10 @@ def test_prefix_prefill_attention(
     partial_prefill_seqs = int(np.ceil(prefill_seqs * partial_prefill_share))
     full_prefill_seqs = prefill_seqs - partial_prefill_seqs
     partial_prefill_ctx_lens = [
-        int(np.ceil(l // block_size * 0.5)) * block_size
-        for l in init_seq_lens
+        int(np.ceil(l // block_size * 0.5)) * block_size for l in init_seq_lens
     ]
     partial_prefill_q_lens = [
-        int(np.floor(l // block_size * 0.5)) * block_size
-        for l in init_seq_lens
+        int(np.floor(l // block_size * 0.5)) * block_size for l in init_seq_lens
     ]
     query_lens = (
         [1] * decode_seqs
@@ -914,7 +912,9 @@ def test_prefix_prefill_attention(
         + partial_prefill_ctx_lens[decode_seqs : decode_seqs + partial_prefill_seqs]
         + [0] * full_prefill_seqs
     )
-    print(f"decode share: {decode_share}; prefill share {1-decode_share} -> of that: partial prefill share {partial_prefill_share}")
+    print(
+        f"decode share: {decode_share}; prefill share {1-decode_share} -> of that: partial prefill share {partial_prefill_share}"
+    )
     print(f"{decode_seqs} {prefill_seqs} {partial_prefill_seqs} {full_prefill_seqs}")
     print(init_seq_lens)
     print(partial_prefill_q_lens)
