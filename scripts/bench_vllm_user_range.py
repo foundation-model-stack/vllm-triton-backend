@@ -48,7 +48,9 @@ gpu_name = torch.cuda.get_device_name().replace(" ", "_").replace("/", "_")
 model = sys.argv[1]
 model_path = f"/models/{model}/"
 testcase_name = sys.argv[2]
-max_rounds = 128
+
+# max_rounds = 128
+max_rounds = 64
 max_num_prompts = 1000
 
 timestamp_f = datetime.now().strftime("%Y-%m-%d_%H%M")
@@ -72,11 +74,14 @@ for max_concurrency in num_users_to_test:
         f"--model {model_path} "
         f"--dataset-name sharegpt --dataset-path ShareGPT_V3_unfiltered_cleaned_split.json "
         f"--save-result --result-dir {result_dir} --max-concurrency {max_concurrency} "
-        f"--percentile-metrics ttft,tpot,itl,e2el --metric-percentiles 20,50,80 "
+        f"--percentile-metrics ttft,tpot,itl,e2el --metric-percentiles 20,50,80,99 "
         f"--num-prompts {num_prompts} "
     )
     print(cmd)
-    os.system(cmd)
+    rv = os.system(cmd)
+    if rv != 0:
+        print(f"benchmark command returned {rv}, stopping...")
+        break
 
 print(f"results stored in: {result_dir}")
 os.system(f"ls -alh {result_dir}")
