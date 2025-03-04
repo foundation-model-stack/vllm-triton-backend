@@ -225,6 +225,9 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 ENV STORE_TEST_RESULT_PATH=/results
 
+# copy vllm benchmarks
+COPY vllm/benchmarks benchmarks
+
 # Copy thid-party kernels and insert into path
 COPY third_party third_party
 ENV PYTHONPATH /workspace
