@@ -89,7 +89,8 @@ def kernel_paged_attention_2d(
     output_stride_0: tl.constexpr,  # int
     output_stride_1: tl.constexpr,  # int, should be equal to head_size
     BLOCK_SIZE: tl.constexpr,  # int
-    HEAD_SIZE: tl.constexpr,  # int, must be power of 2
+    HEAD_SIZE: tl.constexpr,  # int
+    HEAD_SIZE_PADDED: tl.constexpr, # int, must be power of 2
     USE_ALIBI_SLOPES: tl.constexpr,  # bool
     x: tl.constexpr, # int
     stride_k_cache_0: tl.constexpr, # int
@@ -121,14 +122,19 @@ def kernel_paged_attention_2d(
 
     query_offset = cur_batch_in_all_start_index * query_stride_0 + query_head_idx * query_stride_1
 
+    offs_n = tl.arange(0, BLOCK_SIZE)
+    offs_d = tl.arange(0, HEAD_SIZE_PADDED)
+
+    dim_mask = tl.where(tl.arange(0, HEAD_SIZE_PADDED) < HEAD_SIZE, 1, 0).to(tl.int1)
+
     # Q : (HEAD_SIZE,)
-    Q = tl.load(query_ptr + query_offset + tl.arange(0, HEAD_SIZE))
+    Q = tl.load(query_ptr + query_offset + tl.arange(0, HEAD_SIZE_PADDED), mask=dim_mask, other=0.0)
 
     block_table_offset = seq_idx * block_table_stride
 
     m = tl.full([1], float("-inf"), dtype=tl.float32)
     l = tl.full([1], 1.0, dtype=tl.float32)
-    acc = tl.zeros([HEAD_SIZE], dtype=tl.float32)
+    acc = tl.zeros([HEAD_SIZE_PADDED], dtype=tl.float32)
 
     # context len for this particualr sequence
     context_len = tl.load(context_lens_ptr + seq_idx)
@@ -144,9 +150,6 @@ def kernel_paged_attention_2d(
 
         physical_block_idx = tl.load(block_tables_ptr + block_table_offset + j)
 
-        offs_n = tl.arange(0, BLOCK_SIZE)
-        offs_d = tl.arange(0, HEAD_SIZE)
-
         v_offset = (physical_block_idx * stride_v_cache_0 +
                     kv_head_idx * stride_v_cache_1 +
                     offs_d[:, None] * stride_v_cache_2 +
@@ -159,7 +162,7 @@ def kernel_paged_attention_2d(
                     (offs_d[:, None] % x) * stride_k_cache_4)
 
         # K : (HEAD_SIZE, BLOCK_SIZE)
-        K_load = tl.load(key_cache_ptr + k_offset)
+        K_load = tl.load(key_cache_ptr + k_offset, mask=dim_mask[:,None], other=0.0)
 
         if K_load.dtype.is_fp8():
             K = (K_load.to(tl.float32) * tl.load(k_scale)).to(Q.dtype)
@@ -167,7 +170,7 @@ def kernel_paged_attention_2d(
             K = K_load
 
         # V : (HEAD_SIZE, BLOCK_SIZE)
-        V_load = tl.load(value_cache_ptr + v_offset)
+        V_load = tl.load(value_cache_ptr + v_offset, mask=dim_mask[:,None], other=0.0)
 
         if V_load.dtype.is_fp8():
             V = (V_load.to(tl.float32) * tl.load(v_scale)).to(Q.dtype)
@@ -212,7 +215,7 @@ def kernel_paged_attention_2d(
 
     output_offset = cur_batch_in_all_start_index * output_stride_0 + query_head_idx * output_stride_1
 
-    tl.store(output_ptr + output_offset + tl.arange(0, HEAD_SIZE), acc)
+    tl.store(output_ptr + output_offset + tl.arange(0, HEAD_SIZE_PADDED), acc, mask=dim_mask)
 
 
 def paged_attention_triton_2d(
@@ -308,6 +311,7 @@ def paged_attention_triton_2d(
         output_stride_1=output.stride(1),
         BLOCK_SIZE=block_size,
         HEAD_SIZE=head_size,
+        HEAD_SIZE_PADDED=triton.next_power_of_2(head_size),
         USE_ALIBI_SLOPES=use_alibi_slopes,
         x=key_cache.shape[4] if len(key_cache.shape)==5 else 1,
         stride_k_cache_0=key_cache.stride(0),
