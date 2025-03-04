@@ -101,12 +101,14 @@ def kernel_paged_attention_3d(
     stride_v_cache_1: tl.constexpr,
     stride_v_cache_2: tl.constexpr,
     stride_v_cache_3: tl.constexpr,
+    filter_by_query_len: tl.constexpr, # bool
+    query_start_len_ptr, # [num_seqs+1]
 ):
     seq_idx = tl.program_id(0)
     query_head_idx = tl.program_id(1)
     segm_idx = tl.program_id(2)
 
-    # context len for this particualr sequence
+    # context len for this sequence
     context_len = tl.load(context_lens_ptr + seq_idx)
 
     if segm_idx * BLOCKS_PER_SEGMENT * BLOCK_SIZE >= context_len:
@@ -114,17 +116,20 @@ def kernel_paged_attention_3d(
 
     # CHECK order of above/below exit conditions
 
-    cur_batch_in_all_start_index = tl.load(cu_q_len_ptr + seq_idx)
-    cur_batch_in_all_stop_index = tl.load(cu_q_len_ptr + seq_idx + 1)
-    cur_batch_query_len = (cur_batch_in_all_stop_index -
-                           cur_batch_in_all_start_index)
+    if filter_by_query_len:
+        cur_batch_in_all_start_index = tl.load(query_start_len_ptr + seq_idx)
+        cur_batch_in_all_stop_index = tl.load(query_start_len_ptr + seq_idx + 1)
+        cur_batch_query_len = (cur_batch_in_all_stop_index -
+                               cur_batch_in_all_start_index)
 
-    if cur_batch_query_len > 1:
-        return
+        if cur_batch_query_len > 1:
+            return
+    else:
+        cur_batch_in_all_start_index = seq_idx
 
     kv_head_idx = query_head_idx // num_queries_per_kv
 
-    query_offset = seq_idx * query_stride_0 + query_head_idx * query_stride_1
+    query_offset = cur_batch_in_all_start_index * query_stride_0 + query_head_idx * query_stride_1
 
     # Q : (HEAD_SIZE,)
     Q = tl.load(query_ptr + query_offset + tl.arange(0, HEAD_SIZE))
@@ -233,9 +238,22 @@ def reduce_segments(
     BLOCKS_PER_SEGMENT: tl.constexpr,  # int
     MAX_NUM_SEGMENTS_PER_SEQ: tl.constexpr,  # int, must be power of 2
     HEAD_SIZE: tl.constexpr,  # int, must be power of 2
+    filter_by_query_len: tl.constexpr, # bool
+    query_start_len_ptr, # [num_seqs+1]
 ):
     seq_idx = tl.program_id(0)
     query_head_idx = tl.program_id(1)
+
+    if filter_by_query_len:
+        cur_batch_in_all_start_index = tl.load(query_start_len_ptr + seq_idx)
+        cur_batch_in_all_stop_index = tl.load(query_start_len_ptr + seq_idx + 1)
+        cur_batch_query_len = (cur_batch_in_all_stop_index -
+                               cur_batch_in_all_start_index)
+
+        if cur_batch_query_len > 1:
+            return
+    else:
+        cur_batch_in_all_start_index = seq_idx
 
     # create mask for subsequent loads
     context_len = tl.load(context_lens_ptr + seq_idx)
@@ -273,7 +291,7 @@ def reduce_segments(
 
     # write result
     output_offset = (
-        seq_idx * output_stride_0
+        cur_batch_in_all_start_index * output_stride_0
         + query_head_idx * output_stride_1
         + tl.arange(0, HEAD_SIZE)
     )
@@ -346,6 +364,7 @@ def paged_attention_triton_3d(
             key_cache.stride(1),
             key_cache.stride(2),
             key_cache.stride(3),
+            key_cache.stride(4) if len(key_cache.shape)==5 else 1,
         )
         print("output strides: ", output.stride(0), output.stride(1), output.stride(2))
         print(
@@ -391,6 +410,8 @@ def paged_attention_triton_3d(
         stride_v_cache_1=value_cache.stride(1),
         stride_v_cache_2=value_cache.stride(2),
         stride_v_cache_3=value_cache.stride(3),
+        filter_by_query_len=False,
+        query_start_len_ptr=None,
     )
 
     reduce_segments[(num_seqs, num_query_heads)](
@@ -406,4 +427,6 @@ def paged_attention_triton_3d(
         BLOCKS_PER_SEGMENT=blocks_per_segment,
         MAX_NUM_SEGMENTS_PER_SEQ=max_num_segments_per_seq,
         HEAD_SIZE=head_size,
+        filter_by_query_len=False,
+        query_start_len_ptr=None,
     )
