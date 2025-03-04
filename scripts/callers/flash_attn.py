@@ -152,6 +152,8 @@ class FlashAttnPrefixPrefillCaller(PrefixPrefillCaller):
         # print(query.shape)
         # print(key_cache.shape)
         # print(value_cache.shape)
+        print(max_query_len)
+        print(max_seqlen)
 
         def transform_kv_cache(x):
             out = torch.transpose(x, 1, 3)
@@ -160,8 +162,10 @@ class FlashAttnPrefixPrefillCaller(PrefixPrefillCaller):
 
         key_cache_flash_attn = transform_kv_cache(key_cache)
         value_cache_flash_attn = transform_kv_cache(value_cache)
-        # print(key_cache_flash_attn.shape)
-        # print(value_cache_flash_attn.shape)
+        print(key_cache_flash_attn.shape)
+        print(value_cache_flash_attn.shape)
+        print(start_loc.shape)
+        print(seq_lens.shape)
 
         def call_and_process_output():
             return flash_attn_varlen_func(

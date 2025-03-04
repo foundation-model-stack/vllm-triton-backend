@@ -77,12 +77,14 @@ SEEDS = [0]
 # BATCH_SIZES = [1, 2, 4, 8, 16, 32, 64, 128]
 # BATCH_SIZES = [128]
 # BATCH_SIZES = [64]
-# BATCH_SIZES = [1, 2]
+# BATCH_SIZES = [2]
 # BATCH_SIZES = [1, 2, 4, 8, 16, 32, 64, 128, 256]
 BATCH_SIZES = [1, 2, 3, 4, 5, 7, 8, 12, 16, 32, 64, 128]
 
 # order:  num_query_heads, num_kv_heads
-NUM_HEADS = [(32, 32), (32, 8)]
+# NUM_HEADS = [(32, 32), (32, 8)]
+# NUM_HEADS = [(32, 8)]
+NUM_HEADS = [(32, 32)]
 
 # SEQUENCE_LENGTHS = [16, 32, 64, 128, 512, 1024, 2048, 4096]
 # SEQUENCE_LENGTHS = [8]
@@ -97,9 +99,11 @@ SEQUENCE_LENGTHS = [16, 128, 512, 1024, 2048, 4096]
 # QUERY_LENGTHS = [1, 1024]
 # PREFIX_PREFILL_SHARE_OF_DECODE = [0.5]
 # PREFIX_PREFILL_SHARE_OF_DECODE = [1.0]
-PREFIX_PREFILL_SHARE_OF_DECODE = [0.0, 0.5, 1.0]
-PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL = [0.0, 0.5]
+PREFIX_PREFILL_SHARE_OF_DECODE = [0.0]
+# PREFIX_PREFILL_SHARE_OF_DECODE = [0.0, 0.5, 1.0]
+# PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL = [0.0, 0.5]
 # PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL = [0.5]
+PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL = [0.0]
 
 # HEAD_SIZES_FLASH = [32, 64, 128]  # only powers of 2!
 HEAD_SIZES = [128]  # only powers of 2! for llama2 & 3
@@ -205,8 +209,8 @@ do_benchmarks = True
 quantiles = [0.5, 0.2, 0.8]
 # should maybe also be controlled via env variable
 force_dump_dataframes = False
-# enforce_numerical_correctness = True
-enforce_numerical_correctness = False
+enforce_numerical_correctness = True
+# enforce_numerical_correctness = False
 do_profiling = True
 store_hatchet = False
 
@@ -894,11 +898,11 @@ def test_prefix_prefill_attention(
     full_prefill_seqs = prefill_seqs - partial_prefill_seqs
     partial_prefill_ctx_lens = [
         int(np.ceil(l // block_size * 0.5)) * block_size
-        for l in init_seq_lens[decode_seqs : decode_seqs + partial_prefill_seqs]
+        for l in init_seq_lens
     ]
     partial_prefill_q_lens = [
         int(np.floor(l // block_size * 0.5)) * block_size
-        for l in init_seq_lens[decode_seqs : decode_seqs + partial_prefill_seqs]
+        for l in init_seq_lens
     ]
     query_lens = (
         [1] * decode_seqs
@@ -910,13 +914,13 @@ def test_prefix_prefill_attention(
         + partial_prefill_ctx_lens[decode_seqs : decode_seqs + partial_prefill_seqs]
         + [0] * full_prefill_seqs
     )
-    # print(f"decode share: {decode_share}; prefill share {1-decode_share} -> of that: partial prefill share {partial_prefill_share}")
-    # print(f"{decode_seqs} {prefill_seqs} {partial_prefill_seqs} {full_prefill_seqs}")
-    # print(init_seq_lens)
-    # print(partial_prefill_q_lens)
-    # print(partial_prefill_ctx_lens)
-    # print(query_lens)
-    # print(ctx_lens)
+    print(f"decode share: {decode_share}; prefill share {1-decode_share} -> of that: partial prefill share {partial_prefill_share}")
+    print(f"{decode_seqs} {prefill_seqs} {partial_prefill_seqs} {full_prefill_seqs}")
+    print(init_seq_lens)
+    print(partial_prefill_q_lens)
+    print(partial_prefill_ctx_lens)
+    print(f"query_lens: {query_lens}")
+    print(f"ctx_lens: {ctx_lens}")
     assert len(ctx_lens) == len(query_lens)
     # query_lens = [
     #     int(np.ceil(querylen * next(len_fraction))) for _ in range(batch_size)
@@ -925,7 +929,8 @@ def test_prefix_prefill_attention(
     # ctx_lens = [int(np.ceil(ctxlen * next(len_fraction))) for _ in range(batch_size)]
     seq_lens = [a + b for a, b in zip(query_lens, ctx_lens)]
     max_seq_len = max(seq_lens)
-    assert seqlen * 0.9 < max_seq_len <= seqlen * 1.1
+    if not realistic_prompt_mode:
+        assert seqlen * 0.9 < max_seq_len <= seqlen * 1.1
 
     # NOTE(ngl): Some/all implementations (VLLM_CUDA_V1, XFORMERS, some triton version) assume
     #   there is at least one page per request. That's why apparently the numerical error is
@@ -1073,6 +1078,13 @@ def test_prefix_prefill_attention(
             .permute(0, 2, 3, 1)
             .contiguous()
         )
+
+        print(query.shape)
+        print(key_cache.shape)
+        print(value_cache.shape)
+        print(key.shape)
+        print(value.shape)
+        print(block_table_t.shape)
 
         # ref_output = torch.empty_like(query)
         ref_output = ref_prefix_prefill(
