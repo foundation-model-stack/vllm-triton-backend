@@ -45,7 +45,7 @@ res = []
 for i in range(num_experiments):
     t0 = time.time()
     responses = llm.generate(docs, sampling_params)
-    t_elap = time.time()-t0
+    t_elap = time.time() - t0
     res.append(t_elap)
 
 print(res)
@@ -69,7 +69,7 @@ res = []
 for i in range(num_experiments):
     t0 = time.time()
     responses = llm.generate(docs, sampling_params)
-    t_elap = time.time()-t0
+    t_elap = time.time() - t0
     res.append(t_elap)
 
 print(res)
