@@ -18,6 +18,7 @@
 from .triton_prefix_prefill import context_attention_fwd
 from .triton_paged_decode_attention_2d import kernel_paged_attention_2d
 
+
 def chunked_prefill_paged_decode(
     query,
     key,
@@ -34,33 +35,35 @@ def chunked_prefill_paged_decode(
     v_scale,
     alibi_slopes,
     sliding_window,
-    scale
+    scale,
 ):
 
     use_alibi_slopes = alibi_slopes is not None
 
-    context_attention_fwd(q=query,
-                          k=key,
-                          v=value,
-                          o=output,
-                          kv_cache_dtype=kv_cache_dtype,
-                          k_cache=key_cache,
-                          v_cache=value_cache,
-                          b_loc=block_table,
-                          b_start_loc=query_start_loc,
-                          b_seq_len=seq_lens,
-                          max_input_len=max_query_len,
-                          k_scale=k_scale,
-                          v_scale=v_scale,
-                          alibi_slopes=alibi_slopes,
-                          sliding_window=sliding_window,
-                          sm_scale=scale)
+    context_attention_fwd(
+        q=query,
+        k=key,
+        v=value,
+        o=output,
+        kv_cache_dtype=kv_cache_dtype,
+        k_cache=key_cache,
+        v_cache=value_cache,
+        b_loc=block_table,
+        b_start_loc=query_start_loc,
+        b_seq_len=seq_lens,
+        max_input_len=max_query_len,
+        k_scale=k_scale,
+        v_scale=v_scale,
+        alibi_slopes=alibi_slopes,
+        sliding_window=sliding_window,
+        sm_scale=scale,
+    )
 
     block_size = value_cache.shape[3]
     num_seqs = len(seq_lens)
-    num_query_heads=query.shape[1]
-    num_queries_per_kv=(query.shape[1] // key.shape[1])
-    head_size=query.shape[2]
+    num_query_heads = query.shape[1]
+    num_queries_per_kv = query.shape[1] // key.shape[1]
+    head_size = query.shape[2]
 
     kernel_paged_attention_2d[
         (

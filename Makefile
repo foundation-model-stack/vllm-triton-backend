@@ -25,8 +25,8 @@ clean:
 
 ifndef CI_ENABLED
 format:
-	python -m black scripts ibm_triton_lib third_party
+	python -m black scripts ibm-triton-lib third_party
 else
 format:
-	python -m black --check --verbose scripts ibm_triton_lib third_party
+	python -m black --check --verbose scripts ibm-triton-lib third_party
 endif
