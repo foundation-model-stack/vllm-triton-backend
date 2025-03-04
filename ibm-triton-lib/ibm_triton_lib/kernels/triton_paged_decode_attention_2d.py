@@ -81,7 +81,6 @@ def kernel_paged_attention_2d(
     scale,  # float32
     num_query_heads: tl.constexpr,  # int
     num_queries_per_kv: tl.constexpr,  # int
-    cache_block_stride: tl.constexpr,  # int
     block_table_stride: tl.constexpr,  # int, should be equal to max_num_blocks_per_seq
     query_stride_0: tl.constexpr,  # int
     query_stride_1: tl.constexpr,  # int, should be equal to head_size
@@ -90,12 +89,35 @@ def kernel_paged_attention_2d(
     BLOCK_SIZE: tl.constexpr,  # int
     HEAD_SIZE: tl.constexpr,  # int, must be power of 2
     USE_ALIBI_SLOPES: tl.constexpr,  # bool
+    x: tl.constexpr, # int
+    stride_k_cache_0: tl.constexpr, # int
+    stride_k_cache_1: tl.constexpr, # int
+    stride_k_cache_2: tl.constexpr, # int
+    stride_k_cache_3: tl.constexpr, # int
+    stride_k_cache_4: tl.constexpr, # int
+    stride_v_cache_0: tl.constexpr, # int
+    stride_v_cache_1: tl.constexpr, # int
+    stride_v_cache_2: tl.constexpr, # int
+    stride_v_cache_3: tl.constexpr, # int
+    filter_by_query_len: tl.constexpr, # bool
+    query_start_len_ptr, # [num_seqs+1]
 ):
     seq_idx = tl.program_id(0)
     query_head_idx = tl.program_id(1)
     kv_head_idx = query_head_idx // num_queries_per_kv
 
-    query_offset = seq_idx * query_stride_0 + query_head_idx * query_stride_1
+    if filter_by_query_len:
+        cur_batch_in_all_start_index = tl.load(query_start_len_ptr + seq_idx)
+        cur_batch_in_all_stop_index = tl.load(query_start_len_ptr + seq_idx + 1)
+        cur_batch_query_len = (cur_batch_in_all_stop_index -
+                               cur_batch_in_all_start_index)
+
+        if cur_batch_query_len > 1:
+            return
+    else:
+        cur_batch_in_all_start_index = seq_idx
+
+    query_offset = cur_batch_in_all_start_index * query_stride_0 + query_head_idx * query_stride_1
 
     # Q : (HEAD_SIZE,)
     Q = tl.load(query_ptr + query_offset + tl.arange(0, HEAD_SIZE))
@@ -117,23 +139,28 @@ def kernel_paged_attention_2d(
 
     # iterate through tiles
     for j in range(0, num_blocks):
+
         physical_block_idx = tl.load(block_tables_ptr + block_table_offset + j)
 
-        start_of_block_offset = (
-            physical_block_idx * cache_block_stride
-            + kv_head_idx * HEAD_SIZE * BLOCK_SIZE
-        )
+        offs_n = tl.arange(0, BLOCK_SIZE)
+        offs_d = tl.arange(0, HEAD_SIZE)
 
-        kv_offset = (
-            tl.arange(0, HEAD_SIZE)[:, None] * BLOCK_SIZE
-            + tl.arange(0, BLOCK_SIZE)[None, :]
-        )
+        v_offset = (physical_block_idx * stride_v_cache_0 +
+                    kv_head_idx * stride_v_cache_1 +
+                    offs_d[:, None] * stride_v_cache_2 +
+                    offs_n[None, :] * stride_v_cache_3)
+
+        k_offset = (physical_block_idx * stride_k_cache_0 +
+                    kv_head_idx * stride_k_cache_1 +
+                    (offs_d[:, None] // x) * stride_k_cache_2 +
+                    offs_n[None, :] * stride_k_cache_3 +
+                    (offs_d[:, None] % x) * stride_k_cache_4)
 
         # K : (HEAD_SIZE, BLOCK_SIZE)
-        K = tl.load(key_cache_ptr + start_of_block_offset + kv_offset)
+        K = tl.load(key_cache_ptr + k_offset)
 
         # V : (HEAD_SIZE, BLOCK_SIZE)
-        V = tl.load(value_cache_ptr + start_of_block_offset + kv_offset)
+        V = tl.load(value_cache_ptr + v_offset)
 
         tmp = j * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
         boundary = tl.full([BLOCK_SIZE], context_len, dtype=tl.int32)
@@ -171,7 +198,7 @@ def kernel_paged_attention_2d(
     # epilogue
     acc = acc / l
 
-    output_offset = seq_idx * output_stride_0 + query_head_idx * output_stride_1
+    output_offset = cur_batch_in_all_start_index * output_stride_0 + query_head_idx * output_stride_1
 
     tl.store(output_ptr + output_offset + tl.arange(0, HEAD_SIZE), acc)
 
@@ -193,9 +220,6 @@ def paged_attention_triton_2d(
 ):
     use_alibi_slopes = alibi_slopes is not None
 
-    if len(key_cache.shape) == 5 and key_cache.shape[4] != 1:
-        raise RuntimeError("5d kv cache not supported")
-
     if debug_flag and not torch.cuda.is_current_stream_capturing():
         torch.set_printoptions(threshold=10_000)
         print("\nnum_seqs: ", num_seqs)
@@ -214,6 +238,7 @@ def paged_attention_triton_2d(
             key_cache.stride(1),
             key_cache.stride(2),
             key_cache.stride(3),
+            key_cache.stride(4) if len(key_cache.shape)==5 else 1,
         )
         print("output strides: ", output.stride(0), output.stride(1), output.stride(2))
         print(
@@ -243,7 +268,6 @@ def paged_attention_triton_2d(
         scale=scale,
         num_query_heads=num_query_heads,
         num_queries_per_kv=num_queries_per_kv,
-        cache_block_stride=key_cache.stride(0),
         block_table_stride=block_tables.stride(0),
         query_stride_0=query.stride(0),
         query_stride_1=query.stride(1),
@@ -252,4 +276,16 @@ def paged_attention_triton_2d(
         BLOCK_SIZE=block_size,
         HEAD_SIZE=head_size,
         USE_ALIBI_SLOPES=use_alibi_slopes,
+        x=key_cache.shape[4] if len(key_cache.shape)==5 else 1,
+        stride_k_cache_0=key_cache.stride(0),
+        stride_k_cache_1=key_cache.stride(1),
+        stride_k_cache_2=key_cache.stride(2),
+        stride_k_cache_3=key_cache.stride(3),
+        stride_k_cache_4=key_cache.stride(4) if len(key_cache.shape)==5 else 1,
+        stride_v_cache_0=value_cache.stride(0),
+        stride_v_cache_1=value_cache.stride(1),
+        stride_v_cache_2=value_cache.stride(2),
+        stride_v_cache_3=value_cache.stride(3),
+        filter_by_query_len=False,
+        query_start_len_ptr=None,
     )

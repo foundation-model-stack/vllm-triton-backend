@@ -36,6 +36,7 @@ from vllm_utils import (
     create_kv_caches_with_random,
     ref_single_query_cached_kv_attention,
     ref_multi_query_kv_attention,
+    ref_prefix_prefill,
 )
 from torch_utils import get_gpu_label, end2end_bench
 from ibm_triton_lib.utils.triton_utils import get_runtime_label
@@ -76,12 +77,14 @@ SEEDS = [0]
 BATCH_SIZES = [1, 2, 4, 8, 16, 32, 64, 128]
 # BATCH_SIZES = [128]
 # BATCH_SIZES = [64]
-# BATCH_SIZES = [1, 2]
+# BATCH_SIZES = [2]
 # BATCH_SIZES = [1, 2, 4, 8, 16, 32, 64, 128, 256]
 # BATCH_SIZES = [1, 2, 3, 4, 5, 7, 8, 12, 16, 32, 64, 128]
 
 # order:  num_query_heads, num_kv_heads
-NUM_HEADS = [(32, 32), (32, 8)]
+# NUM_HEADS = [(32, 32), (32, 8)]
+# NUM_HEADS = [(32, 8)]
+NUM_HEADS = [(32, 32)]
 
 # SEQUENCE_LENGTHS = [16, 32, 64, 128, 512, 1024, 2048, 4096]
 # SEQUENCE_LENGTHS = [8]
@@ -90,6 +93,17 @@ NUM_HEADS = [(32, 32), (32, 8)]
 # SEQUENCE_LENGTHS = [4096]
 # SEQUENCE_LENGTHS = [4321]
 SEQUENCE_LENGTHS = [16, 128, 512, 1024, 2048, 4096]
+
+# CONTEXT_LENGTHS = [16, 128, 512, 1024, 2048, 4096]
+# QUERY_LENGTHS = [1, 16, 128, 512, 1024, 2048, 4096]
+# QUERY_LENGTHS = [1, 1024]
+# PREFIX_PREFILL_SHARE_OF_DECODE = [0.5]
+# PREFIX_PREFILL_SHARE_OF_DECODE = [1.0]
+PREFIX_PREFILL_SHARE_OF_DECODE = [0.0]
+# PREFIX_PREFILL_SHARE_OF_DECODE = [0.0, 0.5, 1.0]
+# PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL = [0.0, 0.5]
+# PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL = [0.5]
+PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL = [0.0]
 
 # HEAD_SIZES_FLASH = [32, 64, 128]  # only powers of 2!
 HEAD_SIZES = [128]  # only powers of 2! for llama2 & 3
@@ -196,6 +210,7 @@ quantiles = [0.5, 0.2, 0.8]
 # should maybe also be controlled via env variable
 force_dump_dataframes = False
 enforce_numerical_correctness = True
+# enforce_numerical_correctness = False
 do_profiling = True
 store_hatchet = False
 
@@ -812,6 +827,472 @@ def test_prefill_attention(
             del cu_seqlens_q
             del seq_start_loc
             del cu_seqlens_k
+            torch.cuda.empty_cache()
+            torch.cuda.ipc_collect()
+        except Exception as e:
+            print(e)
+            # pass
+        finally:
+            if inner_exception is not None:
+                raise inner_exception
+
+
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+@pytest.mark.parametrize("num_heads", NUM_HEADS)
+# @pytest.mark.parametrize("querylen", QUERY_LENGTHS)
+# @pytest.mark.parametrize("ctxlen", CONTEXT_LENGTHS)
+@pytest.mark.parametrize("seqlen", SEQUENCE_LENGTHS)
+@pytest.mark.parametrize("decode_share", PREFIX_PREFILL_SHARE_OF_DECODE)
+@pytest.mark.parametrize(
+    "partial_prefill_share", PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL
+)
+@pytest.mark.parametrize("head_size", HEAD_SIZES)
+@pytest.mark.parametrize("block_size", BLOCK_SIZES)
+@pytest.mark.parametrize("num_blocks", NUM_BLOCKS)
+@pytest.mark.parametrize("prompt_pattern", PROMPT_PATTERNS)
+@pytest.mark.parametrize("dtype", DTYPES)
+@pytest.mark.parametrize("seed", SEEDS)
+@pytest.mark.parametrize("implementation", IMPLEMENTATION_UT)
+@pytest.mark.parametrize("max_value", MAX_VALUES)
+@pytest.mark.parametrize("benchmark_mode", BENCHMARK_MODES)
+@torch.inference_mode()
+def test_prefix_prefill_attention(
+    capsys,
+    request,
+    batch_size,
+    num_heads,
+    # querylen,  # max querylen
+    # ctxlen,  # max contextlen
+    seqlen,
+    decode_share,
+    partial_prefill_share,
+    head_size,
+    block_size,
+    num_blocks,
+    prompt_pattern,
+    dtype,
+    seed,
+    implementation,
+    max_value,
+    benchmark_mode,
+):
+    my_id = request.node.nodeid.split("::")[-1]
+    my_name = my_id.split("[")[0]
+    my_instance = my_id.split("[")[1][:-1]
+    realistic_prompt_mode = len(prompt_pattern) > 1
+    gqa_mode = num_heads[0] != num_heads[1]
+
+    # TODO skip all others
+    # TODO: add flash_attn caller add triton_baseline caller
+
+    RTOL = 0
+    ATOL = min(3.1e-3 * max_value, 1e-3)
+
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    tdev = torch.device(device)
+    torch.cuda.set_device(tdev)
+    torch.set_default_device(tdev)
+
+    len_fraction = itertools.cycle(prompt_pattern)
+    init_seq_lens = [
+        int(np.ceil(seqlen * next(len_fraction))) for _ in range(batch_size)
+    ]
+    decode_seqs = int(np.ceil(batch_size * decode_share))
+    prefill_seqs = batch_size - decode_seqs
+    partial_prefill_seqs = int(np.ceil(prefill_seqs * partial_prefill_share))
+    full_prefill_seqs = prefill_seqs - partial_prefill_seqs
+    partial_prefill_ctx_lens = [
+        int(np.ceil(l // block_size * 0.5)) * block_size
+        for l in init_seq_lens
+    ]
+    partial_prefill_q_lens = [
+        int(np.floor(l // block_size * 0.5)) * block_size
+        for l in init_seq_lens
+    ]
+    query_lens = (
+        [1] * decode_seqs
+        + partial_prefill_q_lens[decode_seqs : decode_seqs + partial_prefill_seqs]
+        + init_seq_lens[decode_seqs + partial_prefill_seqs :]
+    )
+    ctx_lens = (
+        init_seq_lens[:decode_seqs]
+        + partial_prefill_ctx_lens[decode_seqs : decode_seqs + partial_prefill_seqs]
+        + [0] * full_prefill_seqs
+    )
+    print(f"decode share: {decode_share}; prefill share {1-decode_share} -> of that: partial prefill share {partial_prefill_share}")
+    print(f"{decode_seqs} {prefill_seqs} {partial_prefill_seqs} {full_prefill_seqs}")
+    print(init_seq_lens)
+    print(partial_prefill_q_lens)
+    print(partial_prefill_ctx_lens)
+    print(f"query_lens: {query_lens}")
+    print(f"ctx_lens: {ctx_lens}")
+    assert len(ctx_lens) == len(query_lens)
+    # query_lens = [
+    #     int(np.ceil(querylen * next(len_fraction))) for _ in range(batch_size)
+    # ]  # will always be at least 1
+    # len_fraction = itertools.cycle(prompt_pattern)  # reset
+    # ctx_lens = [int(np.ceil(ctxlen * next(len_fraction))) for _ in range(batch_size)]
+    seq_lens = [a + b for a, b in zip(query_lens, ctx_lens)]
+    max_seq_len = max(seq_lens)
+    if not realistic_prompt_mode:
+        assert seqlen * 0.9 < max_seq_len <= seqlen * 1.1
+
+    # NOTE(ngl): Some/all implementations (VLLM_CUDA_V1, XFORMERS, some triton version) assume
+    #   there is at least one page per request. That's why apparently the numerical error is
+    #   higher at random places if the request is very very small.
+    for seq_len in seq_lens:
+        if seq_len < block_size:
+            ATOL = min(6.2e-3 * max_value, 1e-3)
+            break
+
+    kv_cache_dtype = "auto"
+    cache_dtype = dtype  # TODO
+    scale = float(1.0 / (head_size**0.5))  # as done by vLLM
+    num_query_heads, num_kv_heads = num_heads
+    total_token_num = np.sum(seq_lens)
+    total_query_tokens = np.sum(query_lens)
+    use_alignment_optimization = False
+    if implementation == Implementation.BASELINE_TRITON:
+        use_alignment_optimization = True
+
+    # to avoid 'local variable referenced before assignment' when trying to del them
+    query = None
+    block_tables_lst: List[List[int]] = []
+    block_table_t = None
+    b_seq_lens = None
+    b_ctx_lens = None
+    b_query_lens = None
+    b_start_loc = None
+    b_seq_start_loc = None
+    key_cache = None
+    value_cache = None
+    key = None
+    value = None
+    ref_output = None
+    output = None
+    captured = ""
+
+    inner_exception = None
+    try:
+        query = torch.empty(total_query_tokens, num_query_heads, head_size, dtype=dtype)
+        query.uniform_(-max_value, max_value)
+
+        key = torch.empty(total_token_num, num_kv_heads, head_size, dtype=dtype)
+        key.uniform_(-max_value, max_value)
+        value = torch.empty(total_token_num, num_kv_heads, head_size, dtype=dtype)
+        value.uniform_(-max_value, max_value)
+
+        assert num_query_heads % num_kv_heads == 0
+        num_queries_per_kv = num_query_heads // num_kv_heads
+        alibi_slopes = None
+
+        b_seq_lens = torch.tensor(
+            seq_lens, dtype=torch.int
+        )  # vllm unit test uses long, but that doesn't work with flash_attn
+        b_ctx_lens = torch.tensor(ctx_lens, dtype=torch.int)
+        b_query_lens = torch.tensor(query_lens, dtype=torch.int)
+        b_start_loc = torch.cumsum(
+            torch.tensor([0] + query_lens, dtype=torch.int), dim=0, dtype=torch.int
+        )
+        b_seq_start_loc = torch.cumsum(
+            torch.tensor([0] + seq_lens[:-1], dtype=torch.int), dim=0, dtype=torch.int
+        )
+
+        # Create the block tables.
+        max_num_blocks_per_seq = (max_seq_len + block_size - 1) // block_size
+        if num_blocks < batch_size * max_num_blocks_per_seq:
+            pytest.skip("unsupported configuration")
+
+        assert num_blocks >= batch_size * max_num_blocks_per_seq
+
+        for _ in range(batch_size):
+            block_table = [
+                random.randint(0, num_blocks - 1) for _ in range(max_num_blocks_per_seq)
+            ]
+            block_tables_lst.append(block_table)
+
+        block_table_t = torch.tensor(block_tables_lst, dtype=torch.int)
+
+        # # Create the KV caches.
+        # key_caches, value_caches = create_kv_caches_with_random(
+        #     num_blocks,
+        #     block_size,
+        #     1,
+        #     num_kv_heads,
+        #     head_size,
+        #     max_value,
+        #     kv_cache_dtype,
+        #     dtype,
+        #     seed,
+        #     device,
+        #     alignment_optimization=use_alignment_optimization,
+        # )
+        # key_cache, value_cache = key_caches[0], value_caches[0]
+
+        # create KV caches and fitting linear k and v
+        k = torch.zeros(total_token_num, num_kv_heads, head_size, dtype=dtype)
+        v = torch.zeros(total_token_num, num_kv_heads, head_size, dtype=dtype)
+        key_cache = torch.zeros(
+            num_blocks, block_size, num_kv_heads, head_size, dtype=cache_dtype
+        )
+        value_cache = torch.zeros(
+            num_blocks, block_size, num_kv_heads, head_size, dtype=cache_dtype
+        )
+        for i in range(batch_size):
+            for j in range(query_lens[i]):
+                k[b_start_loc[i] + j].copy_(key[b_seq_start_loc[i] + b_ctx_lens[i] + j])
+                v[b_start_loc[i] + j].copy_(
+                    value[b_seq_start_loc[i] + b_ctx_lens[i] + j]
+                )
+            cur_ctx = 0
+            block_id = 0
+            while cur_ctx < b_ctx_lens[i]:
+                start_loc = b_seq_start_loc[i] + cur_ctx
+                if cur_ctx + block_size > b_ctx_lens[i]:
+                    end_loc = b_seq_start_loc[i] + b_ctx_lens[i]
+                else:
+                    end_loc = start_loc + block_size
+                start_slot = block_table_t[i, block_id] * block_size
+                end_slot = start_slot + end_loc - start_loc
+                key_cache.view(-1, num_kv_heads, head_size)[start_slot:end_slot].copy_(
+                    key[start_loc:end_loc]
+                )
+                value_cache.view(-1, num_kv_heads, head_size)[
+                    start_slot:end_slot
+                ].copy_(value[start_loc:end_loc])
+                cur_ctx += block_size
+                block_id += 1
+        # transpose K_cache[num_blocks, block_size, num_kv_heads, head_size]
+        # to K_cache[num_blocks, num_kv_heads, head_size/8, block_size, 8]
+        if use_alignment_optimization:
+            key_cache = (
+                key_cache.view(-1, block_size, num_kv_heads, head_size // 8, 8)
+                .permute(0, 2, 3, 1, 4)
+                .contiguous()
+            )
+        else:
+            key_cache = (
+                key_cache.view(-1, block_size, num_kv_heads, head_size)
+                .permute(0, 2, 3, 1)
+                .contiguous()
+            )
+        # transpose V_cache[num_blocks, block_size, num_kv_heads, head_size]
+        # to V_cache[num_blocks, num_kv_heads, head_size, block_size]
+        value_cache = (
+            value_cache.view(-1, block_size, num_kv_heads, head_size)
+            .permute(0, 2, 3, 1)
+            .contiguous()
+        )
+
+        print(query.shape)
+        print(key_cache.shape)
+        print(value_cache.shape)
+        print(key.shape)
+        print(value.shape)
+        print(block_table_t.shape)
+
+        # ref_output = torch.empty_like(query)
+        ref_output = ref_prefix_prefill(
+            # ref_output,
+            query,
+            num_queries_per_kv,
+            key_cache,
+            value_cache,
+            key,
+            value,
+            block_table_t,
+            b_seq_lens,
+            b_ctx_lens,
+            b_query_lens,
+            b_start_loc,
+            batch_size,
+            scale,
+            dtype,
+        )
+
+        if implementation == Implementation.FLASH_ATTN:
+            from callers import FlashAttnPrefixPrefillCaller as Caller
+        elif implementation == Implementation.BASELINE_TRITON:
+            from callers import BaselineTritonPrefixPrefillCaller as Caller
+        # elif implementation == Implementation.TRITON_2D:
+        #     from callers import Triton2dAttentionDecodeCaller as Caller
+        # elif implementation == Implementation.TRITON_3D:
+        #     from callers import Triton3dAttentionDecodeCaller as Caller
+
+        if Caller.requires_allocated_output:
+            output = torch.empty_like(query)
+
+        call_func_under_test = Caller.make_call_func(
+            output,
+            query,
+            key_cache,
+            value_cache,
+            key,
+            value,
+            block_table_t,
+            b_seq_lens,
+            b_ctx_lens,
+            b_query_lens,
+            b_start_loc,
+            b_seq_start_loc,
+            scale,
+            # kv_cache_dtype,
+        )
+
+        output_ = call_func_under_test()
+        output = Caller.select_output(output, output_)
+        # print(query.shape)
+        # print(ref_output.shape)
+        # print(output.shape)
+
+        if capsys is not None:
+            captured_raw = capsys.readouterr()  # returns stdout, stderr
+            for l in captured_raw:
+                if len(l) > 0:
+                    # captured += l  # + '|'
+                    captured += l + " "
+        # compare
+        if enforce_numerical_correctness:
+            # for better reports
+            triton.testing.assert_close(ref_output, output, atol=ATOL, rtol=RTOL)
+            allclose_pass = True
+        else:
+            allclose_pass = torch.allclose(ref_output, output, atol=ATOL, rtol=RTOL)
+
+        # benchmark only correct results
+        if do_benchmarks:
+            if my_name not in pytest.global_pds:
+                pytest.global_pds[my_name] = pd.DataFrame()
+
+            profiling_started = False
+            if (
+                do_profiling
+                and implementation
+                in [
+                    # Implementation.TRITON_2D,
+                    # Implementation.TRITON_3D,
+                    # Implementation.BASELINE_TRITON,
+                ]
+                and benchmark_mode == BenchmarkMode.CUDA_EVENTS
+            ):
+                if store_hatchet:
+                    hatchet_name = os.path.abspath(
+                        f"{pytest.global_pd_file_prefix}/{my_name}_profile_{my_instance}"
+                    )
+                else:
+                    hatchet_name = os.path.abspath(
+                        f"/tmp/{my_name}_profile_{my_instance}"
+                    )
+                proton.start(hatchet_name, hook="triton")
+                profiling_started = True
+
+            if benchmark_mode == BenchmarkMode.CUDA_EVENTS:
+                ms, min_ms, max_ms = triton.testing.do_bench(
+                    call_func_under_test, quantiles=quantiles
+                )
+            elif benchmark_mode == BenchmarkMode.CUDA_GRAPHS:
+                ms, min_ms, max_ms = triton.testing.do_bench_cudagraph(
+                    call_func_under_test, quantiles=quantiles
+                )
+            elif benchmark_mode == BenchmarkMode.END2END:
+                ms, min_ms, max_ms = end2end_bench(
+                    call_func_under_test, quantiles=quantiles
+                )
+            else:
+                ms = float("nan")
+                min_ms = float("nan")
+                max_ms = float("nan")
+
+            proton_count = None
+            proton_ns = None
+            proton_util_compute = None
+            proton_util_bw = None
+            if profiling_started:
+                proton.finalize()
+                # readout
+                metrics = ["util_flops", "util_bytes"]
+                filter_for = ".*triton.*"
+                proton_graph = parse(
+                    metrics,
+                    f"{hatchet_name}.hatchet",
+                    include=filter_for,
+                    return_only_df=True,
+                )
+                proton_df = proton_graph.dataframe
+                assert (
+                    len(proton_df) == 2
+                )  # TODO: update if multiple kernels are called
+                proton_count = proton_df.iloc[-1]["count"]
+                proton_ns = proton_df.iloc[-1]["time (ns)"]
+                proton_util_compute = proton_df.iloc[-1]["util_flops (inc)"]
+                proton_util_bw = proton_df.iloc[-1]["util_bytes (inc)"]
+
+            record = {
+                "batch_size": batch_size,
+                "num_query_heads": num_query_heads,
+                "num_kv_heads": num_kv_heads,
+                # "querylen": querylen,
+                # "ctxlen": ctxlen,
+                "seqlen": seqlen,
+                "decode_share": decode_share,
+                "partial_prefill_share": partial_prefill_share,
+                "head_size": head_size,
+                "block_size": block_size,
+                "num_blocks": num_blocks,
+                "dtype": dtype,
+                "max_value": max_value,
+                "realistic_prompt_mode": realistic_prompt_mode,
+                "gqa_mode": gqa_mode,
+                "prompt_pattern": prompt_pattern,
+                "implementation": implementation,
+                "ms": ms,
+                "min_ms": min_ms,
+                "max_ms": max_ms,
+                "benchmark_mode": benchmark_mode,
+                "allclose_pass": allclose_pass,
+                "ATOL": ATOL,
+                "RTOL": RTOL,
+                "proton_count": proton_count,
+                "proton_ns": proton_ns,
+                "proton_util_compute": proton_util_compute,
+                "proton_util_bw": proton_util_bw,
+                "captured": captured,
+            }
+
+            pytest.global_pds[my_name] = pd.concat(
+                [pytest.global_pds[my_name], pd.Series(record).to_frame().T]
+            ).reset_index(drop=True)
+
+            if pytest.global_pd_file_prefix is not None:
+                filename = os.path.abspath(
+                    f"{pytest.global_pd_file_prefix}/{my_name}.csv"
+                )
+                write_df_and_chmod(pytest.global_pds[my_name], filename)
+
+    except Exception as e:
+        print("\ncaptured:")
+        print(captured)
+        print("\nexception:")
+        print(e)
+        inner_exception = e
+    finally:
+        # cleanup memory
+        try:
+            del query
+            del b_ctx_lens
+            del b_seq_lens
+            del b_query_lens
+            del b_start_loc
+            del b_seq_start_loc
+            del block_tables_lst
+            del block_table_t
+            del key
+            del value
+            del key_cache
+            del value_cache
+            del ref_output
+            del output
             torch.cuda.empty_cache()
             torch.cuda.ipc_collect()
         except Exception as e:
