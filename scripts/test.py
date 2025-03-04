@@ -30,6 +30,7 @@ from vllm_utils import (
     ref_single_query_cached_kv_attention,
     ref_multi_query_kv_attention,
 )
+from vllm import _custom_ops as ops
 import triton
 import triton.language as tl
 import math
