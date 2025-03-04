@@ -80,7 +80,6 @@ def kernel_paged_attention_3d(
     context_lens_ptr,  # [num_seqs]
     alibi_slopes_ptr,  # [num_query_heads]
     scale,  # float32
-    cu_q_len_ptr, # [num_seqs+1]
     num_query_heads: tl.constexpr,  # int
     num_queries_per_kv: tl.constexpr,  # int
     block_table_stride: tl.constexpr,  # int, should be equal to max_num_blocks_per_seq
@@ -312,7 +311,6 @@ def paged_attention_triton_3d(
     num_query_heads,
     num_queries_per_kv,
     head_size,
-    cu_q_len,
 ):
     blocks_per_segment = 16
     max_num_segments_per_seq = 1
@@ -389,7 +387,6 @@ def paged_attention_triton_3d(
         context_lens_ptr=context_lens,
         alibi_slopes_ptr=alibi_slopes,
         scale=scale,
-        cu_q_len_ptr=cu_q_len,
         num_query_heads=num_query_heads,
         num_queries_per_kv=num_queries_per_kv,
         block_table_stride=block_tables.stride(0),
@@ -400,12 +397,12 @@ def paged_attention_triton_3d(
         USE_ALIBI_SLOPES=use_alibi_slopes,
         BLOCKS_PER_SEGMENT=blocks_per_segment,
         MAX_NUM_SEGMENTS_PER_SEQ=max_num_segments_per_seq,
-        x=key_cache.shape[4],
+        x=key_cache.shape[4] if len(key_cache.shape)==5 else 1,
         stride_k_cache_0=key_cache.stride(0),
         stride_k_cache_1=key_cache.stride(1),
         stride_k_cache_2=key_cache.stride(2),
         stride_k_cache_3=key_cache.stride(3),
-        stride_k_cache_4=key_cache.stride(4),
+        stride_k_cache_4=key_cache.stride(4) if len(key_cache.shape)==5 else 1,
         stride_v_cache_0=value_cache.stride(0),
         stride_v_cache_1=value_cache.stride(1),
         stride_v_cache_2=value_cache.stride(2),
