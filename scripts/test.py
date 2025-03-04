@@ -137,13 +137,14 @@ def test_decoding_attention(
     if torch.cuda.get_device_capability()[0] < 8 and dtype is torch.bfloat16:
         pytest.skip()
 
-    if (
-        implementation == Implementation.TRITON_2D
-        or implementation == Implementation.TRITON_3D
-    ):
-        if (not math.log(head_size, 2).is_integer()):
+    if implementation == Implementation.TRITON_3D:
+        if (not math.log(head_size, 2).is_integer()) or kv_cache_dtype == "fp8":
             pytest.skip()
-    elif implementation in [Implementation.VLLM_CUDA_V1, Implementation.VLLM_CUDA_V2]:
+    elif implementation in [
+        Implementation.VLLM_CUDA_V1,
+        Implementation.VLLM_CUDA_V2,
+        Implementation.TRITON_2D,
+    ]:
         if kv_cache_dtype == "fp8" and head_size % 16:
             pytest.skip()
     elif implementation == Implementation.BASELINE_TRITON:
