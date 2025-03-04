@@ -140,7 +140,7 @@ def test_decoding_attention(
         implementation == Implementation.TRITON_2D
         or implementation == Implementation.TRITON_3D
     ):
-        if (not math.log(head_size, 2).is_integer()) or kv_cache_dtype == "fp8":
+        if (not math.log(head_size, 2).is_integer()):
             pytest.skip()
     elif implementation in [Implementation.VLLM_CUDA_V1, Implementation.VLLM_CUDA_V2]:
         if kv_cache_dtype == "fp8" and head_size % 16:
