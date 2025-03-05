@@ -1,7 +1,7 @@
 TAG := vllm-triton-backend-$(shell id -un)
 MAX_JOBS := 64
 
-.PHONY: all build clean format dev rocm
+.PHONY: all build clean format dev rocm rocm-upstream
 
 all: build
 
@@ -23,12 +23,16 @@ rocm-vllm-all.tar: .git/modules/rocm_vllm/index
 	cd rocm_vllm; ls -A | xargs tar --mtime='1970-01-01' -cf ../rocm-vllm-all.tar
 
 rocm: Dockerfile.rocm rocm-vllm-all.tar all-git.tar
-	@# echo "using https://github.com/ROCm/vllm repository; vllm submodule CURRENTLY IGNORED"
-	docker build --progress=plain --build-arg MAX_JOBS=$(MAX_JOBS) . -t ${TAG} -f Dockerfile.rocm
+	docker build --progress=plain --build-arg MAX_JOBS=$(MAX_JOBS) --build-arg VLLM_SOURCE=submodule . -t ${TAG} -f Dockerfile.rocm
+	@echo "Built docker image with tag: ${TAG}"
+
+rocm-upstream: Dockerfile.rocm rocm-vllm-all.tar all-git.tar
+	# echo "using https://github.com/ROCm/vllm repository; vllm submodule CURRENTLY IGNORED"
+	docker build --progress=plain --build-arg MAX_JOBS=$(MAX_JOBS) --build-arg VLLM_SOURCE=upsteram . -t ${TAG} -f Dockerfile.rocm
 	@echo "Built docker image with tag: ${TAG}"
 
 clean:
-	rm -f vllm-all.tar all-git.tar
+	rm -f vllm-all.tar all-git.tar rocm-vllm-all.tar
 
 ifndef CI_ENABLED
 format:
