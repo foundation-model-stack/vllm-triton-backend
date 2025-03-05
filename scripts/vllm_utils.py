@@ -268,8 +268,12 @@ def ref_prefix_prefill(
             reconstr_values = torch.stack(values_lst, dim=0)
             if num_queries_per_kv > 1:
                 # Handle MQA and GQA
-                reconstr_keys = torch.repeat_interleave(reconstr_keys, num_queries_per_kv, dim=1)
-                reconstr_values = torch.repeat_interleave(reconstr_values, num_queries_per_kv, dim=1)
+                reconstr_keys = torch.repeat_interleave(
+                    reconstr_keys, num_queries_per_kv, dim=1
+                )
+                reconstr_values = torch.repeat_interleave(
+                    reconstr_values, num_queries_per_kv, dim=1
+                )
             out = ref_masked_attention(q, reconstr_keys, reconstr_values, scale)
             # out = out.view(num_query_heads, head_size)
             # output[i].copy_(out, non_blocking=True)
@@ -326,7 +330,9 @@ def ref_prefix_prefill(
             reconstructed_keys = torch.stack(keys_lst, dim=0)
             reconstructed_values = torch.stack(values_lst, dim=0)
             linear_key = key[cur_batch_in_all_start_index:cur_batch_in_all_stop_index]
-            linear_value = value[cur_batch_in_all_start_index:cur_batch_in_all_stop_index]
+            linear_value = value[
+                cur_batch_in_all_start_index:cur_batch_in_all_stop_index
+            ]
             if num_queries_per_kv > 1:
                 # Handle MQA and GQA
                 reconstructed_keys = torch.repeat_interleave(
@@ -335,16 +341,21 @@ def ref_prefix_prefill(
                 reconstructed_values = torch.repeat_interleave(
                     reconstructed_values, num_queries_per_kv, dim=1
                 )
-                linear_key = torch.repeat_interleave(key[cur_batch_in_all_start_index:cur_batch_in_all_stop_index], num_queries_per_kv, dim=1)
-                linear_value = torch.repeat_interleave(value[cur_batch_in_all_start_index:cur_batch_in_all_stop_index], num_queries_per_kv, dim=1)
+                linear_key = torch.repeat_interleave(
+                    key[cur_batch_in_all_start_index:cur_batch_in_all_stop_index],
+                    num_queries_per_kv,
+                    dim=1,
+                )
+                linear_value = torch.repeat_interleave(
+                    value[cur_batch_in_all_start_index:cur_batch_in_all_stop_index],
+                    num_queries_per_kv,
+                    dim=1,
+                )
             all_keys = [
                 reconstructed_keys,
                 linear_key,
             ]
-            all_values = [
-                reconstructed_values,
-                linear_value
-            ]
+            all_values = [reconstructed_values, linear_value]
             all_keys_t = torch.cat(all_keys, dim=0)
             all_values_t = torch.cat(all_values, dim=0)
             # Create attention mask.
