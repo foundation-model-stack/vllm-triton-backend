@@ -19,8 +19,11 @@ build: Dockerfile
 	docker build --progress=plain --build-arg MAX_JOBS=$(MAX_JOBS) . -t ${TAG}
 	@echo "Built docker image with tag: ${TAG}"
 
-rocm: Dockerfile.rocm
-	@echo "using https://github.com/ROCm/vllm repository; vllm submodule CURRENTLY IGNORED"
+rocm-vllm-all.tar: .git/modules/rocm_vllm/index
+	cd rocm_vllm; ls -A | xargs tar --mtime='1970-01-01' -cf ../rocm-vllm-all.tar
+
+rocm: Dockerfile.rocm rocm-vllm-all.tar all-git.tar
+	@# echo "using https://github.com/ROCm/vllm repository; vllm submodule CURRENTLY IGNORED"
 	docker build --progress=plain --build-arg MAX_JOBS=$(MAX_JOBS) . -t ${TAG} -f Dockerfile.rocm
 	@echo "Built docker image with tag: ${TAG}"
 

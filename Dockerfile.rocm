@@ -15,6 +15,8 @@ ARG FA_BRANCH="b7d29fb"
 ARG FA_REPO="https://github.com/ROCm/flash-attention.git"
 
 ARG VLLM_BRANCH="v0.7.3+rocm"
+ARG VLLM_VERSION=0.7.3
+ARG PYTORCH_ROCM_ARCH=gfx90a;gfx942
 
 ARG ROCM_VERSION=6.3.1
 
@@ -163,7 +165,8 @@ ARG PYTORCH_VISION_BRANCH
 ARG PYTORCH_REPO
 ARG PYTORCH_VISION_REPO
 
-ARG PYTORCH_ROCM_ARCH=gfx90a;gfx942
+# ARG PYTORCH_ROCM_ARCH=gfx90a;gfx942
+ARG PYTORCH_ROCM_ARCH
 ENV PYTORCH_ROCM_ARCH=${PYTORCH_ROCM_ARCH}
 
 RUN git clone ${PYTORCH_REPO} pytorch
@@ -218,19 +221,7 @@ ARG MAX_JOBS
 # ENV NVCC_THREADS=2
 # ENV VLLM_INSTALL_PUNICA_KERNELS=1
 
-# copy git stuff
-# WORKDIR /workspace/.git
-# COPY all-git.tar .
-# RUN tar -xf all-git.tar && \
-#     rm all-git.tar
-# 
-# # copy tarball of last commit
-# WORKDIR /workspace/vllm
-# 
-# COPY vllm-all.tar .
-# RUN tar -xf vllm-all.tar && \
-#     rm vllm-all.tar
-# 
+
 # # build vllm wheel
 # ENV CCACHE_DIR=/root/.cache/ccache
 # RUN --mount=type=cache,target=/root/.cache/ccache \
@@ -266,20 +257,42 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 RUN git clone https://github.com/ROCm/rocm-cmake.git && cd rocm-cmake && mkdir build && cd build && cmake .. && cmake --build . && cmake --build . --target install
 
-ARG VLLM_REPO="https://github.com/ROCm/vllm.git"
-# ARG VLLM_BRANCH="main"
-ARG VLLM_BRANCH
-RUN git clone ${VLLM_REPO} \
-	    && cd vllm \
-	    && git checkout ${VLLM_BRANCH}
+# TODO make dynamic
+# ARG VLLM_REPO="https://github.com/ROCm/vllm.git"
+# # ARG VLLM_BRANCH="main"
+# ARG VLLM_BRANCH
+# RUN git clone ${VLLM_REPO} \
+# 	    && cd vllm \
+# 	    && git checkout ${VLLM_BRANCH}
 
+# copy git stuff
+WORKDIR /workspace/.git
+COPY all-git.tar .
+RUN tar -xf all-git.tar && \
+    rm all-git.tar
+
+# copy tarball of last commit
+WORKDIR /workspace/vllm
+
+ARG VLLM_VERSION
+ENV SETUPTOOLS_SCM_PRETEND_VERSION=${VLLM_VERSION}
+ENV SETUPTOOLS_SCM_PRETEND_VERSION_LINUX=${VLLM_VERSION}
+COPY rocm-vllm-all.tar .
+RUN tar -xf rocm-vllm-all.tar && \
+    rm rocm-vllm-all.tar
+
+WORKDIR /workspace/
 ARG USE_CYTHON
 # ENV CUDA_HOME='/opt/rocm/'
-ENV PYTORCH_ROCM_ARCH="gfx90a;gfx942"
+# ENV PYTORCH_ROCM_ARCH="gfx90a;gfx942"
+# # TODO: use once in the beginning
+# ARG PYTORCH_ROCM_ARCH=gfx90a;gfx942
+ARG PYTORCH_ROCM_ARCH
+ENV PYTORCH_ROCM_ARCH=${PYTORCH_ROCM_ARCH}
 # Build vLLM
 RUN cd vllm \
-    && export PYTORCH_ROCM_ARCH=${PYTORCH_ROCM_ARCH} \
     && python3 -m pip install -r requirements-rocm.txt
+    # && export PYTORCH_ROCM_ARCH=${PYTORCH_ROCM_ARCH} \
 
 # RUN ls -al /usr/locals
 # RUN find / | grep -i miopen | grep cmake
@@ -287,13 +300,13 @@ RUN cd vllm \
 
 ENV CMAKE_PREFIX_PATH="/opt/rocm/;/opt/rocm/hip;$(python3 -c 'import sys; print(sys.prefix)')"
 RUN cd vllm \
-    && export PYTORCH_ROCM_ARCH=${PYTORCH_ROCM_ARCH} \
     && python3 setup.py clean --all  \
     && CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH} python3 setup.py bdist_wheel --dist-dir=/workspace/
     # && CMAKE_PREFIX_PATH="/opt/rocm/;/opt/rocm/hip;$(python3 -c 'import sys; print(sys.prefix)')" python3 setup.py bdist_wheel --dist-dir=/workspace/
     # && python3 setup.py develop 
     # && python3 setup.py bdist_wheel --dist-dir=/workspace/
     # && export CMAKE_PREFIX_PATH=/opt/rocm/lib/cmake \
+    # && export PYTORCH_ROCM_ARCH=${PYTORCH_ROCM_ARCH} \
 
 ## Triton Builder #################################################################
 FROM common-builder AS triton-builder
@@ -324,7 +337,8 @@ ARG MAX_JOBS
 ARG FA_BRANCH
 ARG FA_REPO
 
-ARG PYTORCH_ROCM_ARCH=gfx90a;gfx942
+# ARG PYTORCH_ROCM_ARCH=gfx90a;gfx942
+ARG PYTORCH_ROCM_ARCH
 ENV PYTORCH_ROCM_ARCH=${PYTORCH_ROCM_ARCH}
 
 RUN --mount=type=cache,target=/root/.cache/pip \
@@ -368,11 +382,13 @@ RUN python${PYTHON_VERSION} -m venv $VIRTUAL_ENV \
 
 WORKDIR /workspace
 
-ENV PYTORCH_ROCM_ARCH="gfx90a;gfx942"
-COPY vllm/requirements-*.txt /workspace/
-RUN export PYTORCH_ROCM_ARCH=${PYTORCH_ROCM_ARCH} \
-    && python3 -m pip install -r requirements-rocm.txt \ 
+#ENV PYTORCH_ROCM_ARCH="gfx90a;gfx942"
+ARG PYTORCH_ROCM_ARCH
+ENV PYTORCH_ROCM_ARCH=${PYTORCH_ROCM_ARCH}
+COPY rocm_vllm/requirements-*.txt /workspace/
+RUN python3 -m pip install -r requirements-rocm.txt \ 
     && pip uninstall -y vllm
+# export PYTORCH_ROCM_ARCH=${PYTORCH_ROCM_ARCH} \
 
 # Install vllm
 RUN mkdir -p /workspace/vllm-install
