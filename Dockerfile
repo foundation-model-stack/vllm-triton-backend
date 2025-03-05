@@ -2,7 +2,7 @@
 ARG BASE_UBI_IMAGE_TAG=9.4
 ARG PYTHON_VERSION=3.12
 ARG MAX_JOBS=64
-ARG PIP_VLLM_VERSION=0.7.2
+ARG PIP_VLLM_VERSION=0.7.3
 
 ARG VLLM_SOURCE=pip 
 # or VLLM_SOURCE=custom 
@@ -224,6 +224,10 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 
 ENV STORE_TEST_RESULT_PATH=/results
+
+# copy vllm benchmarks
+COPY vllm/benchmarks benchmarks
+RUN wget https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json
 
 # Copy thid-party kernels and insert into path
 COPY third_party third_party
