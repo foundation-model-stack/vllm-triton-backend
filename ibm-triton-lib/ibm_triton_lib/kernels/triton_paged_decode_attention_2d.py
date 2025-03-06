@@ -83,6 +83,7 @@ def kernel_paged_attention_2d(
     v_scale,  # float32
     num_query_heads: tl.constexpr,  # int
     num_queries_per_kv: tl.constexpr,  # int
+    num_queries_per_kv_padded: tl.constexpr,  # int
     block_table_stride: tl.constexpr,  # int, should be equal to max_num_blocks_per_seq
     query_stride_0: tl.constexpr,  # int
     query_stride_1: tl.constexpr,  # int, should be equal to head_size
@@ -118,33 +119,36 @@ def kernel_paged_attention_2d(
     else:
         cur_batch_in_all_start_index = seq_idx
 
-    query_head_idx = kv_head_idx * num_queries_per_kv + tl.arange(0, num_queries_per_kv)
+    query_head_idx = kv_head_idx * num_queries_per_kv + tl.arange(0, num_queries_per_kv_padded)
 
     query_offset = (
         cur_batch_in_all_start_index * query_stride_0 + query_head_idx[:, None] * query_stride_1
     )
+
+    head_mask = query_head_idx < (kv_head_idx + 1) * num_queries_per_kv
+    head_mask = head_mask & (query_head_idx < num_query_heads)
 
     dim_mask = tl.where(tl.arange(0, HEAD_SIZE_PADDED) < HEAD_SIZE, 1, 0).to(tl.int1)
 
     # Q : (num_queries_per_kv, HEAD_SIZE,)
     Q = tl.load(
         query_ptr + query_offset + tl.arange(0, HEAD_SIZE_PADDED)[None, :],
-        mask=dim_mask[None, :],
+        mask=dim_mask[None, :] & head_mask[:,None],
         other=0.0,
     )
 
     block_table_offset = seq_idx * block_table_stride
 
-    m = tl.full([num_queries_per_kv], float("-inf"), dtype=tl.float32)
-    l = tl.full([num_queries_per_kv], 1.0, dtype=tl.float32)
-    acc = tl.zeros([num_queries_per_kv, HEAD_SIZE_PADDED], dtype=tl.float32)
+    m = tl.full([num_queries_per_kv_padded], float("-inf"), dtype=tl.float32)
+    l = tl.full([num_queries_per_kv_padded], 1.0, dtype=tl.float32)
+    acc = tl.zeros([num_queries_per_kv_padded, HEAD_SIZE_PADDED], dtype=tl.float32)
 
     # context len for this particualr sequence
     context_len = tl.load(context_lens_ptr + seq_idx)
 
     # alibi slope for this head
     if USE_ALIBI_SLOPES:
-        alibi_slope = tl.load(alibi_slopes_ptr + query_head_idx)
+        alibi_slope = tl.load(alibi_slopes_ptr + query_head_idx, mask=head_mask, other=0.0)
 
     num_blocks = cdiv_fn(context_len, BLOCK_SIZE)
 
@@ -154,13 +158,13 @@ def kernel_paged_attention_2d(
         physical_block_idx = tl.load(block_tables_ptr + block_table_offset + j)
 
         offs_n = tl.arange(0, BLOCK_SIZE)
-        offs_d = tl.arange(0, HEAD_SIZE)
+        offs_d = tl.arange(0, HEAD_SIZE_PADDED)
 
         v_offset = (
             physical_block_idx * stride_v_cache_0
             + kv_head_idx * stride_v_cache_1
-            + offs_d[:, None] * stride_v_cache_2
-            + offs_n[None, :] * stride_v_cache_3
+            + offs_d[None, :] * stride_v_cache_2
+            + offs_n[:, None] * stride_v_cache_3
         )
 
         k_offset = (
@@ -179,8 +183,8 @@ def kernel_paged_attention_2d(
         else:
             K = K_load
 
-        # V : (HEAD_SIZE, BLOCK_SIZE)
-        V_load = tl.load(value_cache_ptr + v_offset, mask=dim_mask[:, None], other=0.0)
+        # V : (BLOCK_SIZE, HEAD_SIZE)
+        V_load = tl.load(value_cache_ptr + v_offset, mask=dim_mask[None, :], other=0.0)
 
         if V_load.dtype.is_fp8():
             V = (V_load.to(tl.float32) * tl.load(v_scale)).to(Q.dtype)
@@ -189,13 +193,14 @@ def kernel_paged_attention_2d(
 
         tmp = j * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
         boundary = tl.full([BLOCK_SIZE], context_len, dtype=tl.int32)
-        mask_new = tmp < boundary
+        mask_new = tmp[None, :] < boundary
+
         # S : (num_queries_per_kv, BLOCK_SIZE,)
-        S = tl.where(mask_new, 0.0, float("-inf")).to(tl.float32)
-        S = S[None, :] + scale * tl.sum(K[None, :, :] * Q[:, :, None], axis=1)
+        S = tl.where(head_mask[:, None] & mask_new, 0.0, float("-inf")).to(tl.float32)
+        S += scale * tl.dot(Q, K)
 
         if USE_ALIBI_SLOPES:
-            S += alibi_slope * (tmp - context_len + 1) # CHECK
+            S += alibi_slope[:,None] * (tmp - context_len + 1)
 
         # compute running maximum
         # m_j : (num_queries_per_kv,)
@@ -218,7 +223,7 @@ def kernel_paged_attention_2d(
         m = m_j
 
         # acc : (num_queries_per_kv, BLOCK_SIZE,)
-        acc += tl.sum(V[None, :, :] * P[:, None, :], axis=2)
+        acc += tl.dot(P.to(V.dtype), V)
 
     # epilogue
     acc = acc / l[:, None]
@@ -229,7 +234,7 @@ def kernel_paged_attention_2d(
     )
 
     tl.store(
-        output_ptr + output_offset[:, None] + tl.arange(0, HEAD_SIZE_PADDED)[None, :], acc, mask=dim_mask[None, :]
+        output_ptr + output_offset[:, None] + tl.arange(0, HEAD_SIZE_PADDED)[None, :], acc, mask=dim_mask[None, :] & head_mask[:, None]
     )
 
 
@@ -321,6 +326,7 @@ def paged_attention_triton_2d(
         v_scale=v_scale,
         num_query_heads=num_query_heads,
         num_queries_per_kv=num_queries_per_kv,
+        num_queries_per_kv_padded=max(num_queries_per_kv, 16),
         block_table_stride=block_tables.stride(0),
         query_stride_0=query.stride(0),
         query_stride_1=query.stride(1),
