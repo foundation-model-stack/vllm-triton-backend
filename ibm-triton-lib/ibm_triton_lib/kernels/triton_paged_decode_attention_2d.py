@@ -71,12 +71,12 @@ def cdiv_fn(x, y):
 
 @triton.jit(launch_metadata=metadata_fn)
 def kernel_paged_attention_2d(
-    output_ptr,  # [num_seqs, num_query_heads, head_size]
-    query_ptr,  # [num_seqs, num_query_heads, head_size]
-    key_cache_ptr,  # [num_blocks, num_kv_heads, head_size, block_size]
-    value_cache_ptr,  # [num_blocks, num_kv_heads, head_size, block_size]
+    output_ptr,  # [num_tokens, num_query_heads, head_size]
+    query_ptr,  # [num_tokens, num_query_heads, head_size]
+    key_cache_ptr,  # [num_blks, num_kv_heads, head_size // x, blk_size, x]
+    value_cache_ptr,  # [num_blks, num_kv_heads, head_size, blk_size]
     block_tables_ptr,  # [num_seqs, max_num_blocks_per_seq]
-    context_lens_ptr,  # [num_seqs]
+    seq_lens_ptr,  # [num_seqs]
     alibi_slopes_ptr,  # [num_query_heads]
     scale,  # float32
     k_scale,  # float32
@@ -84,7 +84,7 @@ def kernel_paged_attention_2d(
     num_query_heads: tl.constexpr,  # int
     num_queries_per_kv: tl.constexpr,  # int
     num_queries_per_kv_padded: tl.constexpr,  # int
-    block_table_stride: tl.constexpr,  # int, should be equal to max_num_blocks_per_seq
+    block_table_stride: tl.constexpr,  # int
     query_stride_0: tl.constexpr,  # int
     query_stride_1: tl.constexpr,  # int, should be equal to head_size
     output_stride_0: tl.constexpr,  # int
@@ -93,6 +93,7 @@ def kernel_paged_attention_2d(
     HEAD_SIZE: tl.constexpr,  # int
     HEAD_SIZE_PADDED: tl.constexpr,  # int, must be power of 2
     USE_ALIBI_SLOPES: tl.constexpr,  # bool
+    SLIDING_WINDOW: tl.constexpr,  # int
     x: tl.constexpr,  # int
     stride_k_cache_0: tl.constexpr,  # int
     stride_k_cache_1: tl.constexpr,  # int
@@ -113,7 +114,6 @@ def kernel_paged_attention_2d(
         cur_batch_in_all_start_index = tl.load(query_start_len_ptr + seq_idx)
         cur_batch_in_all_stop_index = tl.load(query_start_len_ptr + seq_idx + 1)
         cur_batch_query_len = cur_batch_in_all_stop_index - cur_batch_in_all_start_index
-
         if cur_batch_query_len > 1:
             return
     else:
@@ -139,18 +139,18 @@ def kernel_paged_attention_2d(
 
     block_table_offset = seq_idx * block_table_stride
 
-    m = tl.full([num_queries_per_kv_padded], float("-inf"), dtype=tl.float32)
-    l = tl.full([num_queries_per_kv_padded], 1.0, dtype=tl.float32)
+    M = tl.full([num_queries_per_kv_padded], float("-inf"), dtype=tl.float32)
+    L = tl.full([num_queries_per_kv_padded], 1.0, dtype=tl.float32)
     acc = tl.zeros([num_queries_per_kv_padded, HEAD_SIZE_PADDED], dtype=tl.float32)
 
-    # context len for this particualr sequence
-    context_len = tl.load(context_lens_ptr + seq_idx)
+    # sequence len for this particular sequence
+    seq_len = tl.load(seq_lens_ptr + seq_idx)
 
     # alibi slope for this head
     if USE_ALIBI_SLOPES:
         alibi_slope = tl.load(alibi_slopes_ptr + query_head_idx, mask=head_mask, other=0.0)
 
-    num_blocks = cdiv_fn(context_len, BLOCK_SIZE)
+    num_blocks = cdiv_fn(seq_len, BLOCK_SIZE)
 
     # iterate through tiles
     for j in range(0, num_blocks):
@@ -192,19 +192,22 @@ def kernel_paged_attention_2d(
             V = V_load
 
         tmp = j * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
-        boundary = tl.full([BLOCK_SIZE], context_len, dtype=tl.int32)
+        boundary = tl.full([BLOCK_SIZE], seq_len, dtype=tl.int32)
         mask_new = tmp[None, :] < boundary
 
         # S : (num_queries_per_kv, BLOCK_SIZE,)
         S = tl.where(head_mask[:, None] & mask_new, 0.0, float("-inf")).to(tl.float32)
         S += scale * tl.dot(Q, K)
 
+        if SLIDING_WINDOW > 0:
+            S = tl.where((seq_len - 1 - tmp) < SLIDING_WINDOW, S, -10000)
+
         if USE_ALIBI_SLOPES:
-            S += alibi_slope[:,None] * (tmp - context_len + 1)
+            S += alibi_slope[:,None] * (tmp - seq_len + 1)
 
         # compute running maximum
         # m_j : (num_queries_per_kv,)
-        m_j = tl.maximum(m, tl.max(S, axis=1))
+        m_j = tl.maximum(M, tl.max(S, axis=1))
 
         # P : (num_queries_per_kv, BLOCK_SIZE,)
         P = tl.exp(S - m_j[:, None])
@@ -213,20 +216,20 @@ def kernel_paged_attention_2d(
         l_j = tl.sum(P, axis=1)
 
         # alpha : (num_queries_per_kv, )
-        alpha = tl.exp(m - m_j)
+        alpha = tl.exp(M - m_j)
 
         # acc : (num_queries_per_kv, BLOCK_SIZE,)
         acc = acc * alpha[:, None]
 
         # update constants
-        l = l * alpha + l_j
-        m = m_j
+        L = L * alpha + l_j
+        M = m_j
 
         # acc : (num_queries_per_kv, BLOCK_SIZE,)
         acc += tl.dot(P.to(V.dtype), V)
 
     # epilogue
-    acc = acc / l[:, None]
+    acc = acc / L[:, None]
 
     output_offset = (
         cur_batch_in_all_start_index * output_stride_0
@@ -248,7 +251,7 @@ def paged_attention_triton_2d(
     v_scale,
     kv_cache_dtype,
     block_tables,
-    context_lens,
+    seq_lens,
     alibi_slopes,
     block_size,
     num_seqs,
@@ -281,7 +284,7 @@ def paged_attention_triton_2d(
         print("\nnum_seqs: ", num_seqs)
         print("query shape: ", query.shape)
         print("num query heads: ", num_query_heads)
-        print("context_lens: ", context_lens)
+        print("seq_lens: ", seq_lens)
         print("block_tables.shape: ", block_tables.shape)
         print("key_cache.shape: ", key_cache.shape)
         print("value_cache.shape: ", value_cache.shape)
@@ -304,7 +307,7 @@ def paged_attention_triton_2d(
             value_cache.stride(2),
             value_cache.stride(3),
         )
-        print("context_lens stride: ", context_lens.stride(0))
+        print("seq_lens stride: ", seq_lens.stride(0))
         if alibi_slopes is not None:
             print("alibi_slobes stride: ", alibi_slopes.stride(0))
 
@@ -319,7 +322,7 @@ def paged_attention_triton_2d(
         key_cache_ptr=key_cache,
         value_cache_ptr=value_cache,
         block_tables_ptr=block_tables,
-        context_lens_ptr=context_lens,
+        seq_lens_ptr=seq_lens,
         alibi_slopes_ptr=alibi_slopes,
         scale=scale,
         k_scale=k_scale,
@@ -336,6 +339,7 @@ def paged_attention_triton_2d(
         HEAD_SIZE=head_size,
         HEAD_SIZE_PADDED=triton.next_power_of_2(head_size),
         USE_ALIBI_SLOPES=use_alibi_slopes,
+        SLIDING_WINDOW=0,
         x=key_cache.shape[4] if len(key_cache.shape) == 5 else 1,
         stride_k_cache_0=key_cache.stride(0),
         stride_k_cache_1=key_cache.stride(1),
