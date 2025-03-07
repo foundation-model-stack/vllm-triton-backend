@@ -162,7 +162,7 @@ RUN rm -rf /workspace/vllm
 
 # to avaoid incompatibility with our custom triton build
 #  see also https://github.com/vllm-project/vllm/issues/12219
-RUN uv pip install -U torch>=2.6 torchvision>=2.6 torchaudio>=2.6
+RUN uv pip install -U 'torch>=2.6' 'torchvision>=0.21' 'torchaudio>=2.6'
 
 # Install Triton (will replace version that vllm/pytorch installed)
 COPY --from=triton-builder /workspace/*.whl .
@@ -227,7 +227,7 @@ ENV STORE_TEST_RESULT_PATH=/results
 
 # copy vllm benchmarks
 COPY vllm/benchmarks benchmarks
-RUN wget https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json
+COPY ShareGPT_V3_unfiltered_cleaned_split.json ShareGPT_V3_unfiltered_cleaned_split.json
 
 # Copy thid-party kernels and insert into path
 COPY third_party third_party
