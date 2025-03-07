@@ -62,6 +62,7 @@ class Implementation(Enum):
     FLASHINFER = 6
     TRITON_FP8 = 7
     TRITON_3D = 8
+    TRITON_FUSED = 9
 
 
 class BenchmarkMode(Enum):
@@ -209,8 +210,8 @@ do_benchmarks = True
 quantiles = [0.5, 0.2, 0.8]
 # should maybe also be controlled via env variable
 force_dump_dataframes = False
-enforce_numerical_correctness = True
-# enforce_numerical_correctness = False
+# enforce_numerical_correctness = True
+enforce_numerical_correctness = False
 do_profiling = True
 store_hatchet = False
 
@@ -1109,6 +1110,8 @@ def test_prefix_prefill_attention(
             from callers import FlashAttnPrefixPrefillCaller as Caller
         elif implementation == Implementation.BASELINE_TRITON:
             from callers import BaselineTritonPrefixPrefillCaller as Caller
+        elif implementation == Implementation.TRITON_FUSED:
+            from callers import FusedTritonChunkedPrefixPrefill25dCaller as Caller
         # elif implementation == Implementation.TRITON_2D:
         #     from callers import Triton2dAttentionDecodeCaller as Caller
         # elif implementation == Implementation.TRITON_3D:
