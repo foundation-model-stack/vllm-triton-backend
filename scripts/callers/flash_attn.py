@@ -18,12 +18,11 @@
 
 import torch
 
-# TODO: will be necessary for AMD
-# if torch.version.hip:
-#     from flash_attn import flash_attn_varlen_func, flash_attn_func
-# else:
-from vllm.vllm_flash_attn import flash_attn_with_kvcache, flash_attn_varlen_func
-from .base import DecodeCaller, PrefillCaller
+if torch.version.hip:
+    from flash_attn import flash_attn_with_kvcache, flash_attn_varlen_func
+else:
+    from vllm.vllm_flash_attn import flash_attn_with_kvcache, flash_attn_varlen_func
+from .base import DecodeCaller, PrefillCaller, PrefixPrefillCaller
 
 
 class FlashAttnDecodeCaller(DecodeCaller):
@@ -51,19 +50,34 @@ class FlashAttnDecodeCaller(DecodeCaller):
 
         q = query.unsqueeze(1)
 
-        call_func_under_test = lambda: flash_attn_with_kvcache(
-            q=q,
-            k_cache=key_cache_flash_attn,
-            v_cache=value_cache_flash_attn,
-            out=None,
-            softmax_scale=scale,
-            causal=True,
-            cache_seqlens=seq_lens,
-            window_size=(-1, 1),
-            block_table=block_tables,
-            softcap=0,
-            alibi_slopes=alibi_slopes,
-        )
+        if torch.version.hip:
+            call_func_under_test = lambda: flash_attn_with_kvcache(
+                q=q,
+                k_cache=key_cache_flash_attn,
+                v_cache=value_cache_flash_attn,
+                softmax_scale=scale,
+                causal=True,
+                cache_seqlens=seq_lens,
+                window_size=(-1, 1),
+                block_table=block_tables,
+                softcap=0,
+                alibi_slopes=alibi_slopes,
+            )
+        else:
+            call_func_under_test = lambda: flash_attn_with_kvcache(
+                q=q,
+                k_cache=key_cache_flash_attn,
+                v_cache=value_cache_flash_attn,
+                out=None,
+                softmax_scale=scale,
+                causal=True,
+                cache_seqlens=seq_lens,
+                window_size=(-1, 1),
+                block_table=block_tables,
+                softcap=0,
+                alibi_slopes=alibi_slopes,
+            )
+
 
         return call_func_under_test
 
@@ -120,3 +134,73 @@ class FlashAttnPrefillCaller(PrefillCaller):
     @staticmethod
     def requires_allocated_output() -> bool:
         return False
+
+
+class FlashAttnPrefixPrefillCaller(PrefixPrefillCaller):
+    @staticmethod
+    def make_call_func(
+        output,
+        query,
+        key_cache,
+        value_cache,
+        key,
+        value,
+        block_tables,
+        seq_lens,
+        ctx_lens,
+        query_lens,
+        start_loc,
+        seq_start_loc,
+        softmax_scale,
+        # kv_cache_dtype,  # unused
+    ):
+        """
+        query: shape = [num_tokens, num_heads, head_size]
+        key: shape = [num_tokens, num_kv_heads, head_size]
+        value: shape = [num_tokens, num_kv_heads, head_size]
+        kv_cache = [2, num_blocks, block_size, num_kv_heads, head_size]
+        """
+
+        max_query_len = max(query_lens)
+        max_seqlen = max(seq_lens)
+        # print(query.shape)
+        # print(key_cache.shape)
+        # print(value_cache.shape)
+        print(max_query_len)
+        print(max_seqlen)
+
+        def transform_kv_cache(x):
+            out = torch.transpose(x, 1, 3)
+            out = torch.transpose(out, 2, 3)
+            return out.contiguous()
+
+        key_cache_flash_attn = transform_kv_cache(key_cache)
+        value_cache_flash_attn = transform_kv_cache(value_cache)
+        print(key_cache_flash_attn.shape)
+        print(value_cache_flash_attn.shape)
+        print(start_loc.shape)
+        print(seq_lens.shape)
+
+        def call_and_process_output():
+            return flash_attn_varlen_func(
+                q=query,
+                k=key_cache_flash_attn,
+                v=value_cache_flash_attn,
+                out=output,
+                cu_seqlens_q=start_loc,
+                max_seqlen_q=max_query_len,
+                seqused_k=seq_lens,
+                max_seqlen_k=max_seqlen,
+                softmax_scale=softmax_scale,
+                causal=True,
+                block_table=block_tables,
+                # window_size=(-1, 1),
+                # softcap=0,
+                # fa_version=
+            )
+
+        return call_and_process_output
+
+    @staticmethod
+    def requires_allocated_output() -> bool:
+        return True

@@ -16,12 +16,24 @@
 #
 
 
-from .flash_attn import FlashAttnDecodeCaller, FlashAttnPrefillCaller
-from .xformers import XformersCaller
+from .flash_attn import (
+    FlashAttnDecodeCaller,
+    FlashAttnPrefillCaller,
+    FlashAttnPrefixPrefillCaller,
+)
+try:
+    from .xformers import XformersCaller
+except ModuleNotFoundError:
+    # print("[benchmark callers] xformers not present, skipping..")
+    pass
 from .vllm_cuda_v2 import VllmCudaV2Caller
 from .vllm_cuda_v1 import VllmCudaV1Caller
 from .triton_2d import Triton2dAttentionDecodeCaller
 from .triton_3d import Triton3dAttentionDecodeCaller, Triton3dAttentionPrefillCaller
-from .baseline_triton import BaselineTritonCaller
+from .baseline_triton import BaselineTritonCaller, BaselineTritonPrefixPrefillCaller
 from .triton_fp8 import TritonFp8Caller
-from .flashinfer import FlashInferCaller
+try:
+    from .flashinfer import FlashInferCaller
+except ModuleNotFoundError:
+    # print("[benchmark callers] flashinfer not present, skipping..")
+    pass
