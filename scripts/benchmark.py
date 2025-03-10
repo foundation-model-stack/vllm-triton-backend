@@ -75,12 +75,12 @@ class BenchmarkMode(Enum):
 DTYPES = [torch.float16]
 SEEDS = [0]
 
-# BATCH_SIZES = [1, 2, 4, 8, 16, 32, 64, 128]
+BATCH_SIZES = [1, 2, 4, 8, 16, 32, 64, 128]
 # BATCH_SIZES = [128]
 # BATCH_SIZES = [64]
 # BATCH_SIZES = [2]
 # BATCH_SIZES = [1, 2, 4, 8, 16, 32, 64, 128, 256]
-BATCH_SIZES = [1, 2, 3, 4, 5, 7, 8, 12, 16, 32, 64, 128]
+# BATCH_SIZES = [1, 2, 3, 4, 5, 7, 8, 12, 16, 32, 64, 128]
 
 # order:  num_query_heads, num_kv_heads
 # NUM_HEADS = [(32, 32), (32, 8)]
@@ -375,6 +375,8 @@ def test_decode_attention(
             from callers import FlashAttnDecodeCaller as Caller
         elif implementation == Implementation.FLASHINFER:
             from callers import FlashInferCaller as Caller
+        elif implementation == Implementation.TRITON_FUSED:
+            from callers import FusedTritonDecodeOnlyCaller as Caller
 
         if Caller.requires_allocated_output:
             output = torch.empty_like(query)
