@@ -270,7 +270,7 @@ def ref_prefix_prefill(
                 block_offset = j % block_size
                 # k = key_cache[block_number, :, :, block_offset]
                 k = key_cache[block_number, block_offset, :, :]
-                k = k.reshape(num_kv_heads, head_size)
+                # k = k.reshape(num_kv_heads, head_size)
                 keys_lst.append(k)
                 # v = value_cache[block_number, :, :, block_offset]
                 v = value_cache[block_number, block_offset, :, :]
