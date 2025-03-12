@@ -104,7 +104,15 @@ class FusedTritonChunkedPrefixPrefill25dCaller(PrefixPrefillCaller):
         query: shape = [num_tokens, num_heads, head_size]
         key: shape = [num_tokens, num_kv_heads, head_size]
         value: shape = [num_tokens, num_kv_heads, head_size]
-        kv_cache = [2, num_blocks, block_size, num_kv_heads, head_size]
+        k_cache = [num_blocks, block_size, num_kv_heads, head_size]
+        v_cache = [num_blocks, block_size, num_kv_heads, head_size]
+
+        needs to be converted to
+        K_cache[num_blocks, num_kv_heads, head_size/8, block_size, 8]
+        V_cache[num_blocks, num_kv_heads, head_size, block_size]
+        
+        Returns:
+            shape = [num_tokens, num_heads, head_size]
         """
 
         max_query_len = max(query_lens)

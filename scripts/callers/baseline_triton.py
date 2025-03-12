@@ -18,7 +18,7 @@
 
 import torch
 from third_party.vedantroy_paged_attention import paged_attention_triton_v1
-from vllm.attention.ops.prefix_prefill import context_attention_fwd
+from ibm_triton_lib.kernels.triton_prefix_prefill import context_attention_fwd
 from .base import DecodeCaller, PrefixPrefillCaller
 
 
@@ -95,8 +95,32 @@ class BaselineTritonPrefixPrefillCaller(PrefixPrefillCaller):
         query: shape = [num_tokens, num_heads, head_size]
         key: shape = [num_tokens, num_kv_heads, head_size]
         value: shape = [num_tokens, num_kv_heads, head_size]
-        kv_cache = [2, num_blocks, block_size, num_kv_heads, head_size]
+        k_cache = [num_blocks, block_size, num_kv_heads, head_size]
+        v_cache = [num_blocks, block_size, num_kv_heads, head_size]
+
+        needs to be converted to
+        K_cache[num_blocks, num_kv_heads, head_size/8, block_size, 8]
+        V_cache[num_blocks, num_kv_heads, head_size, block_size]
+        
+        Returns:
+            shape = [num_tokens, num_heads, head_size]
         """
+        
+        head_size = key_cache.shape[3]
+        block_size = key_cache.shape[1]
+        num_kv_heads = key_cache.shape[2]
+
+        key_cache_pp = (
+            key_cache.view(-1, block_size, num_kv_heads, head_size // 8, 8)
+            .permute(0, 2, 3, 1, 4)
+            .contiguous()
+        )
+        
+        value_cache_pp = (
+            value_cache.view(-1, block_size, num_kv_heads, head_size)
+            .permute(0, 2, 3, 1)
+            .contiguous()
+        )
 
         max_query_len = max(query_lens)
         # print(query.shape)
@@ -111,12 +135,12 @@ class BaselineTritonPrefixPrefillCaller(PrefixPrefillCaller):
                 v=value,
                 o=output,
                 kv_cache_dtype="fp16",  # TODO
-                k_cache=key_cache,
-                v_cache=value_cache,
+                k_cache=key_cache_pp,
+                v_cache=value_cache_pp,
                 b_loc=block_tables,
                 b_start_loc=start_loc,
                 b_seq_len=seq_lens,
-                b_ctx_len=ctx_lens,  # FIXME: only in v0.7.3, not in main
+                # b_ctx_len=ctx_lens,  # FIXME: only in v0.7.3, not in main
                 max_input_len=max_query_len,
                 k_scale=k_scale,
                 v_scale=v_scale,

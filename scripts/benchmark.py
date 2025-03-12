@@ -210,8 +210,8 @@ do_benchmarks = True
 quantiles = [0.5, 0.2, 0.8]
 # should maybe also be controlled via env variable
 force_dump_dataframes = False
-# enforce_numerical_correctness = True
-enforce_numerical_correctness = False
+enforce_numerical_correctness = True
+# enforce_numerical_correctness = False
 do_profiling = True
 store_hatchet = False
 
@@ -949,9 +949,6 @@ def test_prefix_prefill_attention(
     num_query_heads, num_kv_heads = num_heads
     total_token_num = np.sum(seq_lens)
     total_query_tokens = np.sum(query_lens)
-    use_alignment_optimization = False
-    if implementation == Implementation.BASELINE_TRITON:
-        use_alignment_optimization = True
 
     # to avoid 'local variable referenced before assignment' when trying to del them
     query = None
@@ -1028,8 +1025,8 @@ def test_prefix_prefill_attention(
         # key_cache, value_cache = key_caches[0], value_caches[0]
 
         # create KV caches and fitting linear k and v
-        k = torch.zeros(total_token_num, num_kv_heads, head_size, dtype=dtype)
-        v = torch.zeros(total_token_num, num_kv_heads, head_size, dtype=dtype)
+        # k = torch.zeros(total_token_num, num_kv_heads, head_size, dtype=dtype)
+        # v = torch.zeros(total_token_num, num_kv_heads, head_size, dtype=dtype)
         key_cache = torch.zeros(
             num_blocks, block_size, num_kv_heads, head_size, dtype=cache_dtype
         )
@@ -1037,11 +1034,11 @@ def test_prefix_prefill_attention(
             num_blocks, block_size, num_kv_heads, head_size, dtype=cache_dtype
         )
         for i in range(batch_size):
-            for j in range(query_lens[i]):
-                k[b_start_loc[i] + j].copy_(key[b_seq_start_loc[i] + b_ctx_lens[i] + j])
-                v[b_start_loc[i] + j].copy_(
-                    value[b_seq_start_loc[i] + b_ctx_lens[i] + j]
-                )
+            # for j in range(query_lens[i]):
+            #     k[b_start_loc[i] + j].copy_(key[b_seq_start_loc[i] + b_ctx_lens[i] + j])
+            #     v[b_start_loc[i] + j].copy_(
+            #         value[b_seq_start_loc[i] + b_ctx_lens[i] + j]
+            #     )
             cur_ctx = 0
             block_id = 0
             while cur_ctx < b_ctx_lens[i]:
@@ -1060,27 +1057,29 @@ def test_prefix_prefill_attention(
                 ].copy_(value[start_loc:end_loc])
                 cur_ctx += block_size
                 block_id += 1
-        # transpose K_cache[num_blocks, block_size, num_kv_heads, head_size]
-        # to K_cache[num_blocks, num_kv_heads, head_size/8, block_size, 8]
-        if use_alignment_optimization:
-            key_cache = (
-                key_cache.view(-1, block_size, num_kv_heads, head_size // 8, 8)
-                .permute(0, 2, 3, 1, 4)
-                .contiguous()
-            )
-        else:
-            key_cache = (
-                key_cache.view(-1, block_size, num_kv_heads, head_size)
-                .permute(0, 2, 3, 1)
-                .contiguous()
-            )
-        # transpose V_cache[num_blocks, block_size, num_kv_heads, head_size]
-        # to V_cache[num_blocks, num_kv_heads, head_size, block_size]
-        value_cache = (
-            value_cache.view(-1, block_size, num_kv_heads, head_size)
-            .permute(0, 2, 3, 1)
-            .contiguous()
-        )
+        # # transpose K_cache[num_blocks, block_size, num_kv_heads, head_size]
+        # # TODO: do not! move to caller / align with acutal vllm API
+        # # TODO: fix ref implementation
+        # # to K_cache[num_blocks, num_kv_heads, head_size/8, block_size, 8]
+        # if use_alignment_optimization:
+        #     key_cache = (
+        #         key_cache.view(-1, block_size, num_kv_heads, head_size // 8, 8)
+        #         .permute(0, 2, 3, 1, 4)
+        #         .contiguous()
+        #     )
+        # else:
+        #     key_cache = (
+        #         key_cache.view(-1, block_size, num_kv_heads, head_size)
+        #         .permute(0, 2, 3, 1)
+        #         .contiguous()
+        #     )
+        # # transpose V_cache[num_blocks, block_size, num_kv_heads, head_size]
+        # # to V_cache[num_blocks, num_kv_heads, head_size, block_size]
+        # value_cache = (
+        #     value_cache.view(-1, block_size, num_kv_heads, head_size)
+        #     .permute(0, 2, 3, 1)
+        #     .contiguous()
+        # )
 
         print(query.shape)
         print(key_cache.shape)
@@ -1142,8 +1141,8 @@ def test_prefix_prefill_attention(
         output_ = call_func_under_test()
         output = Caller.select_output(output, output_)
         # print(query.shape)
-        # print(ref_output.shape)
-        # print(output.shape)
+        print(ref_output.shape)
+        print(output.shape)
 
         if capsys is not None:
             captured_raw = capsys.readouterr()  # returns stdout, stderr

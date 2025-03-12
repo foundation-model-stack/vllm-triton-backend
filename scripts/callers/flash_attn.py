@@ -144,38 +144,50 @@ class FlashAttnPrefixPrefillCaller(PrefixPrefillCaller):
         query: shape = [num_tokens, num_heads, head_size]
         key: shape = [num_tokens, num_kv_heads, head_size]
         value: shape = [num_tokens, num_kv_heads, head_size]
-        kv_cache = [2, num_blocks, block_size, num_kv_heads, head_size]
+        k_cache = [num_blocks, block_size, num_kv_heads, head_size]
+        v_cache = [num_blocks, block_size, num_kv_heads, head_size]
+        Returns:
+            shape = [num_tokens, num_heads, head_size]
         """
 
+        head_size = key_cache.shape[3]
+        block_size = key_cache.shape[1]
+        num_kv_heads = key_cache.shape[2]
+        num_tokens = query.shape[0]
+        num_query_heads = query.shape[1]
+        
         max_query_len = max(query_lens)
         max_seqlen = max(seq_lens)
         # print(query.shape)
         # print(key_cache.shape)
         # print(value_cache.shape)
-        print(max_query_len)
-        print(max_seqlen)
+        # print(max_query_len)
+        # print(max_seqlen)
 
-        def transform_kv_cache(x):
-            out = torch.transpose(x, 1, 3)
-            out = torch.transpose(out, 2, 3)
-            return out.contiguous()
+        # def transform_kv_cache(x):
+        #     out = torch.transpose(x, 1, 3)
+        #     out = torch.transpose(out, 2, 3)
+        #     return out.contiguous()
 
-        key_cache_flash_attn = transform_kv_cache(key_cache)
-        value_cache_flash_attn = transform_kv_cache(value_cache)
-        print(key_cache_flash_attn.shape)
-        print(value_cache_flash_attn.shape)
-        print(start_loc.shape)
-        print(seq_lens.shape)
+        # key_cache_flash_attn = transform_kv_cache(key_cache)
+        # value_cache_flash_attn = transform_kv_cache(value_cache)
+        # print(key_cache_flash_attn.shape)
+        # print(value_cache_flash_attn.shape)
+        # print(start_loc.shape)
+        # print(seq_lens.shape)
+
+        # orig_output = output.view(num_tokens, -1)  # still I don't know why we have to do this
 
         def call_and_process_output():
+            # k must have shape (num_blocks, page_block_size, num_heads_k, head_size)
             return flash_attn_varlen_func(
                 q=query,
-                k=key_cache_flash_attn,
-                v=value_cache_flash_attn,
+                k=key_cache,
+                v=value_cache,
                 out=output,
                 cu_seqlens_q=start_loc,
                 max_seqlen_q=max_query_len,
-                seqused_k=seq_lens,
+                seqused_k=seq_start_loc,
                 max_seqlen_k=max_seqlen,
                 softmax_scale=softmax_scale,
                 causal=True,
@@ -184,6 +196,7 @@ class FlashAttnPrefixPrefillCaller(PrefixPrefillCaller):
                 # softcap=0,
                 # fa_version=
             )
+            # output = orig_output.view(num_tokens, num_query_heads, head_size)
 
         return call_and_process_output
 

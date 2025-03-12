@@ -225,6 +225,15 @@ def ref_prefix_prefill(
     scale: float,
     dtype: torch.dtype,
 ):
+    """
+    query: shape = [num_tokens, num_heads, head_size]
+    key: shape = [num_tokens, num_kv_heads, head_size]
+    value: shape = [num_tokens, num_kv_heads, head_size]
+    k_cache = [num_blocks, block_size, num_kv_heads, head_size]
+    v_cache = [num_blocks, block_size, num_kv_heads, head_size]
+    Returns:
+        shape = [num_tokens, num_heads, head_size]
+    """
     num_query_heads = query.shape[1]
     num_kv_heads = value_cache.shape[1]
     head_size = value_cache.shape[2]
