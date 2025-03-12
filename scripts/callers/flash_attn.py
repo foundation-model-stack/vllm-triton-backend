@@ -158,6 +158,7 @@ class FlashAttnPrefixPrefillCaller(PrefixPrefillCaller):
         
         max_query_len = max(query_lens)
         max_seqlen = max(seq_lens)
+        max_ctx_len = max(ctx_lens)
         # print(query.shape)
         # print(key_cache.shape)
         # print(value_cache.shape)
@@ -187,14 +188,16 @@ class FlashAttnPrefixPrefillCaller(PrefixPrefillCaller):
                 out=output,
                 cu_seqlens_q=start_loc,
                 max_seqlen_q=max_query_len,
-                seqused_k=seq_start_loc,
-                max_seqlen_k=max_seqlen,
+                seqused_k=ctx_lens,
+                max_seqlen_k=max_ctx_len,
+                # seqused_k=seq_lens,
+                # max_seqlen_k=max_seqlen,
                 softmax_scale=softmax_scale,
                 causal=True,
                 block_table=block_tables,
                 # window_size=(-1, 1),
                 # softcap=0,
-                # fa_version=
+                fa_version=2, # TODO
             )
             # output = orig_output.view(num_tokens, num_query_heads, head_size)
 

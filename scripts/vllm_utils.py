@@ -235,9 +235,9 @@ def ref_prefix_prefill(
         shape = [num_tokens, num_heads, head_size]
     """
     num_query_heads = query.shape[1]
-    num_kv_heads = value_cache.shape[1]
-    head_size = value_cache.shape[2]
-    block_size = value_cache.shape[3]
+    num_kv_heads = value_cache.shape[2]
+    head_size = value_cache.shape[3]
+    block_size = value_cache.shape[1]
     num_seqs = batch_size
 
     block_tables_lst = block_tables.cpu().tolist()
@@ -268,10 +268,12 @@ def ref_prefix_prefill(
             for j in range(seq_len):
                 block_number = int(block_table[j // block_size])
                 block_offset = j % block_size
-                k = key_cache[block_number, :, :, block_offset]
+                # k = key_cache[block_number, :, :, block_offset]
+                k = key_cache[block_number, block_offset, :, :]
                 k = k.reshape(num_kv_heads, head_size)
                 keys_lst.append(k)
-                v = value_cache[block_number, :, :, block_offset]
+                # v = value_cache[block_number, :, :, block_offset]
+                v = value_cache[block_number, block_offset, :, :]
                 values_lst.append(v)
             reconstr_keys = torch.stack(keys_lst, dim=0)
             reconstr_values = torch.stack(values_lst, dim=0)
