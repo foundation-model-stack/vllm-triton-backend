@@ -23,12 +23,12 @@ def prefix_prefill_fwd_3d(
     sm_scale,
     k_scale,
     v_scale,
-    cur_batch, # int, tl.program_id(0)
-    cur_head, # int, tl.program_id(1)
-    start_m, # int, tl.program_id(2)
-    cur_batch_in_all_start_index, # int
-    cur_batch_in_all_stop_index, # int 
-    cur_batch_query_len, # int
+    cur_batch,  # int, tl.program_id(0)
+    cur_head,  # int, tl.program_id(1)
+    start_m,  # int, tl.program_id(2)
+    cur_batch_in_all_start_index,  # int
+    cur_batch_in_all_stop_index,  # int
+    cur_batch_query_len,  # int
     B_Start_Loc,
     B_Seqlen,
     Alibi_slopes,
@@ -340,9 +340,9 @@ def kernel_paged_attention_2d(
     v_scale,  # float32
     seq_idx,  # int, tl.program_id(0)
     query_head_idx,  # int, tl.program_id(1)
-    cur_batch_in_all_start_index, # int
-    cur_batch_in_all_stop_index, # int 
-    cur_batch_query_len, # int
+    cur_batch_in_all_start_index,  # int
+    cur_batch_in_all_stop_index,  # int
+    cur_batch_query_len,  # int
     num_query_heads: tl.constexpr,  # int
     num_queries_per_kv: tl.constexpr,  # int
     block_table_stride: tl.constexpr,  # int
@@ -548,7 +548,7 @@ def fused_chunked_prefill_kernel_25d(
     query_head_idx = tl.program_id(1)
     start_m = tl.program_id(2)
     kv_head_idx = query_head_idx // num_queries_per_kv
-    
+
     cur_batch_in_all_start_index = tl.load(query_start_len_ptr + seq_idx)
     cur_batch_in_all_stop_index = tl.load(query_start_len_ptr + seq_idx + 1)
     cur_batch_query_len = cur_batch_in_all_stop_index - cur_batch_in_all_start_index
@@ -658,6 +658,7 @@ BASE_BLOCK = 128 if current_platform.has_device_capability(80) else 64
 NUM_WARPS = 4 if current_platform.is_rocm() else 8
 # To check compatibility
 IS_TURING = current_platform.get_device_capability() == (7, 5)
+
 
 def fused_chunked_prefill_paged_decode(
     query,

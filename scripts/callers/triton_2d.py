@@ -96,11 +96,11 @@ class Triton2dChunkedPrefillCaller(PrefixPrefillCaller):
         needs to be converted to
         K_cache[num_blocks, num_kv_heads, head_size/8, block_size, 8]
         V_cache[num_blocks, num_kv_heads, head_size, block_size]
-        
+
         Returns:
             shape = [num_tokens, num_heads, head_size]
         """
-        
+
         max_query_len = max(query_lens)
         k_scale = v_scale = torch.tensor(1.0, dtype=torch.float32, device=query.device)
 

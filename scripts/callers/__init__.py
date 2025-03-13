@@ -29,4 +29,7 @@ from .triton_3d import Triton3dAttentionDecodeCaller, Triton3dAttentionPrefillCa
 from .baseline_triton import BaselineTritonCaller, BaselineTritonPrefixPrefillCaller
 from .triton_fp8 import TritonFp8Caller
 from .flashinfer import FlashInferCaller
-from .fused_triton import FusedTritonChunkedPrefixPrefill25dCaller, FusedTritonDecodeOnlyCaller
+from .fused_triton import (
+    FusedTritonChunkedPrefixPrefill25dCaller,
+    FusedTritonDecodeOnlyCaller,
+)

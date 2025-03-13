@@ -42,7 +42,7 @@ class FusedTritonDecodeOnlyCaller(DecodeCaller):
         value: shape = [num_tokens, num_kv_heads, head_size]
         kv_cache = [2, num_blocks, block_size, num_kv_heads, head_size]
         """
-        
+
         query_lens = [1] * num_seqs
         b_query_lens = torch.tensor(query_lens, dtype=torch.int)
         b_start_loc = torch.cumsum(
@@ -58,8 +58,8 @@ class FusedTritonDecodeOnlyCaller(DecodeCaller):
         def call_and_process_output():
             return fused_chunked_prefill_paged_decode_25d(
                 query=query,
-                key=key_cache, # would break, just here for benchmarking
-                value=value_cache, # would break, just here for benchmarking
+                key=key_cache,  # would break, just here for benchmarking
+                value=value_cache,  # would break, just here for benchmarking
                 output=output,
                 kv_cache_dtype=kv_cache_dtype,  # TODO
                 key_cache=key_cache,
@@ -72,7 +72,7 @@ class FusedTritonDecodeOnlyCaller(DecodeCaller):
                 v_scale=v_scale,
                 alibi_slopes=None,  # TODO
                 sliding_window=None,  # TODO
-                sm_scale=1.0, # would break, just here for benchmarking
+                sm_scale=1.0,  # would break, just here for benchmarking
             )
 
         return call_and_process_output
@@ -110,7 +110,7 @@ class FusedTritonChunkedPrefixPrefill25dCaller(PrefixPrefillCaller):
         needs to be converted to
         K_cache[num_blocks, num_kv_heads, head_size/8, block_size, 8]
         V_cache[num_blocks, num_kv_heads, head_size, block_size]
-        
+
         Returns:
             shape = [num_tokens, num_heads, head_size]
         """

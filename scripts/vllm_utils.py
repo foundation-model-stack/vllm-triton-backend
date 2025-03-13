@@ -375,7 +375,6 @@ def ref_prefix_prefill(
     return torch.cat(ref_outputs, dim=0)
 
 
-
 def ref_reshape_and_cache_flash(
     key: torch.Tensor,
     value: torch.Tensor,
@@ -401,7 +400,7 @@ def ref_reshape_and_cache_flash(
         block_offset = block_offsets_lst[i]
         key_cache[block_idx, block_offset, :, :] = key[i]
         value_cache[block_idx, block_offset, :, :] = value[i]
-    
+
 
 def ref_reshape_and_cache(
     key: torch.Tensor,
@@ -418,7 +417,7 @@ def ref_reshape_and_cache(
     key_cache[num_blocks, num_kv_heads, head_size/8, block_size, 8]
     value_cache[num_blocks, num_kv_heads, head_size, block_size]
     """
-    
+
     reshaped_key = key.reshape(num_tokens, *key_cache[0, :, :, 0, :].shape)
     block_indicies = torch.div(slot_mapping, block_size, rounding_mode="floor")
     block_indicies_lst = block_indicies.cpu().tolist()

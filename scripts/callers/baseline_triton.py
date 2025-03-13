@@ -101,11 +101,11 @@ class BaselineTritonPrefixPrefillCaller(PrefixPrefillCaller):
         needs to be converted to
         K_cache[num_blocks, num_kv_heads, head_size/8, block_size, 8]
         V_cache[num_blocks, num_kv_heads, head_size, block_size]
-        
+
         Returns:
             shape = [num_tokens, num_heads, head_size]
         """
-        
+
         head_size = key_cache.shape[3]
         block_size = key_cache.shape[1]
         num_kv_heads = key_cache.shape[2]

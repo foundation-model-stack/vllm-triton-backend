@@ -882,7 +882,12 @@ def test_prefix_prefill_attention(
     realistic_prompt_mode = len(prompt_pattern) > 1
     gqa_mode = num_heads[0] != num_heads[1]
 
-    if implementation not in [Implementation.BASELINE_TRITON, Implementation.FLASH_ATTN, Implementation.TRITON_FUSED, Implementation.TRITON_2D]:
+    if implementation not in [
+        Implementation.BASELINE_TRITON,
+        Implementation.FLASH_ATTN,
+        Implementation.TRITON_FUSED,
+        Implementation.TRITON_2D,
+    ]:
         pytest.skip()
 
     # TODO
@@ -897,7 +902,6 @@ def test_prefix_prefill_attention(
     RTOL = 1e-5
     if implementation == Implementation.FLASH_ATTN:
         ATOL = 2e-2  # for 0.0749% of the cases...
-
 
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
@@ -916,7 +920,8 @@ def test_prefix_prefill_attention(
     partial_prefill_ctx_lens = [
         int(np.ceil(l // block_size * 0.5)) * block_size for l in init_seq_lens
     ]
-    partial_prefill_q_lens = [init_seq_lens[i] - partial_prefill_ctx_lens[i] for i in range(batch_size)
+    partial_prefill_q_lens = [
+        init_seq_lens[i] - partial_prefill_ctx_lens[i] for i in range(batch_size)
     ]
     query_lens = (
         [1] * decode_seqs
@@ -1040,7 +1045,15 @@ def test_prefix_prefill_attention(
         # print(block_table_t)
         # print(slot_mapping_t)
 
-        ref_reshape_and_cache_flash(key, value, key_cache, value_cache, slot_mapping_t, block_size, total_token_num)
+        ref_reshape_and_cache_flash(
+            key,
+            value,
+            key_cache,
+            value_cache,
+            slot_mapping_t,
+            block_size,
+            total_token_num,
+        )
 
         # print(query.shape)
         # print(key_cache.shape)
@@ -1084,16 +1097,37 @@ def test_prefix_prefill_attention(
             # output.uniform_(-max_value, max_value)
             # print(output)
 
-        if implementation in [Implementation.BASELINE_TRITON, Implementation.TRITON_FUSED, Implementation.TRITON_2D]:
+        if implementation in [
+            Implementation.BASELINE_TRITON,
+            Implementation.TRITON_FUSED,
+            Implementation.TRITON_2D,
+        ]:
             # TODO: better here than in callers? That would mean the caller interfaces are not totally fixed, as with vllm's forwards
             x = 8
             key_cache = torch.zeros(
-                num_blocks, num_kv_heads, head_size//x, block_size, x, dtype=key_cache.dtype,
+                num_blocks,
+                num_kv_heads,
+                head_size // x,
+                block_size,
+                x,
+                dtype=key_cache.dtype,
             )
             value_cache = torch.zeros(
-                num_blocks, num_kv_heads, head_size, block_size, dtype=value_cache.dtype,
+                num_blocks,
+                num_kv_heads,
+                head_size,
+                block_size,
+                dtype=value_cache.dtype,
             )
-            ref_reshape_and_cache(key, value, key_cache, value_cache, slot_mapping_t, block_size, total_token_num)
+            ref_reshape_and_cache(
+                key,
+                value,
+                key_cache,
+                value_cache,
+                slot_mapping_t,
+                block_size,
+                total_token_num,
+            )
 
         call_func_under_test = Caller.make_call_func(
             output,
@@ -1141,7 +1175,7 @@ def test_prefix_prefill_attention(
             if (
                 do_profiling
                 and implementation
-                in [ # TODO
+                in [  # TODO
                     # Implementation.TRITON_2D,
                     # Implementation.TRITON_3D,
                     # Implementation.BASELINE_TRITON,
