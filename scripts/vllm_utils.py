@@ -257,10 +257,7 @@ def ref_prefix_prefill(
 
         if cur_batch_query_len == 1:
             # normal decode
-            # q = query[i].unsqueeze(0)
             q = query[cur_batch_in_all_start_index:cur_batch_in_all_stop_index]
-            # print(q)
-            # print(q.shape)
             block_table = block_tables_lst[i]
             seq_len = int(ctx_lens_lst[i])
             keys_lst: List[torch.Tensor] = []
@@ -268,11 +265,8 @@ def ref_prefix_prefill(
             for j in range(seq_len):
                 block_number = int(block_table[j // block_size])
                 block_offset = j % block_size
-                # k = key_cache[block_number, :, :, block_offset]
                 k = key_cache[block_number, block_offset, :, :]
-                # k = k.reshape(num_kv_heads, head_size)
                 keys_lst.append(k)
-                # v = value_cache[block_number, :, :, block_offset]
                 v = value_cache[block_number, block_offset, :, :]
                 values_lst.append(v)
             reconstr_keys = torch.stack(keys_lst, dim=0)
@@ -286,8 +280,6 @@ def ref_prefix_prefill(
                     reconstr_values, num_queries_per_kv, dim=1
                 )
             out = ref_masked_attention(q, reconstr_keys, reconstr_values, scale)
-            # out = out.view(num_query_heads, head_size)
-            # output[i].copy_(out, non_blocking=True)
             ref_outputs.append(out)
         elif cur_batch_ctx_len == 0:
             # normal prefill
@@ -319,8 +311,6 @@ def ref_prefix_prefill(
                 scale,
                 attn_mask=attn_mask,
             )
-            # out = out.view(num_query_heads, head_size)
-            # output[i].copy_(out, non_blocking=True)
             ref_outputs.append(out)
         else:
             # prefix prefill
@@ -333,11 +323,8 @@ def ref_prefix_prefill(
             for j in range(ctx_len):
                 block_number = int(block_table[j // block_size])
                 block_offset = j % block_size
-                # k = key_cache[block_number, :, :, block_offset]
                 k = key_cache[block_number, block_offset, :, :]
-                # k = k.reshape(num_kv_heads, head_size)
                 keys_lst.append(k)
-                # v = value_cache[block_number, :, :, block_offset]
                 v = value_cache[block_number, block_offset, :, :]
                 values_lst.append(v)
             reconstructed_keys = torch.stack(keys_lst, dim=0)
@@ -384,8 +371,6 @@ def ref_prefix_prefill(
                 all_values_t,
                 scale,
             )
-            # out = out.view(num_query_heads, head_size)
-            # output[i].copy_(out, non_blocking=True)
             ref_outputs.append(out)
     return torch.cat(ref_outputs, dim=0)
 

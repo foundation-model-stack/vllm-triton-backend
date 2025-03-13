@@ -118,23 +118,8 @@ class FusedTritonChunkedPrefixPrefill25dCaller(PrefixPrefillCaller):
         block_size = key_cache.shape[1]
         num_kv_heads = key_cache.shape[2]
 
-        # key_cache_pp = (
-        #     key_cache.view(-1, block_size, num_kv_heads, head_size // 8, 8)
-        #     .permute(0, 2, 3, 1, 4)
-        #     .contiguous()
-        # )
-        
-        # value_cache_pp = (
-        #     value_cache.view(-1, block_size, num_kv_heads, head_size)
-        #     .permute(0, 2, 3, 1)
-        #     .contiguous()
-        # )
-
         max_query_len = query_lens.max()
         print(start_loc)
-        # print(query.shape)
-        # print(key_cache.shape)
-        # print(value_cache.shape)
         k_scale = v_scale = torch.tensor(1.0, dtype=torch.float32, device=query.device)
 
         def call_and_process_output():
