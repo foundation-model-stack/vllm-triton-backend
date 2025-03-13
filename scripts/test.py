@@ -30,6 +30,7 @@ from vllm_utils import (
     ref_single_query_cached_kv_attention,
     ref_multi_query_kv_attention,
 )
+from vllm import _custom_ops as ops
 import triton
 import triton.language as tl
 import math
@@ -136,13 +137,14 @@ def test_decoding_attention(
     if torch.cuda.get_device_capability()[0] < 8 and dtype is torch.bfloat16:
         pytest.skip()
 
-    if (
-        implementation == Implementation.TRITON_2D
-        or implementation == Implementation.TRITON_3D
-    ):
+    if implementation == Implementation.TRITON_3D:
         if (not math.log(head_size, 2).is_integer()) or kv_cache_dtype == "fp8":
             pytest.skip()
-    elif implementation in [Implementation.VLLM_CUDA_V1, Implementation.VLLM_CUDA_V2]:
+    elif implementation in [
+        Implementation.VLLM_CUDA_V1,
+        Implementation.VLLM_CUDA_V2,
+        Implementation.TRITON_2D,
+    ]:
         if kv_cache_dtype == "fp8" and head_size % 16:
             pytest.skip()
     elif implementation == Implementation.BASELINE_TRITON:

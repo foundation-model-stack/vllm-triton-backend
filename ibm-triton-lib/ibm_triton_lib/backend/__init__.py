@@ -16,10 +16,11 @@
 #
 import os
 
+
 def register():
     """Register the triton attention platform."""
 
-    VLLM_USE_V1 = int(os.environ.get('VLLM_USE_V1', "0"))
+    VLLM_USE_V1 = int(os.environ.get("VLLM_USE_V1", "0"))
 
     # backend only works with v0 currently
     if VLLM_USE_V1:
