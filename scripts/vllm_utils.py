@@ -333,10 +333,12 @@ def ref_prefix_prefill(
             for j in range(ctx_len):
                 block_number = int(block_table[j // block_size])
                 block_offset = j % block_size
-                k = key_cache[block_number, :, :, block_offset]
-                k = k.reshape(num_kv_heads, head_size)
+                # k = key_cache[block_number, :, :, block_offset]
+                k = key_cache[block_number, block_offset, :, :]
+                # k = k.reshape(num_kv_heads, head_size)
                 keys_lst.append(k)
-                v = value_cache[block_number, :, :, block_offset]
+                # v = value_cache[block_number, :, :, block_offset]
+                v = value_cache[block_number, block_offset, :, :]
                 values_lst.append(v)
             reconstructed_keys = torch.stack(keys_lst, dim=0)
             reconstructed_values = torch.stack(values_lst, dim=0)

@@ -101,13 +101,13 @@ SEQUENCE_LENGTHS = [16, 128, 512, 1024, 2048, 4096]
 # CONTEXT_LENGTHS = [16, 128, 512, 1024, 2048, 4096]
 # QUERY_LENGTHS = [1, 16, 128, 512, 1024, 2048, 4096]
 # QUERY_LENGTHS = [1, 1024]
-# PREFIX_PREFILL_SHARE_OF_DECODE = [0.5]
-PREFIX_PREFILL_SHARE_OF_DECODE = [1.0]
+PREFIX_PREFILL_SHARE_OF_DECODE = [0.5]
+# PREFIX_PREFILL_SHARE_OF_DECODE = [1.0]
 # PREFIX_PREFILL_SHARE_OF_DECODE = [0.0]
 # PREFIX_PREFILL_SHARE_OF_DECODE = [0.0, 0.5, 1.0]
 # PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL = [0.0, 0.5]
-# PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL = [0.5]
-PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL = [0.0]
+PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL = [0.5]
+# PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL = [0.0]
 
 # HEAD_SIZES_FLASH = [32, 64, 128]  # only powers of 2!
 HEAD_SIZES = [128]  # only powers of 2! for llama2 & 3
@@ -892,7 +892,8 @@ def test_prefix_prefill_attention(
     # ATOL = 1e-3
     # if max_value == 1.0:
     #     ATOL = 2e-2
-    ATOL = 1e-1 * max_value
+    # ATOL = 1e-1 * max_value
+    ATOL = min(2 * max_value, 2e-2)
     RTOL = 1e-5
     if implementation == Implementation.FLASH_ATTN:
         ATOL = 2e-2  # for 0.0749% of the cases...
@@ -915,8 +916,10 @@ def test_prefix_prefill_attention(
     partial_prefill_ctx_lens = [
         int(np.ceil(l // block_size * 0.5)) * block_size for l in init_seq_lens
     ]
-    partial_prefill_q_lens = [
-        int(np.floor(l // block_size * 0.5)) * block_size for l in init_seq_lens
+    # partial_prefill_q_lens = [
+    #     int(np.floor(l // block_size * 0.5)) * block_size for l in init_seq_lens
+    # ]
+    partial_prefill_q_lens = [init_seq_lens[i] - partial_prefill_ctx_lens[i] for i in range(batch_size)
     ]
     query_lens = (
         [1] * decode_seqs
@@ -951,12 +954,12 @@ def test_prefix_prefill_attention(
     # NOTE(ngl): Some/all implementations (VLLM_CUDA_V1, XFORMERS, some triton version) assume
     #   there is at least one page per request. That's why apparently the numerical error is
     #   higher at random places if the request is very very small.
-    for seq_len in seq_lens:
-        if seq_len < block_size:
-            # ATOL = min(6.2e-3 * max_value, 1e-3)
-            # TODO
-            ATOL = 1e-2
-            break
+    # for seq_len in seq_lens:
+    #     if seq_len < block_size:
+    #         # ATOL = min(6.2e-3 * max_value, 1e-3)
+    #         # TODO
+    #         ATOL = 1e-2
+    #         break
 
     kv_cache_dtype = "auto"
     cache_dtype = dtype  # TODO
