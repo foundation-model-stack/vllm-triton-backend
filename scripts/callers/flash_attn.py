@@ -159,15 +159,15 @@ class FlashAttnPrefixPrefillCaller(PrefixPrefillCaller):
         max_query_len = query_lens.max()
         max_seqlen = seq_lens.max()
         max_ctx_len = ctx_lens.max()
-        print(query.shape)
-        print(key_cache.shape)
-        print(value_cache.shape)
-        print(max_query_len)
-        print(max_ctx_len)
-        print(seq_lens.shape)
-        print(max_seqlen)
-        print(block_tables)
-        print(start_loc)
+        # print(query.shape)
+        # print(key_cache.shape)
+        # print(value_cache.shape)
+        # print(max_query_len)
+        # print(max_ctx_len)
+        # print(seq_lens.shape)
+        # print(max_seqlen)
+        # print(block_tables)
+        # print(start_loc)
 
         # def transform_kv_cache(x):
         #     out = torch.transpose(x, 1, 3)
@@ -198,7 +198,7 @@ class FlashAttnPrefixPrefillCaller(PrefixPrefillCaller):
                 # max_seqlen_k=max_ctx_len,
                 seqused_k=seq_lens,
                 max_seqlen_k=max_seqlen,
-                # softmax_scale=softmax_scale,
+                softmax_scale=softmax_scale,
                 causal=True,
                 block_table=block_tables,
                 # window_size=(-1, 1),
