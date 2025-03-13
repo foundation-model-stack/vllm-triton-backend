@@ -15,6 +15,8 @@
 #  *******************************************************************************/
 #
 
+import triton
+
 from .triton_prefix_prefill import context_attention_fwd
 from .triton_paged_decode_attention_2d import kernel_paged_attention_2d
 
@@ -79,6 +81,8 @@ def chunked_prefill_paged_decode(
         context_lens_ptr=seq_lens,
         alibi_slopes_ptr=alibi_slopes,
         scale=scale,
+        k_scale=k_scale,
+        v_scale=v_scale,
         num_query_heads=num_query_heads,
         num_queries_per_kv=num_queries_per_kv,
         block_table_stride=block_table.stride(0),
@@ -88,6 +92,7 @@ def chunked_prefill_paged_decode(
         output_stride_1=output.stride(1),
         BLOCK_SIZE=block_size,
         HEAD_SIZE=head_size,
+        HEAD_SIZE_PADDED=triton.next_power_of_2(head_size),
         USE_ALIBI_SLOPES=use_alibi_slopes,
         x=key_cache.shape[4],
         stride_k_cache_0=key_cache.stride(0),

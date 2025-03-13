@@ -109,19 +109,20 @@ class BaselineTritonPrefixPrefillCaller(PrefixPrefillCaller):
         head_size = key_cache.shape[3]
         block_size = key_cache.shape[1]
         num_kv_heads = key_cache.shape[2]
+        num_blocks = key_cache.shape[0]
 
-        key_cache_pp = (
-            key_cache.view(-1, block_size, num_kv_heads, head_size // 8, 8)
-            .permute(0, 2, 3, 1, 4)
-            .contiguous()
-        )
+        # key_cache_pp = (
+        #     key_cache.view(-1, block_size, num_kv_heads, head_size // 8, 8)
+        #     .permute(0, 2, 3, 1, 4)
+        #     .contiguous()
+        # )
         
-        value_cache_pp = (
-            value_cache.view(-1, block_size, num_kv_heads, head_size)
-            .permute(0, 2, 3, 1)
-            .contiguous()
-        )
-
+        # value_cache_pp = (
+        #     value_cache.view(-1, block_size, num_kv_heads, head_size)
+        #     .permute(0, 2, 3, 1)
+        #     .contiguous()
+        # )
+        
         max_query_len = max(query_lens)
         # print(query.shape)
         # print(key_cache.shape)
@@ -135,8 +136,8 @@ class BaselineTritonPrefixPrefillCaller(PrefixPrefillCaller):
                 v=value,
                 o=output,
                 kv_cache_dtype="fp16",  # TODO
-                k_cache=key_cache_pp,
-                v_cache=value_cache_pp,
+                k_cache=key_cache,
+                v_cache=value_cache,
                 b_loc=block_tables,
                 b_start_loc=start_loc,
                 b_seq_len=seq_lens,

@@ -407,10 +407,8 @@ def ref_reshape_and_cache_flash(
 
     block_indicies = torch.div(slot_mapping, block_size, rounding_mode="floor")
     block_indicies_lst = block_indicies.cpu().tolist()
-    print(block_indicies_lst)
     block_offsets = slot_mapping % block_size
     block_offsets_lst = block_offsets.cpu().tolist()
-    print(block_indicies_lst)
     for i in range(num_tokens):
         block_idx = block_indicies_lst[i]
         block_offset = block_offsets_lst[i]
@@ -418,3 +416,31 @@ def ref_reshape_and_cache_flash(
         value_cache[block_idx, block_offset, :, :] = value[i]
     
 
+def ref_reshape_and_cache(
+    key: torch.Tensor,
+    value: torch.Tensor,
+    key_cache: torch.Tensor,
+    value_cache: torch.Tensor,
+    slot_mapping: torch.Tensor,
+    block_size: int,
+    num_tokens: int,
+):
+    """
+    key: shape = [num_tokens, num_kv_heads, head_size]
+    value: shape = [num_tokens, num_kv_heads, head_size]
+    key_cache[num_blocks, num_kv_heads, head_size/8, block_size, 8]
+    value_cache[num_blocks, num_kv_heads, head_size, block_size]
+    """
+    
+    reshaped_key = key.reshape(num_tokens, *key_cache[0, :, :, 0, :].shape)
+    block_indicies = torch.div(slot_mapping, block_size, rounding_mode="floor")
+    block_indicies_lst = block_indicies.cpu().tolist()
+    print(block_indicies_lst)
+    block_offsets = slot_mapping % block_size
+    block_offsets_lst = block_offsets.cpu().tolist()
+    print(block_offsets_lst)
+    for i in range(num_tokens):
+        block_idx = block_indicies_lst[i]
+        block_offset = block_offsets_lst[i]
+        key_cache[block_idx, :, :, block_offset, :] = reshaped_key[i]
+        value_cache[block_idx, :, :, block_offset] = value[i]

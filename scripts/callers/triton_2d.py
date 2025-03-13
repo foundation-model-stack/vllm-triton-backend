@@ -17,8 +17,8 @@
 
 
 import torch
-from ibm_triton_lib.kernels import paged_attention_2d
-from .base import DecodeCaller
+from ibm_triton_lib.kernels import paged_attention_2d, chunked_prefill_paged_decode
+from .base import DecodeCaller, PrefixPrefillCaller
 
 
 class Triton2dAttentionDecodeCaller(DecodeCaller):
@@ -66,3 +66,86 @@ class Triton2dAttentionDecodeCaller(DecodeCaller):
         )
 
         return call_func_under_test
+
+
+class Triton2dChunkedPrefillCaller(PrefixPrefillCaller):
+    @staticmethod
+    def make_call_func(
+        output,
+        query,
+        key_cache,
+        value_cache,
+        key,
+        value,
+        block_tables,
+        seq_lens,
+        ctx_lens,
+        query_lens,
+        start_loc,
+        seq_start_loc,
+        softmax_scale,
+        # kv_cache_dtype,  # unused
+    ):
+        """
+        query: shape = [num_tokens, num_heads, head_size]
+        key: shape = [num_tokens, num_kv_heads, head_size]
+        value: shape = [num_tokens, num_kv_heads, head_size]
+        k_cache = [num_blocks, block_size, num_kv_heads, head_size]
+        v_cache = [num_blocks, block_size, num_kv_heads, head_size]
+
+        needs to be converted to
+        K_cache[num_blocks, num_kv_heads, head_size/8, block_size, 8]
+        V_cache[num_blocks, num_kv_heads, head_size, block_size]
+        
+        Returns:
+            shape = [num_tokens, num_heads, head_size]
+        """
+        
+        head_size = key_cache.shape[3]
+        block_size = key_cache.shape[1]
+        num_kv_heads = key_cache.shape[2]
+        num_blocks = key_cache.shape[0]
+
+        # key_cache_pp = (
+        #     key_cache.view(-1, block_size, num_kv_heads, head_size // 8, 8)
+        #     .permute(0, 2, 3, 1, 4)
+        #     .contiguous()
+        # )
+        
+        # value_cache_pp = (
+        #     value_cache.view(-1, block_size, num_kv_heads, head_size)
+        #     .permute(0, 2, 3, 1)
+        #     .contiguous()
+        # )
+        
+        max_query_len = max(query_lens)
+        # print(query.shape)
+        # print(key_cache.shape)
+        # print(value_cache.shape)
+        k_scale = v_scale = torch.tensor(1.0, dtype=torch.float32, device=query.device)
+
+        def call_and_process_output():
+            return chunked_prefill_paged_decode(
+                query=query,
+                key=key,
+                value=value,
+                output=output,
+                kv_cache_dtype="fp16",  # TODO
+                key_cache=key_cache,
+                value_cache=value_cache,
+                block_table=block_tables,
+                query_start_loc=start_loc,
+                seq_lens=seq_lens,
+                max_query_len=max_query_len,
+                k_scale=k_scale,
+                v_scale=v_scale,
+                alibi_slopes=None,  # TODO
+                sliding_window=None,  # TODO
+                scale=softmax_scale,
+            )
+
+        return call_and_process_output
+
+    @staticmethod
+    def requires_allocated_output() -> bool:
+        return True

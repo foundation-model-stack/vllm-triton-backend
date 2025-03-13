@@ -49,7 +49,7 @@ class FusedTritonDecodeOnlyCaller(DecodeCaller):
             torch.tensor([0] + query_lens, dtype=torch.int), dim=0, dtype=torch.int
         )
 
-        max_query_len = max(query_lens)
+        max_query_len = query_lens.max()
         # print(query.shape)
         # print(key_cache.shape)
         # print(value_cache.shape)
@@ -118,19 +118,20 @@ class FusedTritonChunkedPrefixPrefill25dCaller(PrefixPrefillCaller):
         block_size = key_cache.shape[1]
         num_kv_heads = key_cache.shape[2]
 
-        key_cache_pp = (
-            key_cache.view(-1, block_size, num_kv_heads, head_size // 8, 8)
-            .permute(0, 2, 3, 1, 4)
-            .contiguous()
-        )
+        # key_cache_pp = (
+        #     key_cache.view(-1, block_size, num_kv_heads, head_size // 8, 8)
+        #     .permute(0, 2, 3, 1, 4)
+        #     .contiguous()
+        # )
         
-        value_cache_pp = (
-            value_cache.view(-1, block_size, num_kv_heads, head_size)
-            .permute(0, 2, 3, 1)
-            .contiguous()
-        )
+        # value_cache_pp = (
+        #     value_cache.view(-1, block_size, num_kv_heads, head_size)
+        #     .permute(0, 2, 3, 1)
+        #     .contiguous()
+        # )
 
-        max_query_len = max(query_lens)
+        max_query_len = query_lens.max()
+        print(start_loc)
         # print(query.shape)
         # print(key_cache.shape)
         # print(value_cache.shape)
@@ -143,8 +144,8 @@ class FusedTritonChunkedPrefixPrefill25dCaller(PrefixPrefillCaller):
                 value=value,
                 output=output,
                 kv_cache_dtype="fp16",  # TODO
-                key_cache=key_cache_pp,
-                value_cache=value_cache_pp,
+                key_cache=key_cache,
+                value_cache=value_cache,
                 block_table=block_tables,
                 query_start_loc=start_loc,
                 seq_lens=seq_lens,

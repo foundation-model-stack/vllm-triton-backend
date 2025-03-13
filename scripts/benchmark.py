@@ -38,6 +38,7 @@ from vllm_utils import (
     ref_multi_query_kv_attention,
     ref_prefix_prefill,
     ref_reshape_and_cache_flash,
+    ref_reshape_and_cache,
 )
 from torch_utils import get_gpu_label, end2end_bench
 from ibm_triton_lib.utils.triton_utils import get_runtime_label
@@ -881,12 +882,14 @@ def test_prefix_prefill_attention(
     realistic_prompt_mode = len(prompt_pattern) > 1
     gqa_mode = num_heads[0] != num_heads[1]
 
-    # TODO skip all others
-    # TODO: add flash_attn caller add triton_baseline caller
+    if implementation not in [Implementation.BASELINE_TRITON, Implementation.FLASH_ATTN, Implementation.TRITON_FUSED, Implementation.TRITON_2D]:
+        pytest.skip()
 
     # RTOL = 0
     # ATOL = min(3.1e-3 * max_value, 1e-3)
-    ATOL = 1e-3 * max_value
+    # ATOL = 1e-3 * max_value
+    ATOL = 1e-3
+    # ATOL = 1e-2 * max_value
     RTOL = 1e-5
     if implementation == Implementation.FLASH_ATTN:
         ATOL = 2e-2  # for 0.0749% of the cases...
@@ -1102,17 +1105,17 @@ def test_prefix_prefill_attention(
                 slot_mapping_i.append(slot_number)
             slot_mapping_lst.extend(slot_mapping_i)
         slot_mapping_t = torch.tensor(slot_mapping_lst, dtype=torch.int)
-        # print(block_table_t)
-        # print(slot_mapping_t)
+        print(block_table_t)
+        print(slot_mapping_t)
 
         ref_reshape_and_cache_flash(key, value, key_cache, value_cache, slot_mapping_t, block_size, total_token_num)
 
-        # print(query.shape)
-        # print(key_cache.shape)
-        # print(value_cache.shape)
-        # print(key.shape)
-        # print(value.shape)
-        # print(block_table_t.shape)
+        print(query.shape)
+        print(key_cache.shape)
+        print(value_cache.shape)
+        print(key.shape)
+        print(value.shape)
+        print(block_table_t.shape)
 
         # ref_output = torch.empty_like(query)
         ref_output = ref_prefix_prefill(
@@ -1139,8 +1142,8 @@ def test_prefix_prefill_attention(
             from callers import BaselineTritonPrefixPrefillCaller as Caller
         elif implementation == Implementation.TRITON_FUSED:
             from callers import FusedTritonChunkedPrefixPrefill25dCaller as Caller
-        # elif implementation == Implementation.TRITON_2D:
-        #     from callers import Triton2dAttentionDecodeCaller as Caller
+        elif implementation == Implementation.TRITON_2D:
+            from callers import Triton2dChunkedPrefillCaller as Caller
         # elif implementation == Implementation.TRITON_3D:
         #     from callers import Triton3dAttentionDecodeCaller as Caller
 
@@ -1148,6 +1151,17 @@ def test_prefix_prefill_attention(
             output = torch.empty_like(query)
             # output.uniform_(-max_value, max_value)
             # print(output)
+
+        if implementation in [Implementation.BASELINE_TRITON, Implementation.TRITON_FUSED, Implementation.TRITON_2D]:
+            # TODO: better here than in callers?
+            x = 8
+            key_cache = torch.zeros(
+                num_blocks, num_kv_heads, head_size//x, block_size, x, dtype=key_cache.dtype,
+            )
+            value_cache = torch.zeros(
+                num_blocks, num_kv_heads, head_size, block_size, dtype=value_cache.dtype,
+            )
+            ref_reshape_and_cache(key, value, key_cache, value_cache, slot_mapping_t, block_size, total_token_num)
 
         call_func_under_test = Caller.make_call_func(
             output,
