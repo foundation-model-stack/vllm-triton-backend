@@ -37,6 +37,7 @@ from vllm_utils import (
     ref_single_query_cached_kv_attention,
     ref_multi_query_kv_attention,
     ref_prefix_prefill,
+    ref_reshape_and_cache_flash,
 )
 from torch_utils import get_gpu_label, end2end_bench
 from ibm_triton_lib.utils.triton_utils import get_runtime_label
@@ -93,14 +94,15 @@ NUM_HEADS = [(32, 32)]
 # SEQUENCE_LENGTHS = [16, 17]
 # SEQUENCE_LENGTHS = [4096]
 # SEQUENCE_LENGTHS = [4321]
-SEQUENCE_LENGTHS = [16, 128, 512, 1024, 2048, 4096]
+# SEQUENCE_LENGTHS = [16, 128, 512, 1024, 2048, 4096]
+SEQUENCE_LENGTHS = [24, 128, 512, 1024, 2048, 4096]
 
 # CONTEXT_LENGTHS = [16, 128, 512, 1024, 2048, 4096]
 # QUERY_LENGTHS = [1, 16, 128, 512, 1024, 2048, 4096]
 # QUERY_LENGTHS = [1, 1024]
 # PREFIX_PREFILL_SHARE_OF_DECODE = [0.5]
-PREFIX_PREFILL_SHARE_OF_DECODE = [1.0]
-# PREFIX_PREFILL_SHARE_OF_DECODE = [0.0]
+# PREFIX_PREFILL_SHARE_OF_DECODE = [1.0]
+PREFIX_PREFILL_SHARE_OF_DECODE = [0.0]
 # PREFIX_PREFILL_SHARE_OF_DECODE = [0.0, 0.5, 1.0]
 # PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL = [0.0, 0.5]
 # PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL = [0.5]
@@ -919,9 +921,9 @@ def test_prefix_prefill_attention(
         f"decode share: {decode_share}; prefill share {1-decode_share} -> of that: partial prefill share {partial_prefill_share}"
     )
     print(f"{decode_seqs} {prefill_seqs} {partial_prefill_seqs} {full_prefill_seqs}")
-    print(init_seq_lens)
-    print(partial_prefill_q_lens)
-    print(partial_prefill_ctx_lens)
+    print("init_seq_lens ", init_seq_lens)
+    print("partial_prefill_q_lens ", partial_prefill_q_lens)
+    print("partial_prefill_ctx_lens", partial_prefill_ctx_lens)
     print(f"query_lens: {query_lens}")
     print(f"ctx_lens: {ctx_lens}")
     assert len(ctx_lens) == len(query_lens)
@@ -1033,30 +1035,32 @@ def test_prefix_prefill_attention(
         value_cache = torch.zeros(
             num_blocks, block_size, num_kv_heads, head_size, dtype=cache_dtype
         )
-        for i in range(batch_size):
-            # for j in range(query_lens[i]):
-            #     k[b_start_loc[i] + j].copy_(key[b_seq_start_loc[i] + b_ctx_lens[i] + j])
-            #     v[b_start_loc[i] + j].copy_(
-            #         value[b_seq_start_loc[i] + b_ctx_lens[i] + j]
-            #     )
-            cur_ctx = 0
-            block_id = 0
-            while cur_ctx < b_ctx_lens[i]:
-                start_loc = b_seq_start_loc[i] + cur_ctx
-                if cur_ctx + block_size > b_ctx_lens[i]:
-                    end_loc = b_seq_start_loc[i] + b_ctx_lens[i]
-                else:
-                    end_loc = start_loc + block_size
-                start_slot = block_table_t[i, block_id] * block_size
-                end_slot = start_slot + end_loc - start_loc
-                key_cache.view(-1, num_kv_heads, head_size)[start_slot:end_slot].copy_(
-                    key[start_loc:end_loc]
-                )
-                value_cache.view(-1, num_kv_heads, head_size)[
-                    start_slot:end_slot
-                ].copy_(value[start_loc:end_loc])
-                cur_ctx += block_size
-                block_id += 1
+        # key_cache.uniform_(-max_value, max_value)
+        # value_cache.uniform_(-max_value, max_value)
+        # for i in range(batch_size):
+        #     # for j in range(query_lens[i]):
+        #     #     k[b_start_loc[i] + j].copy_(key[b_seq_start_loc[i] + b_ctx_lens[i] + j])
+        #     #     v[b_start_loc[i] + j].copy_(
+        #     #         value[b_seq_start_loc[i] + b_ctx_lens[i] + j]
+        #     #     )
+        #     cur_ctx = 0
+        #     block_id = 0
+        #     while cur_ctx < b_ctx_lens[i]:
+        #         start_loc = b_seq_start_loc[i] + cur_ctx
+        #         if cur_ctx + block_size > b_ctx_lens[i]:
+        #             end_loc = b_seq_start_loc[i] + b_ctx_lens[i]
+        #         else:
+        #             end_loc = start_loc + block_size
+        #         start_slot = block_table_t[i, block_id] * block_size
+        #         end_slot = start_slot + end_loc - start_loc
+        #         key_cache.view(-1, num_kv_heads, head_size)[start_slot:end_slot].copy_(
+        #             key[start_loc:end_loc]
+        #         )
+        #         value_cache.view(-1, num_kv_heads, head_size)[
+        #             start_slot:end_slot
+        #         ].copy_(value[start_loc:end_loc])
+        #         cur_ctx += block_size
+        #         block_id += 1
         # # transpose K_cache[num_blocks, block_size, num_kv_heads, head_size]
         # # TODO: do not! move to caller / align with acutal vllm API
         # # TODO: fix ref implementation
@@ -1080,6 +1084,23 @@ def test_prefix_prefill_attention(
         #     .permute(0, 2, 3, 1)
         #     .contiguous()
         # )
+
+        # reverse engineer slot mapping
+        slot_mapping_lst = []
+        for i in range(batch_size):
+            block_table = block_tables_lst[i]
+            slot_mapping_i = []
+            for j in range(seq_lens[i]):
+                block_number = int(block_table[j // block_size])
+                block_offset = j % block_size
+                slot_number = block_number * block_size + block_offset
+                slot_mapping_i.append(slot_number)
+            slot_mapping_lst.extend(slot_mapping_i)
+        slot_mapping_t = torch.tensor(slot_mapping_lst, dtype=torch.int)
+        print(block_table_t)
+        print(slot_mapping_t)
+
+        ref_reshape_and_cache_flash(key, value, key_cache, value_cache, slot_mapping_t, block_size, total_token_num)
 
         print(query.shape)
         print(key_cache.shape)
@@ -1120,6 +1141,8 @@ def test_prefix_prefill_attention(
 
         if Caller.requires_allocated_output:
             output = torch.empty_like(query)
+            # output.uniform_(-max_value, max_value)
+            # print(output)
 
         call_func_under_test = Caller.make_call_func(
             output,

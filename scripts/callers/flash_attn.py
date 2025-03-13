@@ -156,14 +156,18 @@ class FlashAttnPrefixPrefillCaller(PrefixPrefillCaller):
         num_tokens = query.shape[0]
         num_query_heads = query.shape[1]
         
-        max_query_len = max(query_lens)
-        max_seqlen = max(seq_lens)
-        max_ctx_len = max(ctx_lens)
-        # print(query.shape)
-        # print(key_cache.shape)
-        # print(value_cache.shape)
-        # print(max_query_len)
-        # print(max_seqlen)
+        max_query_len = query_lens.max()
+        max_seqlen = seq_lens.max()
+        max_ctx_len = ctx_lens.max()
+        print(query.shape)
+        print(key_cache.shape)
+        print(value_cache.shape)
+        print(max_query_len)
+        print(max_ctx_len)
+        print(seq_lens.shape)
+        print(max_seqlen)
+        print(block_tables)
+        print(start_loc)
 
         # def transform_kv_cache(x):
         #     out = torch.transpose(x, 1, 3)
@@ -178,26 +182,28 @@ class FlashAttnPrefixPrefillCaller(PrefixPrefillCaller):
         # print(seq_lens.shape)
 
         # orig_output = output.view(num_tokens, -1)  # still I don't know why we have to do this
+        assert query.shape == output.shape
 
         def call_and_process_output():
             # k must have shape (num_blocks, page_block_size, num_heads_k, head_size)
-            return flash_attn_varlen_func(
+            # return
+            flash_attn_varlen_func(
                 q=query,
                 k=key_cache,
                 v=value_cache,
                 out=output,
                 cu_seqlens_q=start_loc,
                 max_seqlen_q=max_query_len,
-                seqused_k=ctx_lens,
-                max_seqlen_k=max_ctx_len,
-                # seqused_k=seq_lens,
-                # max_seqlen_k=max_seqlen,
-                softmax_scale=softmax_scale,
+                # seqused_k=ctx_lens,
+                # max_seqlen_k=max_ctx_len,
+                seqused_k=seq_lens,
+                max_seqlen_k=max_seqlen,
+                # softmax_scale=softmax_scale,
                 causal=True,
                 block_table=block_tables,
                 # window_size=(-1, 1),
                 # softcap=0,
-                fa_version=2, # TODO
+                # fa_version=2, # TODO
             )
             # output = orig_output.view(num_tokens, num_query_heads, head_size)
 
