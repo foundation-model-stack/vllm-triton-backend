@@ -17,12 +17,11 @@
 
 
 import torch
-from third_party.vedantroy_paged_attention import paged_attention_triton_v1
-from ibm_triton_lib.kernels.triton_prefix_prefill import context_attention_fwd
-from .base import DecodeCaller, PrefixPrefillCaller
+from ibm_triton_lib.kernels import fused_chunked_prefill_paged_decode_25d
+from .base import PrefixPrefillCaller, DecodeCaller
 
 
-class BaselineTritonCaller(DecodeCaller):
+class FusedTritonDecodeOnlyCaller(DecodeCaller):
     @staticmethod
     def make_call_func(
         output,
@@ -34,46 +33,56 @@ class BaselineTritonCaller(DecodeCaller):
         max_seq_len,
         scale,
         block_tables,
-        alibi_slopes,  # unused
-        kv_cache_dtype,  # unused
+        alibi_slopes,
+        kv_cache_dtype,
     ):
-        num_query_heads = query.shape[1]
-        num_kv_heads = key_cache.shape[1]
-        block_size = key_cache.shape[3]
-        max_num_blocks_per_seq = block_tables.shape[1]
-        head_size = key_cache.shape[2]
+        """
+        query: shape = [num_tokens, num_heads, head_size]
+        key: shape = [num_tokens, num_kv_heads, head_size]
+        value: shape = [num_tokens, num_kv_heads, head_size]
+        kv_cache = [2, num_blocks, block_size, num_kv_heads, head_size]
+        """
 
-        scratchpad_key = torch.zeros(
-            (num_seqs, max_seq_len, num_query_heads, head_size),
-            dtype=output.dtype,
-            device=output.device,
-        )
-        scratchpad_value = torch.zeros_like(scratchpad_key)
-
-        call_func_under_test = lambda: paged_attention_triton_v1(
-            output,
-            query,
-            key_cache,
-            value_cache,
-            scale,
-            block_tables,
-            seq_lens,
-            block_size,
-            num_seqs,
-            seq_lens,
-            num_query_heads,
-            max_seq_len,
-            max_num_blocks_per_seq,
-            head_size,
-            num_kv_heads,
-            scratchpad_key,
-            scratchpad_value,
+        query_lens = [1] * num_seqs
+        b_query_lens = torch.tensor(query_lens, dtype=torch.int)
+        b_start_loc = torch.cumsum(
+            torch.tensor([0] + query_lens, dtype=torch.int), dim=0, dtype=torch.int
         )
 
-        return call_func_under_test
+        max_query_len = query_lens.max()
+        # print(query.shape)
+        # print(key_cache.shape)
+        # print(value_cache.shape)
+        k_scale = v_scale = torch.tensor(1.0, dtype=torch.float32, device=query.device)
+
+        def call_and_process_output():
+            return fused_chunked_prefill_paged_decode_25d(
+                query=query,
+                key=key_cache,  # would break, just here for benchmarking
+                value=value_cache,  # would break, just here for benchmarking
+                output=output,
+                kv_cache_dtype=kv_cache_dtype,  # TODO
+                key_cache=key_cache,
+                value_cache=value_cache,
+                block_table=block_tables,
+                query_start_loc=b_start_loc,
+                seq_lens=seq_lens,
+                max_query_len=max_query_len,
+                k_scale=k_scale,
+                v_scale=v_scale,
+                alibi_slopes=None,  # TODO
+                sliding_window=None,  # TODO
+                sm_scale=1.0,  # would break, just here for benchmarking
+            )
+
+        return call_and_process_output
+
+    @staticmethod
+    def requires_allocated_output() -> bool:
+        return True
 
 
-class BaselineTritonPrefixPrefillCaller(PrefixPrefillCaller):
+class FusedTritonChunkedPrefixPrefill25dCaller(PrefixPrefillCaller):
     @staticmethod
     def make_call_func(
         output,
@@ -105,29 +114,27 @@ class BaselineTritonPrefixPrefillCaller(PrefixPrefillCaller):
         Returns:
             shape = [num_tokens, num_heads, head_size]
         """
-
         head_size = key_cache.shape[3]
         block_size = key_cache.shape[1]
         num_kv_heads = key_cache.shape[2]
-        num_blocks = key_cache.shape[0]
 
-        max_query_len = max(query_lens)
+        max_query_len = query_lens.max()
+        print(start_loc)
         k_scale = v_scale = torch.tensor(1.0, dtype=torch.float32, device=query.device)
 
         def call_and_process_output():
-            return context_attention_fwd(
-                q=query,
-                k=key,
-                v=value,
-                o=output,
+            return fused_chunked_prefill_paged_decode_25d(
+                query=query,
+                key=key,
+                value=value,
+                output=output,
                 kv_cache_dtype="fp16",  # TODO
-                k_cache=key_cache,
-                v_cache=value_cache,
-                b_loc=block_tables,
-                b_start_loc=start_loc,
-                b_seq_len=seq_lens,
-                # b_ctx_len=ctx_lens,  # FIXME: only in v0.7.3, not in main
-                max_input_len=max_query_len,
+                key_cache=key_cache,
+                value_cache=value_cache,
+                block_table=block_tables,
+                query_start_loc=start_loc,
+                seq_lens=seq_lens,
+                max_query_len=max_query_len,
                 k_scale=k_scale,
                 v_scale=v_scale,
                 alibi_slopes=None,  # TODO

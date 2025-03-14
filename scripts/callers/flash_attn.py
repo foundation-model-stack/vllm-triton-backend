@@ -23,7 +23,7 @@ import torch
 #     from flash_attn import flash_attn_varlen_func, flash_attn_func
 # else:
 from vllm.vllm_flash_attn import flash_attn_with_kvcache, flash_attn_varlen_func
-from .base import DecodeCaller, PrefillCaller
+from .base import DecodeCaller, PrefillCaller, PrefixPrefillCaller
 
 
 class FlashAttnDecodeCaller(DecodeCaller):
@@ -120,3 +120,60 @@ class FlashAttnPrefillCaller(PrefillCaller):
     @staticmethod
     def requires_allocated_output() -> bool:
         return False
+
+
+class FlashAttnPrefixPrefillCaller(PrefixPrefillCaller):
+    @staticmethod
+    def make_call_func(
+        output,
+        query,
+        key_cache,
+        value_cache,
+        key,
+        value,
+        block_tables,
+        seq_lens,
+        ctx_lens,
+        query_lens,
+        start_loc,
+        seq_start_loc,
+        softmax_scale,
+        # kv_cache_dtype,  # unused
+    ):
+        """
+        query: shape = [num_tokens, num_heads, head_size]
+        key: shape = [num_tokens, num_kv_heads, head_size]
+        value: shape = [num_tokens, num_kv_heads, head_size]
+        k_cache = [num_blocks, block_size, num_kv_heads, head_size]
+        v_cache = [num_blocks, block_size, num_kv_heads, head_size]
+        Returns:
+            shape = [num_tokens, num_heads, head_size]
+        """
+
+        max_query_len = query_lens.max()
+        max_seqlen = seq_lens.max()
+
+        def call_and_process_output():
+            # k must have shape (num_blocks, page_block_size, num_heads_k, head_size)
+            return flash_attn_varlen_func(
+                q=query,
+                k=key_cache,
+                v=value_cache,
+                out=output,
+                cu_seqlens_q=start_loc,
+                max_seqlen_q=max_query_len,
+                seqused_k=seq_lens,
+                max_seqlen_k=max_seqlen,
+                softmax_scale=softmax_scale,
+                causal=True,
+                block_table=block_tables,
+                # window_size=(-1, 1),
+                # softcap=0,
+                # fa_version=2, # TODO
+            )
+
+        return call_and_process_output
+
+    @staticmethod
+    def requires_allocated_output() -> bool:
+        return True
