@@ -137,13 +137,11 @@ def test_decoding_attention(
     if torch.cuda.get_device_capability()[0] < 8 and dtype is torch.bfloat16:
         pytest.skip()
 
-    if implementation == Implementation.TRITON_3D:
-        if kv_cache_dtype == "fp8":
-            pytest.skip()
-    elif implementation in [
+    if implementation in [
         Implementation.VLLM_CUDA_V1,
         Implementation.VLLM_CUDA_V2,
         Implementation.TRITON_2D,
+        Implementation.TRITON_3D,
     ]:
         if kv_cache_dtype == "fp8" and head_size % 16:
             pytest.skip()
@@ -425,6 +423,8 @@ def test_prefill_attention(
         value,
         scale,
         dtype,
+        num_kv_heads,
+        num_query_heads,
     )
 
     # TODO: keep for AMD
