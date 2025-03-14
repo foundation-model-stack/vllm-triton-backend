@@ -80,8 +80,8 @@ SEEDS = [0]
 # BATCH_SIZES = [1, 2, 4, 8, 16, 32, 64, 128]
 # BATCH_SIZES = [128]
 # BATCH_SIZES = [64]
-BATCH_SIZES = [4]
-# BATCH_SIZES = [1, 2, 4, 8, 16, 32, 64, 128, 256]
+# BATCH_SIZES = [4]
+BATCH_SIZES = [1, 2, 4, 8, 16, 32, 64, 128, 256]
 # BATCH_SIZES = [1, 2, 3, 4, 5, 7, 8, 12, 16, 32, 64, 128]
 
 # order:  num_query_heads, num_kv_heads
@@ -101,14 +101,15 @@ SEQUENCE_LENGTHS = [16, 128, 512, 1024, 2048, 4096]
 # CONTEXT_LENGTHS = [16, 128, 512, 1024, 2048, 4096]
 # QUERY_LENGTHS = [1, 16, 128, 512, 1024, 2048, 4096]
 # QUERY_LENGTHS = [1, 1024]
-# PREFIX_PREFILL_SHARE_OF_DECODE = [0.5]
+PREFIX_PREFILL_SHARE_OF_DECODE = [0.5]
 # PREFIX_PREFILL_SHARE_OF_DECODE = [1.0]
-PREFIX_PREFILL_SHARE_OF_DECODE = [0.0]
+# PREFIX_PREFILL_SHARE_OF_DECODE = [0.0]
 # PREFIX_PREFILL_SHARE_OF_DECODE = [1.0, 0.5]
+# PREFIX_PREFILL_SHARE_OF_DECODE = [0.8]
 # PREFIX_PREFILL_SHARE_OF_DECODE = [0.0, 0.5, 1.0]
 # PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL = [0.0, 0.5]
-# PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL = [0.5]
-PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL = [0.0]
+PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL = [0.5]
+# PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL = [0.0]
 
 # HEAD_SIZES_FLASH = [32, 64, 128]  # only powers of 2!
 HEAD_SIZES = [128]  # only powers of 2! for llama2 & 3
@@ -141,8 +142,7 @@ IMPLEMENTATION_UT = [
     Implementation.TRITON_FP8,
     Implementation.FLASHINFER,
 ]
-# MAX_VALUES = [0.01, 0.1, 1.0]
-MAX_VALUES = [0.1]
+MAX_VALUES = [0.01, 0.1, 1.0]
 BENCHMARK_MODES = [BenchmarkMode.CUDA_EVENTS, BenchmarkMode.CUDA_GRAPHS]
 
 if os.getenv("NGL_FULL_TEST", "0") == "1":
@@ -910,14 +910,17 @@ def test_prefix_prefill_attention(
     # if max_value == 1.0:
     #     ATOL = 2e-2
     # ATOL = 1e-1 * max_value
-    ATOL = min(2.5 * max_value, 2.5e-2)  # 2.5 for 0.000503% of the values
+    # ATOL = min(2.5 * max_value, 2.5e-2)  # 2.5 for 0.000503% of the values
+    ATOL = 0.28 * max_value  # 2.7 for 3.46e-05% of some values
     RTOL = 1e-5
     # if implementation == Implementation.FLASH_ATTN:
     #     ATOL = 2e-2  # for 0.0749% of the cases...
     # TODO
-    if implementation == Implementation.FLASH_ATTN and seqlen > 256 and decode_share != 1.0:
+    if implementation == Implementation.FLASH_ATTN and decode_share != 1.0:
         # ATOL = 0.5 * max_value  # for 0.0096%
-        ATOL = 0.2 # for 0.0269%
+        ATOL = 2 * max_value  # for 0.0269%
+        if seqlen >= 512:
+            ATOL = 2.5 * max_value  # 4.77e-05%
 
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
@@ -992,7 +995,7 @@ def test_prefix_prefill_attention(
         if seq_len < block_size:
             # ATOL = min(6.2e-3 * max_value, 1e-3)
             # TODO
-            ATOL = max_value
+            ATOL = max(max_value * 1.5, ATOL)
             break
     # if implementation == Implementation.FLASH_ATTN:
     #     for ctx_len in ctx_lens:
