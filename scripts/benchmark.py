@@ -979,8 +979,9 @@ def test_prefix_prefill_attention(
         print(f"\tctx_lens: {ctx_lens}")
         print(f"\tseq_lens: {seq_lens}")
     assert len(ctx_lens) == len(query_lens)
-    # assert max_seq_len == seqlen or max_seq_len == seqlen + 1
-    assert max_seq_len == seqlen
+    if not realistic_prompt_mode:
+        # assert max_seq_len == seqlen or max_seq_len == seqlen + 1
+        assert max_seq_len == seqlen
 
     # NOTE(ngl): Some/all implementations apparently assume there is at least
     #   one page per decode-request. That's why apparently the numerical error
