@@ -17,8 +17,8 @@
 
 
 import torch
-from ibm_triton_lib.kernels import paged_attention_3d
-from .base import DecodeCaller
+from ibm_triton_lib.kernels import paged_attention_3d, prefill_flash_attention
+from .base import DecodeCaller, PrefillCaller
 
 
 class Triton3dAttentionDecodeCaller(DecodeCaller):
@@ -66,3 +66,48 @@ class Triton3dAttentionDecodeCaller(DecodeCaller):
         )
 
         return call_func_under_test
+
+
+class Triton3dAttentionPrefillCaller(PrefillCaller):
+    @staticmethod
+    def make_call_func(
+        output,
+        query,
+        key_cache,
+        value_cache,
+        cu_seqlens_q,
+        cu_seqlens_k,
+        max_seqlen_q,
+        max_seqlen_k,
+        softmax_scale,
+        causal,
+        # kv_cache_dtype,  # unused
+    ):
+        # with varlen
+        # q: (total_q, nheads, headdim), where total_q = total number of query tokens in the batch.
+        # k: (total_k, nheads_k, headdim), where total_k = total number of key tokens in the batch.
+        # v: (total_k, nheads_k, headdim), where total_k = total number of key tokens in the batch.
+        # cu_seqlens_q: (batch_size + 1,), dtype torch.int32. The cumulative sequence lengths
+        #    of the sequences in the batch, used to index into q.
+        # cu_seqlens_k: (batch_size + 1,), dtype torch.int32. The cumulative sequence lengths
+        #    of the sequences in the batch, used to index into kv.
+        # max_seqlen_q: int. Maximum query sequence length in the batch.
+        # max_seqlen_k: int. Maximum key sequence length in the batch.
+        # out: (total, nheads, headdim).
+
+        def call_and_process_output():
+            prefill_flash_attention(
+                q=query,
+                k=key_cache,
+                v=value_cache,
+                causal=causal,
+                sm_scale=softmax_scale,
+                max_seqlen_q=max_seqlen_q,
+                max_seqlen_k=max_seqlen_k,
+                cu_seqlens_q=cu_seqlens_q,
+                cu_seqlens_k=cu_seqlens_k,
+                in_place_output=output,
+                do_not_return_softmax_encodings=True,
+            )
+
+        return call_and_process_output
