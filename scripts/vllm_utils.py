@@ -421,10 +421,8 @@ def ref_reshape_and_cache(
     reshaped_key = key.reshape(num_tokens, *key_cache[0, :, :, 0, :].shape)
     block_indicies = torch.div(slot_mapping, block_size, rounding_mode="floor")
     block_indicies_lst = block_indicies.cpu().tolist()
-    print(block_indicies_lst)
     block_offsets = slot_mapping % block_size
     block_offsets_lst = block_offsets.cpu().tolist()
-    print(block_offsets_lst)
     for i in range(num_tokens):
         block_idx = block_indicies_lst[i]
         block_offset = block_offsets_lst[i]
