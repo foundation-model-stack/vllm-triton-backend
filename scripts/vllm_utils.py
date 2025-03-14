@@ -209,7 +209,6 @@ def ref_multi_query_kv_attention(
 
 
 def ref_prefix_prefill(
-    # output: torch.Tensor,
     query: torch.Tensor,
     num_queries_per_kv: int,
     key_cache: torch.Tensor,

@@ -884,7 +884,7 @@ def test_prefix_prefill_attention(
     my_instance = my_id.split("[")[1][:-1]
     realistic_prompt_mode = len(prompt_pattern) > 1
     gqa_mode = num_heads[0] != num_heads[1]
-    
+
     if torch.cuda.get_device_capability()[0] < 8:
         # reduce operations are not supported (?)
         pytest.skip()
@@ -905,19 +905,12 @@ def test_prefix_prefill_attention(
     # TODO
     # RTOL = 0
     # ATOL = min(3.1e-3 * max_value, 1e-3)
-    # ATOL = 1e-3 * max_value
-    # ATOL = 1e-3
-    # if max_value == 1.0:
-    #     ATOL = 2e-2
     # ATOL = 1e-1 * max_value
     # ATOL = min(2.5 * max_value, 2.5e-2)  # 2.5 for 0.000503% of the values
     ATOL = 0.28 * max_value  # 2.7 for 3.46e-05% of some values
     RTOL = 1e-5
-    # if implementation == Implementation.FLASH_ATTN:
-    #     ATOL = 2e-2  # for 0.0749% of the cases...
     # TODO
     if implementation == Implementation.FLASH_ATTN and decode_share != 1.0:
-        # ATOL = 0.5 * max_value  # for 0.0096%
         ATOL = 2 * max_value  # for 0.0269%
         if seqlen >= 512:
             ATOL = 2.5 * max_value  # 4.77e-05%
@@ -936,11 +929,12 @@ def test_prefix_prefill_attention(
     prefill_seqs = batch_size - decode_seqs
     partial_prefill_seqs = int(np.ceil(prefill_seqs * partial_prefill_share))
     full_prefill_seqs = prefill_seqs - partial_prefill_seqs
-    
+
     # reuse same prompt pattern for partial promps, but with half the length
-    len_fraction_half = itertools.cycle([pp*0.5 for pp in prompt_pattern])
+    len_fraction_half = itertools.cycle([pp * 0.5 for pp in prompt_pattern])
     raw_partial_prefill_ctx_lens = [
-        int(np.ceil(l // block_size * next(len_fraction_half))) * block_size for l in init_seq_lens
+        int(np.ceil(l // block_size * next(len_fraction_half))) * block_size
+        for l in init_seq_lens
     ]
     partial_prefill_ctx_lens = []
     # avoid "full" partial prefills (i.e. no query left)
@@ -961,8 +955,8 @@ def test_prefix_prefill_attention(
         + init_seq_lens[decode_seqs + partial_prefill_seqs :]
     )
     ctx_lens = (
-        # TODO: substract one from query length or not?
-        [ol - 1 for ol in init_seq_lens[:decode_seqs]] 
+        # TODO: substract one from query length or not? (adapt assert below if changing)
+        [ol - 1 for ol in init_seq_lens[:decode_seqs]]
         # init_seq_lens[:decode_seqs]
         + partial_prefill_ctx_lens[decode_seqs : decode_seqs + partial_prefill_seqs]
         + [0] * full_prefill_seqs
@@ -974,7 +968,9 @@ def test_prefix_prefill_attention(
         print(
             f"decode share: {decode_share}; prefill share {1-decode_share} -> of that: partial prefill share {partial_prefill_share}"
         )
-        print(f"decode requests: {decode_seqs}; prefill requests: {prefill_seqs} (of that {partial_prefill_seqs} partial prefills and {full_prefill_seqs} full prefills)")
+        print(
+            f"decode requests: {decode_seqs}; prefill requests: {prefill_seqs} (of that {partial_prefill_seqs} partial prefills and {full_prefill_seqs} full prefills)"
+        )
         print("init_seq_lens ", init_seq_lens)
         print("partial_prefill_q_lens ", partial_prefill_q_lens)
         print("partial_prefill_ctx_lens", partial_prefill_ctx_lens)
@@ -983,13 +979,11 @@ def test_prefix_prefill_attention(
         print(f"\tctx_lens: {ctx_lens}")
         print(f"\tseq_lens: {seq_lens}")
     assert len(ctx_lens) == len(query_lens)
-    # assert max_seq_len == seqlen or max_seq_len == seqlen + 1 
+    # assert max_seq_len == seqlen or max_seq_len == seqlen + 1
     assert max_seq_len == seqlen
-    # if not realistic_prompt_mode:
-    #     assert seqlen * 0.9 < max_seq_len <= seqlen * 1.1
 
-    # NOTE(ngl): Some/all implementations (VLLM_CUDA_V1, XFORMERS, some triton version) assume
-    #   there is at least one page per decode-request. That's why apparently the numerical error
+    # NOTE(ngl): Some/all implementations apparently assume there is at least
+    #   one page per decode-request. That's why apparently the numerical error
     #   is higher at random places if the request is very very small.
     for seq_len in seq_lens:
         if seq_len < block_size:
@@ -997,10 +991,6 @@ def test_prefix_prefill_attention(
             # TODO
             ATOL = max(max_value * 1.5, ATOL)
             break
-    # if implementation == Implementation.FLASH_ATTN:
-    #     for ctx_len in ctx_lens:
-    #         if ctx_len > 0 and ctx_len < block_size:
-    #             pytest.skip("unsupported by flash_attn")
 
     cache_dtype = dtype  # TODO
     scale = float(1.0 / (head_size**0.5))  # as done by vLLM
@@ -1085,8 +1075,6 @@ def test_prefix_prefill_attention(
                 slot_mapping_i.append(slot_number)
             slot_mapping_lst.extend(slot_mapping_i)
         slot_mapping_t = torch.tensor(slot_mapping_lst, dtype=torch.int)
-        # print(block_table_t)
-        # print(slot_mapping_t)
 
         ref_reshape_and_cache_flash(
             key,
@@ -1098,16 +1086,7 @@ def test_prefix_prefill_attention(
             total_token_num,
         )
 
-        # print(query.shape)
-        # print(key_cache.shape)
-        # print(value_cache.shape)
-        # print(key.shape)
-        # print(value.shape)
-        # print(block_table_t.shape)
-
-        # ref_output = torch.empty_like(query)
         ref_output = ref_prefix_prefill(
-            # ref_output,
             query,
             num_queries_per_kv,
             key_cache,
