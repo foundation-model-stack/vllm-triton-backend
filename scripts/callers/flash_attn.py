@@ -158,34 +158,21 @@ class FlashAttnPrefixPrefillCaller(PrefixPrefillCaller):
         query: shape = [num_tokens, num_heads, head_size]
         key: shape = [num_tokens, num_kv_heads, head_size]
         value: shape = [num_tokens, num_kv_heads, head_size]
-        kv_cache = [2, num_blocks, block_size, num_kv_heads, head_size]
+        k_cache = [num_blocks, block_size, num_kv_heads, head_size]
+        v_cache = [num_blocks, block_size, num_kv_heads, head_size]
+        Returns:
+            shape = [num_tokens, num_heads, head_size]
         """
 
-        max_query_len = max(query_lens)
-        max_seqlen = max(seq_lens)
-        # print(query.shape)
-        # print(key_cache.shape)
-        # print(value_cache.shape)
-        print(max_query_len)
-        print(max_seqlen)
-
-        def transform_kv_cache(x):
-            out = torch.transpose(x, 1, 3)
-            out = torch.transpose(out, 2, 3)
-            return out.contiguous()
-
-        key_cache_flash_attn = transform_kv_cache(key_cache)
-        value_cache_flash_attn = transform_kv_cache(value_cache)
-        print(key_cache_flash_attn.shape)
-        print(value_cache_flash_attn.shape)
-        print(start_loc.shape)
-        print(seq_lens.shape)
+        max_query_len = query_lens.max()
+        max_seqlen = seq_lens.max()
 
         def call_and_process_output():
+            # k must have shape (num_blocks, page_block_size, num_heads_k, head_size)
             return flash_attn_varlen_func(
                 q=query,
-                k=key_cache_flash_attn,
-                v=value_cache_flash_attn,
+                k=key_cache,
+                v=value_cache,
                 out=output,
                 cu_seqlens_q=start_loc,
                 max_seqlen_q=max_query_len,
@@ -196,7 +183,7 @@ class FlashAttnPrefixPrefillCaller(PrefixPrefillCaller):
                 block_table=block_tables,
                 # window_size=(-1, 1),
                 # softcap=0,
-                # fa_version=
+                # fa_version=2, # TODO
             )
 
         return call_and_process_output

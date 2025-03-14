@@ -34,7 +34,7 @@ class Triton3dAttentionDecodeCaller(DecodeCaller):
         scale,
         block_tables,
         alibi_slopes,
-        kv_cache_dtype,  # unused
+        kv_cache_dtype,
     ):
         num_query_heads = query.shape[1]
         num_kv_heads = key_cache.shape[1]
@@ -43,12 +43,18 @@ class Triton3dAttentionDecodeCaller(DecodeCaller):
         max_num_blocks_per_seq = block_tables.shape[1]
         head_size = key_cache.shape[2]
 
+        # Using default kv_scale
+        k_scale = v_scale = torch.ones(1, device=query.device)
+
         call_func_under_test = lambda: paged_attention_3d(
             output,
             query,
             key_cache,
             value_cache,
             scale,
+            k_scale,
+            v_scale,
+            kv_cache_dtype,
             block_tables,
             seq_lens,
             alibi_slopes,

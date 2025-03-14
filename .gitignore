@@ -8,6 +8,7 @@ results
 all-git.tar
 vllm-all.tar
 rocm-vllm-all.tar
+ShareGPT_V3_unfiltered_cleaned_split.json
 
 .vscode/settings.json
 

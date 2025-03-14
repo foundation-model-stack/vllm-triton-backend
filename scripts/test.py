@@ -137,13 +137,11 @@ def test_decoding_attention(
     if torch.cuda.get_device_capability()[0] < 8 and dtype is torch.bfloat16:
         pytest.skip()
 
-    if implementation == Implementation.TRITON_3D:
-        if (not math.log(head_size, 2).is_integer()) or kv_cache_dtype == "fp8":
-            pytest.skip()
-    elif implementation in [
+    if implementation in [
         Implementation.VLLM_CUDA_V1,
         Implementation.VLLM_CUDA_V2,
         Implementation.TRITON_2D,
+        Implementation.TRITON_3D,
     ]:
         if kv_cache_dtype == "fp8" and head_size % 16:
             pytest.skip()
@@ -338,12 +336,15 @@ def test_prefill_attention(
     implementation: Implementation,
     max_value: Optional[float],
 ) -> None:
+    if max_value is None:
+        max_value = head_size**-0.5
+
     if torch.cuda.get_device_capability()[0] < 8:
         # reduce operations are not supported (?)
         pytest.skip()
 
     if implementation == Implementation.TRITON_3D:
-        if (not math.log(head_size, 2).is_integer()) or (head_size > 256):
+        if head_size > 256:
             pytest.skip()
         if MAX_SEQ_LEN > 4096 and num_seqs > 64:
             # FIXME(ngl): causes RuntimeError: CUDA error: an illegal memory access was encountered
@@ -422,6 +423,8 @@ def test_prefill_attention(
         value,
         scale,
         dtype,
+        num_kv_heads,
+        num_query_heads,
     )
 
     # TODO: keep for AMD
