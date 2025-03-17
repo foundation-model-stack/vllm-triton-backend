@@ -176,17 +176,19 @@ ENV LD_LIBRARY_PATH="${VIRTUAL_ENV}/lib/python${PYTHON_VERSION}/site-packages/nv
 ENV LD_LIBRARY_PATH="${VIRTUAL_ENV}/lib/python${PYTHON_VERSION}/site-packages/nvidia/nvtx/lib:${LD_LIBRARY_PATH}"
 ENV LD_LIBRARY_PATH="${VIRTUAL_ENV}/lib/python${PYTHON_VERSION}/site-packages/nvidia/cuda_cupti/lib:${LD_LIBRARY_PATH}"
 
-# copy requirements before to avoid reinstall
+# copy requirements explicetly before to avoid reinstall
 COPY triton-dejavu/requirements-opt.txt dejavu-requirements-opt.txt
 RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=cache,target=/root/.cache/uv \
-    uv pip install -r dejavu-requirements-opt.txt
+    uv pip install -r dejavu-requirements-opt.txt \ 
+    && rm -f dejavu-requirements-opt.txt
 
     # dejavu
 COPY triton-dejavu triton-dejavu
 RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=cache,target=/root/.cache/uv \
-    uv pip install ./triton-dejavu/
+    uv pip install ./triton-dejavu/ \
+    && rm -rf ./triton-dejavu/
 
 # Install IBM kernels and vllm plugin
 #  must be after vllm!
@@ -237,7 +239,8 @@ ENV PYTHONPATH /workspace
 ENV TRITON_PRINT_AUTOTUNING=1
 ENV TRITON_DEJAVU_DEBUG=1
 # set as default
-ENV TRITON_DEJAVU_STORAGE=/storage
+# ENV TRITON_DEJAVU_STORAGE=/storage
+ENV TRITON_DEJAVU_STORAGE=/workspace
 ENV NGL_EXP_FALLBACK=next
 # ENV TRITON_DEJAVU_USE_ONLY_RESTORED=0
 ENV TRITON_DEJAVU_FORCE_FALLBACK=1
