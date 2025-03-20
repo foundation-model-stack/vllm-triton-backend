@@ -353,7 +353,7 @@ def paged_attention_triton_3d(
     head_size,
 ):
     max_num_segments_per_seq = 4
-    blocks_per_segment = (block_table.stride(0) + max_num_segments_per_seq - 1) // max_num_segments_per_seq
+    blocks_per_segment = (block_tables.stride(0) + max_num_segments_per_seq - 1) // max_num_segments_per_seq
 
     segm_output = torch.empty(
         num_seqs,
