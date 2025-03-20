@@ -76,3 +76,37 @@ class PrefillCaller:
     def requires_allocated_output() -> bool:
         # default behaviour is in-place -> so yes
         return True
+
+
+class PrefixPrefillCaller:
+    @staticmethod
+    def make_call_func(
+        output,
+        query,
+        key_cache,
+        value_cache,
+        key,
+        value,
+        block_tables,
+        seq_lens,
+        ctx_lens,
+        query_lens,
+        start_loc,
+        seq_start_loc,
+        softmax_scale,
+        # kv_cache_dtype,  # unused
+    ):
+        raise NotImplementedError
+
+    @classmethod
+    def select_output(cls, x, y):
+        if cls.requires_allocated_output():
+            # default behaviour is in-place
+            return x
+        else:
+            return y
+
+    @staticmethod
+    def requires_allocated_output() -> bool:
+        # default behaviour is in-place -> so yes
+        return True

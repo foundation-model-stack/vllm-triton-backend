@@ -206,3 +206,224 @@ def ref_multi_query_kv_attention(
         ref_outputs.append(ref_output)
 
     return torch.cat(ref_outputs, dim=0)
+
+
+def ref_prefix_prefill(
+    query: torch.Tensor,
+    num_queries_per_kv: int,
+    key_cache: torch.Tensor,
+    value_cache: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    block_tables: torch.Tensor,
+    seq_lens: torch.Tensor,
+    ctx_lens: torch.Tensor,
+    query_lens: torch.Tensor,
+    start_loc: torch.Tensor,
+    batch_size,
+    scale: float,
+    dtype: torch.dtype,
+):
+    """
+    query: shape = [num_tokens, num_heads, head_size]
+    key: shape = [num_tokens, num_kv_heads, head_size]
+    value: shape = [num_tokens, num_kv_heads, head_size]
+    k_cache = [num_blocks, block_size, num_kv_heads, head_size]
+    v_cache = [num_blocks, block_size, num_kv_heads, head_size]
+    Returns:
+        shape = [num_tokens, num_heads, head_size]
+    """
+    num_query_heads = query.shape[1]
+    num_kv_heads = value_cache.shape[2]
+    head_size = value_cache.shape[3]
+    block_size = value_cache.shape[1]
+    num_seqs = batch_size
+
+    block_tables_lst = block_tables.cpu().tolist()
+    seq_lens_lst = seq_lens.cpu().tolist()
+    ctx_lens_lst = ctx_lens.cpu().tolist()
+    query_lens_lst = query_lens.cpu().tolist()
+    start_loc_lst = start_loc.cpu().tolist()
+    ref_outputs: List[torch.Tensor] = []
+
+    for i in range(num_seqs):
+        cur_batch_seq_len = seq_lens_lst[i]
+        cur_batch_in_all_start_index = start_loc_lst[i]
+        cur_batch_in_all_stop_index = start_loc_lst[i + 1]
+        cur_batch_query_len = cur_batch_in_all_stop_index - cur_batch_in_all_start_index
+        assert cur_batch_query_len == query_lens_lst[i]
+        cur_batch_ctx_len = cur_batch_seq_len - cur_batch_query_len
+
+        if cur_batch_query_len == 1:
+            # normal decode
+            q = query[cur_batch_in_all_start_index:cur_batch_in_all_stop_index]
+            block_table = block_tables_lst[i]
+            seq_len = int(ctx_lens_lst[i])
+            keys_lst: List[torch.Tensor] = []
+            values_lst: List[torch.Tensor] = []
+            for j in range(seq_len):
+                block_number = int(block_table[j // block_size])
+                block_offset = j % block_size
+                k = key_cache[block_number, block_offset, :, :]
+                keys_lst.append(k)
+                v = value_cache[block_number, block_offset, :, :]
+                values_lst.append(v)
+            reconstr_keys = torch.stack(keys_lst, dim=0)
+            reconstr_values = torch.stack(values_lst, dim=0)
+            if num_queries_per_kv > 1:
+                # Handle MQA and GQA
+                reconstr_keys = torch.repeat_interleave(
+                    reconstr_keys, num_queries_per_kv, dim=1
+                )
+                reconstr_values = torch.repeat_interleave(
+                    reconstr_values, num_queries_per_kv, dim=1
+                )
+            out = ref_masked_attention(q, reconstr_keys, reconstr_values, scale)
+            ref_outputs.append(out)
+        elif cur_batch_ctx_len == 0:
+            # normal prefill
+            seq_len = int(query_lens_lst[i])
+            # Create attention mask.
+            attn_mask = torch.triu(
+                torch.ones(seq_len, seq_len, dtype=dtype), diagonal=1
+            )
+            attn_mask = attn_mask * torch.finfo(dtype).min
+            attn_mask = attn_mask.to(dtype=dtype)
+
+            key_to_use = key[cur_batch_in_all_start_index:cur_batch_in_all_stop_index]
+            value_to_use = value[
+                cur_batch_in_all_start_index:cur_batch_in_all_stop_index
+            ]
+            if num_queries_per_kv > 1:
+                # Handle MQA and GQA
+                key_to_use = torch.repeat_interleave(
+                    key_to_use, num_queries_per_kv, dim=1
+                )
+                value_to_use = torch.repeat_interleave(
+                    value_to_use, num_queries_per_kv, dim=1
+                )
+
+            out = ref_masked_attention(
+                query[cur_batch_in_all_start_index:cur_batch_in_all_stop_index],
+                key_to_use,
+                value_to_use,
+                scale,
+                attn_mask=attn_mask,
+            )
+            ref_outputs.append(out)
+        else:
+            # prefix prefill
+            # construct continous context
+            block_table = block_tables_lst[i]
+            seq_len = int(seq_lens_lst[i])
+            ctx_len = int(ctx_lens_lst[i])
+            keys_lst: List[torch.Tensor] = []
+            values_lst: List[torch.Tensor] = []
+            for j in range(ctx_len):
+                block_number = int(block_table[j // block_size])
+                block_offset = j % block_size
+                k = key_cache[block_number, block_offset, :, :]
+                keys_lst.append(k)
+                v = value_cache[block_number, block_offset, :, :]
+                values_lst.append(v)
+            reconstructed_keys = torch.stack(keys_lst, dim=0)
+            reconstructed_values = torch.stack(values_lst, dim=0)
+            linear_key = key[cur_batch_in_all_start_index:cur_batch_in_all_stop_index]
+            linear_value = value[
+                cur_batch_in_all_start_index:cur_batch_in_all_stop_index
+            ]
+            if num_queries_per_kv > 1:
+                # Handle MQA and GQA
+                reconstructed_keys = torch.repeat_interleave(
+                    reconstructed_keys, num_queries_per_kv, dim=1
+                )
+                reconstructed_values = torch.repeat_interleave(
+                    reconstructed_values, num_queries_per_kv, dim=1
+                )
+                linear_key = torch.repeat_interleave(
+                    key[cur_batch_in_all_start_index:cur_batch_in_all_stop_index],
+                    num_queries_per_kv,
+                    dim=1,
+                )
+                linear_value = torch.repeat_interleave(
+                    value[cur_batch_in_all_start_index:cur_batch_in_all_stop_index],
+                    num_queries_per_kv,
+                    dim=1,
+                )
+            all_keys = [
+                reconstructed_keys,
+                linear_key,
+            ]
+            all_values = [reconstructed_values, linear_value]
+            all_keys_t = torch.cat(all_keys, dim=0)
+            all_values_t = torch.cat(all_values, dim=0)
+            # Create attention mask.
+            attn_mask = torch.triu(
+                torch.ones(seq_len, seq_len, dtype=dtype), diagonal=1
+            )
+            attn_mask = attn_mask * torch.finfo(dtype).min
+            attn_mask = attn_mask.to(dtype=dtype)
+            # compute attention
+            out = ref_masked_attention(
+                query[cur_batch_in_all_start_index:cur_batch_in_all_stop_index],
+                all_keys_t,
+                all_values_t,
+                scale,
+            )
+            ref_outputs.append(out)
+    return torch.cat(ref_outputs, dim=0)
+
+
+def ref_reshape_and_cache_flash(
+    key: torch.Tensor,
+    value: torch.Tensor,
+    key_cache: torch.Tensor,
+    value_cache: torch.Tensor,
+    slot_mapping: torch.Tensor,
+    block_size: int,
+    num_tokens: int,
+):
+    """
+    key: shape = [num_tokens, num_kv_heads, head_size]
+    value: shape = [num_tokens, num_kv_heads, head_size]
+    key_cache = [num_blocks, block_size, num_kv_heads, head_size]
+    value_cache = [num_blocks, block_size, num_kv_heads, head_size]
+    """
+
+    block_indicies = torch.div(slot_mapping, block_size, rounding_mode="floor")
+    block_indicies_lst = block_indicies.cpu().tolist()
+    block_offsets = slot_mapping % block_size
+    block_offsets_lst = block_offsets.cpu().tolist()
+    for i in range(num_tokens):
+        block_idx = block_indicies_lst[i]
+        block_offset = block_offsets_lst[i]
+        key_cache[block_idx, block_offset, :, :] = key[i]
+        value_cache[block_idx, block_offset, :, :] = value[i]
+
+
+def ref_reshape_and_cache(
+    key: torch.Tensor,
+    value: torch.Tensor,
+    key_cache: torch.Tensor,
+    value_cache: torch.Tensor,
+    slot_mapping: torch.Tensor,
+    block_size: int,
+    num_tokens: int,
+):
+    """
+    key: shape = [num_tokens, num_kv_heads, head_size]
+    value: shape = [num_tokens, num_kv_heads, head_size]
+    key_cache[num_blocks, num_kv_heads, head_size/8, block_size, 8]
+    value_cache[num_blocks, num_kv_heads, head_size, block_size]
+    """
+
+    reshaped_key = key.reshape(num_tokens, *key_cache[0, :, :, 0, :].shape)
+    block_indicies = torch.div(slot_mapping, block_size, rounding_mode="floor")
+    block_indicies_lst = block_indicies.cpu().tolist()
+    block_offsets = slot_mapping % block_size
+    block_offsets_lst = block_offsets.cpu().tolist()
+    for i in range(num_tokens):
+        block_idx = block_indicies_lst[i]
+        block_offset = block_offsets_lst[i]
+        key_cache[block_idx, :, :, block_offset, :] = reshaped_key[i]
+        value_cache[block_idx, :, :, block_offset] = value[i]

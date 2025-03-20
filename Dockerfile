@@ -162,7 +162,7 @@ RUN rm -rf /workspace/vllm
 
 # to avaoid incompatibility with our custom triton build
 #  see also https://github.com/vllm-project/vllm/issues/12219
-RUN uv pip install -U torch>=2.6 torchvision>=2.6 torchaudio>=2.6
+RUN uv pip install -U 'torch>=2.6' 'torchvision>=0.21' 'torchaudio>=2.6'
 
 # Install Triton (will replace version that vllm/pytorch installed)
 COPY --from=triton-builder /workspace/*.whl .
@@ -176,17 +176,19 @@ ENV LD_LIBRARY_PATH="${VIRTUAL_ENV}/lib/python${PYTHON_VERSION}/site-packages/nv
 ENV LD_LIBRARY_PATH="${VIRTUAL_ENV}/lib/python${PYTHON_VERSION}/site-packages/nvidia/nvtx/lib:${LD_LIBRARY_PATH}"
 ENV LD_LIBRARY_PATH="${VIRTUAL_ENV}/lib/python${PYTHON_VERSION}/site-packages/nvidia/cuda_cupti/lib:${LD_LIBRARY_PATH}"
 
-# copy requirements before to avoid reinstall
+# copy requirements explicitly before to avoid reinstall
 COPY triton-dejavu/requirements-opt.txt dejavu-requirements-opt.txt
 RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=cache,target=/root/.cache/uv \
-    uv pip install -r dejavu-requirements-opt.txt
+    uv pip install -r dejavu-requirements-opt.txt \ 
+    && rm -f dejavu-requirements-opt.txt
 
     # dejavu
 COPY triton-dejavu triton-dejavu
 RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=cache,target=/root/.cache/uv \
-    uv pip install ./triton-dejavu/
+    uv pip install ./triton-dejavu/ \
+    && rm -rf ./triton-dejavu/
 
 # Install IBM kernels and vllm plugin
 #  must be after vllm!
@@ -227,7 +229,7 @@ ENV STORE_TEST_RESULT_PATH=/results
 
 # copy vllm benchmarks
 COPY vllm/benchmarks benchmarks
-RUN wget https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json
+COPY ShareGPT_V3_unfiltered_cleaned_split.json ShareGPT_V3_unfiltered_cleaned_split.json
 
 # Copy thid-party kernels and insert into path
 COPY third_party third_party
@@ -237,7 +239,8 @@ ENV PYTHONPATH /workspace
 ENV TRITON_PRINT_AUTOTUNING=1
 ENV TRITON_DEJAVU_DEBUG=1
 # set as default
-ENV TRITON_DEJAVU_STORAGE=/storage
+# ENV TRITON_DEJAVU_STORAGE=/storage
+ENV TRITON_DEJAVU_STORAGE=/workspace
 ENV NGL_EXP_FALLBACK=next
 # ENV TRITON_DEJAVU_USE_ONLY_RESTORED=0
 ENV TRITON_DEJAVU_FORCE_FALLBACK=1

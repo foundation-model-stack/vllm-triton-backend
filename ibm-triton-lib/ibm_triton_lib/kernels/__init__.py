@@ -75,3 +75,6 @@ from .triton_flash_attention import (
 from .fused_gqa_paged import (
     paged_attention_triton_3d as paged_attention_fp8_3d,
 )
+from .fused_chunked_prefill_paged_decode import (
+    fused_chunked_prefill_paged_decode as fused_chunked_prefill_paged_decode_25d,
+)
