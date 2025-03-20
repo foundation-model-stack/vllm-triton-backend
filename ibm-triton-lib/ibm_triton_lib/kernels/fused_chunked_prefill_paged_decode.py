@@ -326,6 +326,7 @@ def prefix_prefill_fwd_3d(
     return
 
 
+# TODO: update with GQA version / tl.dot version
 @triton.jit
 def kernel_paged_attention_2d(
     output_ptr,  # [num_tokens, num_query_heads, head_size]
