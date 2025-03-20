@@ -18,11 +18,10 @@
 
 import torch
 
-# TODO: will be necessary for AMD
-# if torch.version.hip:
-#     from flash_attn import flash_attn_varlen_func, flash_attn_func
-# else:
-from vllm.vllm_flash_attn import flash_attn_with_kvcache, flash_attn_varlen_func
+if torch.version.hip:
+    from flash_attn import flash_attn_with_kvcache, flash_attn_varlen_func
+else:
+    from vllm.vllm_flash_attn import flash_attn_with_kvcache, flash_attn_varlen_func
 from .base import DecodeCaller, PrefillCaller, PrefixPrefillCaller
 
 
@@ -51,19 +50,34 @@ class FlashAttnDecodeCaller(DecodeCaller):
 
         q = query.unsqueeze(1)
 
-        call_func_under_test = lambda: flash_attn_with_kvcache(
-            q=q,
-            k_cache=key_cache_flash_attn,
-            v_cache=value_cache_flash_attn,
-            out=None,
-            softmax_scale=scale,
-            causal=True,
-            cache_seqlens=seq_lens,
-            window_size=(-1, 1),
-            block_table=block_tables,
-            softcap=0,
-            alibi_slopes=alibi_slopes,
-        )
+        if torch.version.hip:
+            call_func_under_test = lambda: flash_attn_with_kvcache(
+                q=q,
+                k_cache=key_cache_flash_attn,
+                v_cache=value_cache_flash_attn,
+                softmax_scale=scale,
+                causal=True,
+                cache_seqlens=seq_lens,
+                window_size=(-1, 1),
+                block_table=block_tables,
+                softcap=0,
+                alibi_slopes=alibi_slopes,
+            )
+        else:
+            call_func_under_test = lambda: flash_attn_with_kvcache(
+                q=q,
+                k_cache=key_cache_flash_attn,
+                v_cache=value_cache_flash_attn,
+                out=None,
+                softmax_scale=scale,
+                causal=True,
+                cache_seqlens=seq_lens,
+                window_size=(-1, 1),
+                block_table=block_tables,
+                softcap=0,
+                alibi_slopes=alibi_slopes,
+            )
+
 
         return call_func_under_test
 

@@ -15,6 +15,8 @@
 #  *******************************************************************************/
 #
 
+import triton
+
 from .triton_prefix_prefill import context_attention_fwd
 from .triton_paged_decode_attention_2d import kernel_paged_attention_2d
 

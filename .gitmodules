@@ -7,3 +7,6 @@
 [submodule "vllm"]
 	path = vllm
 	url = https://github.com/tdoublep/vllm.git
+[submodule "rocm_vllm"]
+	path = rocm_vllm
+	url = https://github.com/ROCm/vllm.git
