@@ -21,6 +21,10 @@ from .triton_prefix_prefill import context_attention_fwd
 from .triton_paged_decode_attention_2d import kernel_paged_attention_2d
 
 
+def next_power_of_2(x):
+    return 1 << (x - 1).bit_length()
+
+
 def chunked_prefill_paged_decode(
     query,
     key,
@@ -66,7 +70,7 @@ def chunked_prefill_paged_decode(
     num_query_heads = query.shape[1]
     num_queries_per_kv = query.shape[1] // key.shape[1]
     head_size = query.shape[2]
-    num_queries_per_kv_padded = max(triton.next_power_of_2(num_queries_per_kv), 16)
+    num_queries_per_kv_padded = max(next_power_of_2(num_queries_per_kv), 16)
     sliding_window_int = sliding_window if sliding_window is not None else 0
 
     kernel_paged_attention_2d[
@@ -95,7 +99,7 @@ def chunked_prefill_paged_decode(
         output_stride_1=output.stride(1),
         BLOCK_SIZE=block_size,
         HEAD_SIZE=head_size,
-        HEAD_SIZE_PADDED=triton.next_power_of_2(head_size),
+        HEAD_SIZE_PADDED=next_power_of_2(head_size),
         USE_ALIBI_SLOPES=use_alibi_slopes,
         SLIDING_WINDOW=sliding_window_int,
         x=key_cache.shape[4],
