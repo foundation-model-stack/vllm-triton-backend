@@ -2,7 +2,7 @@
 ARG BASE_UBI_IMAGE_TAG=9.4
 ARG PYTHON_VERSION=3.12
 ARG MAX_JOBS=64
-ARG PIP_VLLM_VERSION=0.7.3
+ARG PIP_VLLM_VERSION=0.8.1
 
 ARG VLLM_SOURCE=pip 
 # or VLLM_SOURCE=custom 
@@ -55,7 +55,7 @@ ENV CUDA_HOME="/usr/local/cuda" \
 # install build dependencies
 RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=cache,target=/root/.cache/uv \
-    --mount=type=bind,source=vllm/requirements-build.txt,target=requirements-build.txt \
+    --mount=type=bind,source=vllm/requirements/build.txt,target=requirements-build.txt \
     uv pip install -r requirements-build.txt
 
 # set env variables for build
@@ -154,6 +154,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     uv pip install vllm-*.whl
 
 # copy python stuff of vllm
+ARG VLLM_SOURCE
 RUN mkdir -p /workspace/vllm
 COPY vllm/vllm /workspace/vllm
 RUN if [ "$VLLM_SOURCE" = "custom" ] ; then cp -r /workspace/vllm/* ${VIRTUAL_ENV}/lib/python${PYTHON_VERSION}/site-packages/vllm/  \
