@@ -78,9 +78,9 @@ class BenchmarkMode(Enum):
 DTYPES = [torch.float16]
 SEEDS = [0]
 
-BATCH_SIZES = [1, 2, 4, 8, 16, 32, 64, 128]
+# BATCH_SIZES = [1, 2, 4, 8, 16, 32, 64, 128]
 # BATCH_SIZES = [128]
-# BATCH_SIZES = [64]
+BATCH_SIZES = [64]
 # BATCH_SIZES = [4]
 # BATCH_SIZES = [1, 2, 4, 8, 16, 32, 64, 128, 256]
 # BATCH_SIZES = [1, 2, 3, 4, 5, 7, 8, 12, 16, 32, 64, 128]
@@ -94,9 +94,10 @@ NUM_HEADS = [(32, 8)]
 # SEQUENCE_LENGTHS = [8]
 # SEQUENCE_LENGTHS = [64]
 # SEQUENCE_LENGTHS = [16, 17]
+SEQUENCE_LENGTHS = [2048]
 # SEQUENCE_LENGTHS = [4096]
 # SEQUENCE_LENGTHS = [4321]
-SEQUENCE_LENGTHS = [16, 128, 512, 1024, 2048, 4096]
+# SEQUENCE_LENGTHS = [16, 128, 512, 1024, 2048, 4096]
 # SEQUENCE_LENGTHS = [24, 128, 512, 1024, 2048, 4096]
 
 # CONTEXT_LENGTHS = [16, 128, 512, 1024, 2048, 4096]
@@ -127,7 +128,7 @@ CAUSAL_FLASH = [True]  # vLLM only needs causal=True
 PROMPT_PATTERNS = []
 PROMPT_PATTERNS.append([1.0])
 # PROMPT_PATTERNS.append([1.0, 0.4, 0.5, 1.0, 0.2])
-PROMPT_PATTERNS.append([0.1, 0.4, 0.5, 1.0, 0.2])
+# PROMPT_PATTERNS.append([0.1, 0.4, 0.5, 1.0, 0.2])
 
 impl_translate = {i.name: i.value for i in Implementation}
 method_translate = {i.name: i.value for i in BenchmarkMode}
@@ -628,6 +629,8 @@ def test_prefill_attention(
         if batch_size > 200:
             # FIXME(ngl): also causes illegal memory access
             pytest.skip()
+    elif implementation == Implementation.PYTORCH_NATIVE and realistic_prompt_mode:
+        pytest.skip("unsupported configuration")
 
     ATOL = 1e-3 * max_value
     RTOL = 1e-5
@@ -886,7 +889,7 @@ def test_prefill_attention(
 @pytest.mark.parametrize("max_value", MAX_VALUES)
 @pytest.mark.parametrize("benchmark_mode", BENCHMARK_MODES)
 @torch.inference_mode()
-def test_prefix_prefill_attention(
+def test_prefix_attention(
     capsys,
     request,
     batch_size,
