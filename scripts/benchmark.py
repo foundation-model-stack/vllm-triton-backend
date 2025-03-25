@@ -220,6 +220,7 @@ enforce_numerical_correctness = True
 do_profiling = True
 store_hatchet = False
 debug_flag = os.getenv("TRITON_BACKEND_DEBUG") == "1"
+add_triton_dejavu_envs = True
 
 
 @pytest.mark.parametrize("batch_size", BATCH_SIZES)
@@ -515,6 +516,20 @@ def test_decode_attention(
                 "captured": captured,
             }
 
+            if add_triton_dejavu_envs:
+                dejavu_envs = {}
+                _skip_dejavu_envs = [
+                    "_TRITON_DEJAVU_DETERMINED_CUDA_VERSION",
+                    "DEBUG",
+                    "STORAGE",
+                ]
+                for env in os.environ.keys():
+                    if "TRITON_DEJAVU_" in env:
+                        if any([skip_s in env for skip_s in _skip_dejavu_envs]):
+                            continue
+                        dejavu_envs[env] = os.environ[env]
+                record.update(dejavu_envs)
+
             if torch.version.hip and implementation == Implementation.FLASH_ATTN:
                 record['implementation'] = 'Implementation.ROCM_FLASH_ATTN'
 
@@ -801,7 +816,21 @@ def test_prefill_attention(
                 "proton_util_bw": proton_util_bw,
                 "captured": captured,
             }
-            
+
+            if add_triton_dejavu_envs:
+                dejavu_envs = {}
+                _skip_dejavu_envs = [
+                    "_TRITON_DEJAVU_DETERMINED_CUDA_VERSION",
+                    "DEBUG",
+                    "STORAGE",
+                ]
+                for env in os.environ.keys():
+                    if "TRITON_DEJAVU_" in env:
+                        if any([skip_s in env for skip_s in _skip_dejavu_envs]):
+                            continue
+                        dejavu_envs[env] = os.environ[env]
+                record.update(dejavu_envs)
+
             if torch.version.hip and implementation == Implementation.FLASH_ATTN:
                 record['implementation'] = 'Implementation.ROCM_FLASH_ATTN'
 
@@ -1291,6 +1320,20 @@ def test_prefix_prefill_attention(
                 "proton_util_bw": proton_util_bw,
                 "captured": captured,
             }
+
+            if add_triton_dejavu_envs:
+                dejavu_envs = {}
+                _skip_dejavu_envs = [
+                    "_TRITON_DEJAVU_DETERMINED_CUDA_VERSION",
+                    "DEBUG",
+                    "STORAGE",
+                ]
+                for env in os.environ.keys():
+                    if "TRITON_DEJAVU_" in env:
+                        if any([skip_s in env for skip_s in _skip_dejavu_envs]):
+                            continue
+                        dejavu_envs[env] = os.environ[env]
+                record.update(dejavu_envs)
 
             pytest.global_pds[my_name] = pd.concat(
                 [pytest.global_pds[my_name], pd.Series(record).to_frame().T]
