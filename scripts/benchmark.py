@@ -65,6 +65,7 @@ class Implementation(Enum):
     TRITON_FP8 = 7
     TRITON_3D = 8
     TRITON_FUSED = 9
+    PYTORCH_NATIVE = 10
 
 
 class BenchmarkMode(Enum):
@@ -85,17 +86,18 @@ BATCH_SIZES = [1, 2, 4, 8, 16, 32, 64, 128]
 # BATCH_SIZES = [1, 2, 3, 4, 5, 7, 8, 12, 16, 32, 64, 128]
 
 # order:  num_query_heads, num_kv_heads
-NUM_HEADS = [(32, 32), (32, 8)]
-# NUM_HEADS = [(32, 8)]
+# NUM_HEADS = [(32, 32), (32, 8)]
+NUM_HEADS = [(32, 8)]
 # NUM_HEADS = [(32, 32)]
 
-# SEQUENCE_LENGTHS = [16, 32, 64, 128, 512, 1024, 2048, 4096]
+SEQUENCE_LENGTHS = [16, 32, 64, 128, 512, 1024, 2048, 4096]
 # SEQUENCE_LENGTHS = [8]
 # SEQUENCE_LENGTHS = [64]
 # SEQUENCE_LENGTHS = [16, 17]
+# SEQUENCE_LENGTHS = [2048]
 # SEQUENCE_LENGTHS = [4096]
 # SEQUENCE_LENGTHS = [4321]
-SEQUENCE_LENGTHS = [16, 128, 512, 1024, 2048, 4096]
+# SEQUENCE_LENGTHS = [16, 128, 512, 1024, 2048, 4096]
 # SEQUENCE_LENGTHS = [24, 128, 512, 1024, 2048, 4096]
 
 # CONTEXT_LENGTHS = [16, 128, 512, 1024, 2048, 4096]
@@ -142,7 +144,8 @@ IMPLEMENTATION_UT = [
     Implementation.TRITON_FP8,
     Implementation.FLASHINFER,
 ]
-MAX_VALUES = [0.01, 0.1, 1.0]
+# MAX_VALUES = [0.01, 0.1, 1.0]
+MAX_VALUES = [1.0]
 BENCHMARK_MODES = [BenchmarkMode.CUDA_EVENTS, BenchmarkMode.CUDA_GRAPHS]
 
 if os.getenv("NGL_FULL_TEST", "0") == "1":
@@ -220,6 +223,7 @@ enforce_numerical_correctness = True
 do_profiling = True
 store_hatchet = False
 debug_flag = os.getenv("TRITON_BACKEND_DEBUG") == "1"
+add_triton_dejavu_envs = True
 
 
 @pytest.mark.parametrize("batch_size", BATCH_SIZES)
@@ -256,6 +260,19 @@ def test_decode_attention(
     my_instance = my_id.split("[")[1][:-1]
     realistic_prompt_mode = len(prompt_pattern) > 1
     gqa_mode = num_heads[0] != num_heads[1]
+
+    if implementation not in [
+        Implementation.BASELINE_TRITON,
+        Implementation.FLASH_ATTN,
+        Implementation.VLLM_CUDA_V1,
+        Implementation.VLLM_CUDA_V2,
+        Implementation.TRITON_2D,
+        Implementation.TRITON_3D,
+        Implementation.TRITON_FP8,
+        Implementation.XFORMERS,
+        Implementation.FLASHINFER,
+    ]:
+        pytest.skip("unsupported configuration")
 
     if implementation == Implementation.BASELINE_TRITON and (
         benchmark_mode == BenchmarkMode.CUDA_GRAPHS or realistic_prompt_mode or gqa_mode
@@ -515,8 +532,22 @@ def test_decode_attention(
                 "captured": captured,
             }
 
+            if add_triton_dejavu_envs:
+                dejavu_envs = {}
+                _skip_dejavu_envs = [
+                    "_TRITON_DEJAVU_DETERMINED_CUDA_VERSION",
+                    "DEBUG",
+                    "STORAGE",
+                ]
+                for env in os.environ.keys():
+                    if "TRITON_DEJAVU_" in env:
+                        if any([skip_s in env for skip_s in _skip_dejavu_envs]):
+                            continue
+                        dejavu_envs[env] = os.environ[env]
+                record.update(dejavu_envs)
+
             if torch.version.hip and implementation == Implementation.FLASH_ATTN:
-                record['implementation'] = 'Implementation.ROCM_FLASH_ATTN'
+                record["implementation"] = "Implementation.ROCM_FLASH_ATTN"
 
             pytest.global_pds[my_name] = pd.concat(
                 [pytest.global_pds[my_name], pd.Series(record).to_frame().T]
@@ -596,7 +627,11 @@ def test_prefill_attention(
         pytest.skip()
 
     # TODO
-    if implementation not in [Implementation.TRITON_3D, Implementation.FLASH_ATTN]:
+    if implementation not in [
+        Implementation.TRITON_3D,
+        Implementation.FLASH_ATTN,
+        Implementation.PYTORCH_NATIVE,
+    ]:
         pytest.skip("unsupported configuration")
     elif implementation == Implementation.TRITON_3D:
         if (not math.log(head_size, 2).is_integer()) or (head_size > 256):
@@ -609,6 +644,8 @@ def test_prefill_attention(
         if batch_size > 200:
             # FIXME(ngl): also causes illegal memory access
             pytest.skip()
+    elif implementation == Implementation.PYTORCH_NATIVE and realistic_prompt_mode:
+        pytest.skip("unsupported configuration")
 
     ATOL = 1e-3 * max_value
     RTOL = 1e-5
@@ -673,6 +710,8 @@ def test_prefill_attention(
             from callers import FlashAttnPrefillCaller as Caller
         elif implementation == Implementation.TRITON_3D:
             from callers import Triton3dAttentionPrefillCaller as Caller
+        elif implementation == Implementation.PYTORCH_NATIVE:
+            from callers import PytorchNativeAttentionPrefillCaller as Caller
 
         if Caller.requires_allocated_output:
             output = torch.empty_like(query)
@@ -801,9 +840,23 @@ def test_prefill_attention(
                 "proton_util_bw": proton_util_bw,
                 "captured": captured,
             }
-            
+
+            if add_triton_dejavu_envs:
+                dejavu_envs = {}
+                _skip_dejavu_envs = [
+                    "_TRITON_DEJAVU_DETERMINED_CUDA_VERSION",
+                    "DEBUG",
+                    "STORAGE",
+                ]
+                for env in os.environ.keys():
+                    if "TRITON_DEJAVU_" in env:
+                        if any([skip_s in env for skip_s in _skip_dejavu_envs]):
+                            continue
+                        dejavu_envs[env] = os.environ[env]
+                record.update(dejavu_envs)
+
             if torch.version.hip and implementation == Implementation.FLASH_ATTN:
-                record['implementation'] = 'Implementation.ROCM_FLASH_ATTN'
+                record["implementation"] = "Implementation.ROCM_FLASH_ATTN"
 
             pytest.global_pds[my_name] = pd.concat(
                 [pytest.global_pds[my_name], pd.Series(record).to_frame().T]
@@ -865,7 +918,7 @@ def test_prefill_attention(
 @pytest.mark.parametrize("max_value", MAX_VALUES)
 @pytest.mark.parametrize("benchmark_mode", BENCHMARK_MODES)
 @torch.inference_mode()
-def test_prefix_prefill_attention(
+def test_prefix_attention(
     capsys,
     request,
     batch_size,
@@ -1291,6 +1344,20 @@ def test_prefix_prefill_attention(
                 "proton_util_bw": proton_util_bw,
                 "captured": captured,
             }
+
+            if add_triton_dejavu_envs:
+                dejavu_envs = {}
+                _skip_dejavu_envs = [
+                    "_TRITON_DEJAVU_DETERMINED_CUDA_VERSION",
+                    "DEBUG",
+                    "STORAGE",
+                ]
+                for env in os.environ.keys():
+                    if "TRITON_DEJAVU_" in env:
+                        if any([skip_s in env for skip_s in _skip_dejavu_envs]):
+                            continue
+                        dejavu_envs[env] = os.environ[env]
+                record.update(dejavu_envs)
 
             pytest.global_pds[my_name] = pd.concat(
                 [pytest.global_pds[my_name], pd.Series(record).to_frame().T]
