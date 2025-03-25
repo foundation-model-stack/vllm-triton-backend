@@ -686,13 +686,13 @@ def fallback_heuristic(key):
     return ret
 
 
-def informed_fallback_next(key, cache):
+def informed_fallback_next(key, cache, config_space, all_configs):
     # key[27] = MAX_SEQLENS_Q
     ret = cache[min(cache.keys(), key=lambda x: abs(x - key[27]))]
     return ret
 
 
-def informed_fallback_previous(key, cache):
+def informed_fallback_previous(key, cache, config_space, all_configs):
     # key[27] = MAX_SEQLENS_Q
     sorted_keys = sorted(cache.keys())
     next_idx = sorted_keys.index(min(sorted_keys, key=lambda x: abs(x - key[27])))
@@ -701,9 +701,47 @@ def informed_fallback_previous(key, cache):
     return ret
 
 
-def prepare_informed_fallback(cache):
+# def informed_fallback_smallest(key, cache, config_space, all_configs):
+#     # TODO: move to prepare? to avoid SW overhead (not relevant for cuda graphs)
+#     sorted_list = config_space.generate_config_list_sorted()
+#     print(f"fallback: using smallest config: {sorted_list[0]}")
+#     return sorted_list[0]
+# 
+# 
+# def informed_fallback_largest(key, cache, config_space, all_configs):
+#     # TODO: move to prepare? to avoid SW overhead (not relevant for cuda graphs)
+#     sorted_list = config_space.generate_config_list_sorted()
+#     print(f"fallback: using smallest config: {sorted_list[-1]}")
+#     return sorted_list[-1]
+
+
+def informed_fallback_passthrough(key, cache, config_space, all_configs):
+    # we assume the cache has just one entry
+    # return cache[cache.keys()[0]]
+    return cache['any_key']
+
+
+def prepare_informed_fallback(cache, config_space, all_configs):
     # key[27] = MAX_SEQLENS_Q
     ret = {int(k[27]): c for k, c in cache.items()}
+    return ret
+
+
+def prepare_informed_fallback_smallest(cache, config_space, all_configs):
+    sorted_list = config_space.generate_config_list_sorted()
+    print(f"fallback: using smallest config: {sorted_list[0]}")
+    # any_key = next(iter(cache))
+    any_key = 'any_key'
+    ret = {any_key: sorted_list[0]}
+    return ret
+
+
+def prepare_informed_fallback_largest(cache, config_space, all_configs):
+    sorted_list = config_space.generate_config_list_sorted()
+    print(f"fallback: using largest config: {sorted_list[-1]}")
+    # any_key = next(iter(cache))
+    any_key = 'any_key'
+    ret = {any_key: sorted_list[-1]}
     return ret
 
 
@@ -716,11 +754,20 @@ bo_time = lambda: int(os.getenv("NGL_EXP_BO_TIME", "360"))
 def _select_informed_fallback():
     fallback_mode = os.getenv("NGL_EXP_FALLBACK", "none")
     if fallback_mode == "static":
+        # print("static fallback experiment")
         return None, None
     if fallback_mode == "next":
+        # print("next largest func fallback experiment")
         return informed_fallback_next, prepare_informed_fallback
     if fallback_mode == "previous":
+        # print("previous smaller func fallback experiment")
         return informed_fallback_previous, prepare_informed_fallback
+    if fallback_mode == "smallest":
+        # print("smallest global config fallback experiment")
+        return informed_fallback_passthrough, prepare_informed_fallback_smallest
+    if fallback_mode == "largest":
+        # print("largest global config fallback experiment")
+        return informed_fallback_passthrough, prepare_informed_fallback_largest
     return informed_fallback_next, prepare_informed_fallback
 
 
