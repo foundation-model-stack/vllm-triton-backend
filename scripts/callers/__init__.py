@@ -41,3 +41,4 @@ from .fused_triton import (
     FusedTritonChunkedPrefixPrefill25dCaller,
     FusedTritonDecodeOnlyCaller,
 )
+from .pytorch_native import PytorchNativeAttentionPrefillCaller
