@@ -21,8 +21,16 @@ from .base import PrefillCaller
 
 
 # based on https://github.com/pytorch/pytorch/blob/6055a4f612782ca944f2e0465f7497b7f18de4e9/torch/nn/functional.py#L5732
-def scaled_dot_product_attention(query, key, value, scale_factor, attn_mask=None, dropout_p=0.0,
-        is_causal=False, enable_gqa=False) -> torch.Tensor:
+def scaled_dot_product_attention(
+    query,
+    key,
+    value,
+    scale_factor,
+    attn_mask=None,
+    dropout_p=0.0,
+    is_causal=False,
+    enable_gqa=False,
+) -> torch.Tensor:
     L, S = query.size(-2), key.size(-2)
     attn_bias = torch.zeros(L, S, dtype=query.dtype, device=query.device)
     if is_causal:
@@ -38,12 +46,12 @@ def scaled_dot_product_attention(query, key, value, scale_factor, attn_mask=None
             attn_bias = attn_mask + attn_bias
 
     if enable_gqa:
-        key = key.repeat_interleave(query.size(-3)//key.size(-3), -3)
-        value = value.repeat_interleave(query.size(-3)//value.size(-3), -3)
+        key = key.repeat_interleave(query.size(-3) // key.size(-3), -3)
+        value = value.repeat_interleave(query.size(-3) // value.size(-3), -3)
 
     attn_weight = query @ key.transpose(-2, -1) * scale_factor
     attn_weight += attn_bias
-    attn_weight = torch.softmax(attn_weight, dim=-1)  #.to(query.dtype)
+    attn_weight = torch.softmax(attn_weight, dim=-1)  # .to(query.dtype)
     attn_weight = torch.dropout(attn_weight, dropout_p, train=True)
     return attn_weight @ value
 
@@ -74,7 +82,7 @@ class PytorchNativeAttentionPrefillCaller(PrefillCaller):
         # max_seqlen_q: int. Maximum query sequence length in the batch.
         # max_seqlen_k: int. Maximum key sequence length in the batch.
         # out: (total, nheads, headdim).
-    
+
         # print(query.shape)
         # print(key_cache.shape)
 
@@ -119,9 +127,15 @@ class PytorchNativeAttentionPrefillCaller(PrefillCaller):
             value_lst.append(value_cache[start_idx:end_idx].transpose(0, 1))
             # TODO: fill with 0?
 
-        query_torch = torch.cat(query_lst, dim=0).reshape(num_seqs, num_query_heads, q_len, head_size)
-        key_torch = torch.cat(key_lst, dim=0).reshape(num_seqs, num_kv_heads, max_seq_len, head_size)
-        value_torch = torch.cat(value_lst, dim=0).reshape(num_seqs, num_kv_heads, max_seq_len, head_size)
+        query_torch = torch.cat(query_lst, dim=0).reshape(
+            num_seqs, num_query_heads, q_len, head_size
+        )
+        key_torch = torch.cat(key_lst, dim=0).reshape(
+            num_seqs, num_kv_heads, max_seq_len, head_size
+        )
+        value_torch = torch.cat(value_lst, dim=0).reshape(
+            num_seqs, num_kv_heads, max_seq_len, head_size
+        )
         query_torch.to(dtype)
         query_torch.to(tdevice)
         key_torch.to(dtype)
@@ -142,14 +156,14 @@ class PytorchNativeAttentionPrefillCaller(PrefillCaller):
             )
 
         return call_and_process_output
-    
+
     @classmethod
     def select_output(cls, x, y):
         # in: (num_seqs, num_query_heads, q_len, head_size)
         # out: (total, nheads, headdim)
         # print(y.shape)
         num_seqs, num_query_heads, q_len, head_size = y.shape
-        out = y.transpose(1,2).reshape(-1, num_query_heads, head_size)
+        out = y.transpose(1, 2).reshape(-1, num_query_heads, head_size)
         # print(out.shape)
         # return y.squeeze(1)
         return out

@@ -81,7 +81,7 @@ SEEDS = [0]
 BATCH_SIZES = [1, 2, 4, 8, 16, 32, 64, 128]
 # BATCH_SIZES = [128]
 # BATCH_SIZES = [64]
-BATCH_SIZES = [4]
+# BATCH_SIZES = [4]
 # BATCH_SIZES = [1, 2, 4, 8, 16, 32, 64, 128, 256]
 # BATCH_SIZES = [1, 2, 3, 4, 5, 7, 8, 12, 16, 32, 64, 128]
 
@@ -259,10 +259,18 @@ def test_decode_attention(
     realistic_prompt_mode = len(prompt_pattern) > 1
     gqa_mode = num_heads[0] != num_heads[1]
 
-    if implementation not in [Implementation.BASELINE_TRITON, Implementation.FLASH_ATTN, Implementation.VLLM_CUDA_V1, Implementation.VLLM_CUDA_V2, 
-                              Implementation.TRITON_2D, Implementation.TRITON_3D, Implementation.TRITON_FP8, Implementation.XFORMERS, Implementation.FLASHINFER]:
+    if implementation not in [
+        Implementation.BASELINE_TRITON,
+        Implementation.FLASH_ATTN,
+        Implementation.VLLM_CUDA_V1,
+        Implementation.VLLM_CUDA_V2,
+        Implementation.TRITON_2D,
+        Implementation.TRITON_3D,
+        Implementation.TRITON_FP8,
+        Implementation.XFORMERS,
+        Implementation.FLASHINFER,
+    ]:
         pytest.skip("unsupported configuration")
-
 
     if implementation == Implementation.BASELINE_TRITON and (
         benchmark_mode == BenchmarkMode.CUDA_GRAPHS or realistic_prompt_mode or gqa_mode
@@ -523,7 +531,7 @@ def test_decode_attention(
             }
 
             if torch.version.hip and implementation == Implementation.FLASH_ATTN:
-                record['implementation'] = 'Implementation.ROCM_FLASH_ATTN'
+                record["implementation"] = "Implementation.ROCM_FLASH_ATTN"
 
             pytest.global_pds[my_name] = pd.concat(
                 [pytest.global_pds[my_name], pd.Series(record).to_frame().T]
@@ -603,7 +611,11 @@ def test_prefill_attention(
         pytest.skip()
 
     # TODO
-    if implementation not in [Implementation.TRITON_3D, Implementation.FLASH_ATTN, Implementation.PYTORCH_NATIVE]:
+    if implementation not in [
+        Implementation.TRITON_3D,
+        Implementation.FLASH_ATTN,
+        Implementation.PYTORCH_NATIVE,
+    ]:
         pytest.skip("unsupported configuration")
     elif implementation == Implementation.TRITON_3D:
         if (not math.log(head_size, 2).is_integer()) or (head_size > 256):
@@ -810,9 +822,9 @@ def test_prefill_attention(
                 "proton_util_bw": proton_util_bw,
                 "captured": captured,
             }
-            
+
             if torch.version.hip and implementation == Implementation.FLASH_ATTN:
-                record['implementation'] = 'Implementation.ROCM_FLASH_ATTN'
+                record["implementation"] = "Implementation.ROCM_FLASH_ATTN"
 
             pytest.global_pds[my_name] = pd.concat(
                 [pytest.global_pds[my_name], pd.Series(record).to_frame().T]
