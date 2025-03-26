@@ -855,8 +855,8 @@ def test_prefill_attention(
                         dejavu_envs[env] = os.environ[env]
                 record.update(dejavu_envs)
 
-                if 'NGL_EXP_FALLBACK' in os.environ:
-                    record['NGL_EXP_FALLBACK'] = os.environ['NGL_EXP_FALLBACK']
+                if "NGL_EXP_FALLBACK" in os.environ:
+                    record["NGL_EXP_FALLBACK"] = os.environ["NGL_EXP_FALLBACK"]
 
             if torch.version.hip and implementation == Implementation.FLASH_ATTN:
                 record["implementation"] = "Implementation.ROCM_FLASH_ATTN"

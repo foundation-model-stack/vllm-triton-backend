@@ -706,8 +706,8 @@ def informed_fallback_previous(key, cache, config_space, all_configs):
 #     sorted_list = config_space.generate_config_list_sorted()
 #     print(f"fallback: using smallest config: {sorted_list[0]}")
 #     return sorted_list[0]
-# 
-# 
+#
+#
 # def informed_fallback_largest(key, cache, config_space, all_configs):
 #     # TODO: move to prepare? to avoid SW overhead (not relevant for cuda graphs)
 #     sorted_list = config_space.generate_config_list_sorted()
@@ -718,7 +718,7 @@ def informed_fallback_previous(key, cache, config_space, all_configs):
 def informed_fallback_passthrough(key, cache, config_space, all_configs):
     # we assume the cache has just one entry
     # return cache[cache.keys()[0]]
-    return cache['any_key']
+    return cache["any_key"]
 
 
 def prepare_informed_fallback(cache, config_space, all_configs):
@@ -729,19 +729,64 @@ def prepare_informed_fallback(cache, config_space, all_configs):
 
 def prepare_informed_fallback_smallest(cache, config_space, all_configs):
     sorted_list = config_space.generate_config_list_sorted()
-    print(f"fallback: using smallest config: {sorted_list[0]}")
+    found_configs = list(cache.values())
+    filtered_sorted_list = [c for c in sorted_list if c not in found_configs]
+    filtered_sorted_list = [c for c in filtered_sorted_list if c.num_stages == 1]
+    print(f"fallback: using smallest config: {filtered_sorted_list[0]}")
     # any_key = next(iter(cache))
-    any_key = 'any_key'
-    ret = {any_key: sorted_list[0]}
+    any_key = "any_key"
+    ret = {any_key: filtered_sorted_list[0]}
     return ret
 
 
 def prepare_informed_fallback_largest(cache, config_space, all_configs):
     sorted_list = config_space.generate_config_list_sorted()
-    print(f"fallback: using largest config: {sorted_list[-1]}")
+    found_configs = list(cache.values())
+    filtered_sorted_list = [c for c in sorted_list if c not in found_configs]
+    filtered_sorted_list = [c for c in filtered_sorted_list if c.num_stages == 1]
+    print(f"fallback: using largest config: {filtered_sorted_list[-1]}")
     # any_key = next(iter(cache))
-    any_key = 'any_key'
-    ret = {any_key: sorted_list[-1]}
+    any_key = "any_key"
+    ret = {any_key: filtered_sorted_list[-1]}
+    return ret
+
+
+def prepare_informed_fallback_middle(cache, config_space, all_configs):
+    sorted_list = config_space.generate_config_list_sorted()
+    found_configs = list(cache.values())
+    filtered_sorted_list = [c for c in sorted_list if c not in found_configs]
+    filtered_sorted_list = [c for c in filtered_sorted_list if c.num_stages == 1]
+    ti = int(len(filtered_sorted_list) // 2)
+    print(f"fallback: using middle config: {filtered_sorted_list[ti]}")
+    # any_key = next(iter(cache))
+    any_key = "any_key"
+    ret = {any_key: filtered_sorted_list[ti]}
+    return ret
+
+
+def prepare_informed_fallback_most_symmetric(cache, config_space, all_configs):
+    sorted_list = config_space.generate_config_list_sorted(sort_func="symmetry")
+    found_configs = list(cache.values())
+    filtered_sorted_list = [c for c in sorted_list if c not in found_configs]
+    filtered_sorted_list = [c for c in filtered_sorted_list if c.num_stages == 1]
+    ti = 0  # most symmetric -> diff is small
+    print(f"fallback: using most symmetric config: {filtered_sorted_list[ti]}")
+    # any_key = next(iter(cache))
+    any_key = "any_key"
+    ret = {any_key: filtered_sorted_list[ti]}
+    return ret
+
+
+def prepare_informed_fallback_least_symmetric(cache, config_space, all_configs):
+    sorted_list = config_space.generate_config_list_sorted(sort_func="symmetry")
+    found_configs = list(cache.values())
+    filtered_sorted_list = [c for c in sorted_list if c not in found_configs]
+    filtered_sorted_list = [c for c in filtered_sorted_list if c.num_stages == 1]
+    ti = -1  # least symmetric -> diff is huge
+    print(f"fallback: using least symmetric config: {filtered_sorted_list[ti]}")
+    # any_key = next(iter(cache))
+    any_key = "any_key"
+    ret = {any_key: filtered_sorted_list[ti]}
     return ret
 
 
@@ -768,6 +813,13 @@ def _select_informed_fallback():
     if fallback_mode == "largest":
         # print("largest global config fallback experiment")
         return informed_fallback_passthrough, prepare_informed_fallback_largest
+    if fallback_mode == "middle":
+        # print("middle global config fallback experiment")
+        return informed_fallback_passthrough, prepare_informed_fallback_middle
+    if fallback_mode == "least_symm":
+        return informed_fallback_passthrough, prepare_informed_fallback_least_symmetric
+    if fallback_mode == "most_symm":
+        return informed_fallback_passthrough, prepare_informed_fallback_most_symmetric
     return informed_fallback_next, prepare_informed_fallback
 
 
