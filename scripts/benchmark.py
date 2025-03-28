@@ -142,7 +142,8 @@ IMPLEMENTATION_UT = [
     Implementation.TRITON_FP8,
     Implementation.FLASHINFER,
 ]
-MAX_VALUES = [0.01, 0.1, 1.0]
+# MAX_VALUES = [0.01, 0.1, 1.0]
+MAX_VALUES = [1.0]
 BENCHMARK_MODES = [BenchmarkMode.CUDA_EVENTS, BenchmarkMode.CUDA_GRAPHS]
 
 if os.getenv("NGL_FULL_TEST", "0") == "1":
@@ -217,7 +218,7 @@ quantiles = [0.5, 0.2, 0.8]
 force_dump_dataframes = False
 enforce_numerical_correctness = True
 # enforce_numerical_correctness = False
-do_profiling = True
+do_profiling = False
 store_hatchet = False
 debug_flag = os.getenv("TRITON_BACKEND_DEBUG") == "1"
 add_triton_dejavu_envs = True
@@ -1459,6 +1460,13 @@ if __name__ == "__main__":
         if len(test_filters) > 0:
             print(f"\tSelected tests: {test_filters}")
         pytest.main(args=args)
+        # from torch.profiler import profile, record_function, ProfilerActivity
+        # with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True) as prof:
+        # with profile(activities=[ProfilerActivity.CPU], record_shapes=True) as prof:
+        #     pytest.main(args=args)
+        # print(prof.key_averages().table())
+        # print(prof.key_averages().table(sort_by="self_cpu_time_total", row_limit=-1))
+        # prof.export_chrome_trace('./trace.json')
     else:
         pytest.main(args=[__file__])
     end_time = datetime.now()
