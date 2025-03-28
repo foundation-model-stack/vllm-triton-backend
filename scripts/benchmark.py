@@ -894,7 +894,7 @@ def test_prefill_attention(
 @pytest.mark.parametrize("max_value", MAX_VALUES)
 @pytest.mark.parametrize("benchmark_mode", BENCHMARK_MODES)
 @torch.inference_mode()
-def test_prefix_prefill_attention(
+def test_prefix_attention(
     capsys,
     request,
     batch_size,
