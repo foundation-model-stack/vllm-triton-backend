@@ -71,13 +71,13 @@ def cdiv_fn(x, y):
 
 @triton.jit(launch_metadata=metadata_fn)
 def kernel_paged_attention_2d(
-    output_ptr: tl.pointer_type,  # [num_tokens, num_query_heads, head_size]
-    query_ptr: tl.pointer_type,  # [num_tokens, num_query_heads, head_size]
-    key_cache_ptr: tl.pointer_type,  # [num_blks, num_kv_heads, head_size // x, blk_size, x]
-    value_cache_ptr: tl.pointer_type,  # [num_blks, num_kv_heads, head_size, blk_size]
-    block_tables_ptr: tl.pointer_type,  # [num_seqs, max_num_blocks_per_seq]
-    seq_lens_ptr: tl.pointer_type,  # [num_seqs]
-    alibi_slopes_ptr: tl.pointer_type,  # [num_query_heads]
+    output_ptr,  # [num_tokens, num_query_heads, head_size]
+    query_ptr,  # [num_tokens, num_query_heads, head_size]
+    key_cache_ptr,  # [num_blks, num_kv_heads, head_size // x, blk_size, x]
+    value_cache_ptr,  # [num_blks, num_kv_heads, head_size, blk_size]
+    block_tables_ptr,  # [num_seqs, max_num_blocks_per_seq]
+    seq_lens_ptr,  # [num_seqs]
+    alibi_slopes_ptr,  # [num_query_heads]
     scale: float,  # float32
     k_scale: float,  # float32
     v_scale: float,  # float32
@@ -105,7 +105,7 @@ def kernel_paged_attention_2d(
     stride_v_cache_2: tl.constexpr,  # int
     stride_v_cache_3: tl.constexpr,  # int
     filter_by_query_len: tl.constexpr,  # bool
-    query_start_len_ptr: tl.pointer_type,  # [num_seqs+1]
+    query_start_len_ptr,  # [num_seqs+1]
 ):
     seq_idx = tl.program_id(0)
     kv_head_idx = tl.program_id(1)
