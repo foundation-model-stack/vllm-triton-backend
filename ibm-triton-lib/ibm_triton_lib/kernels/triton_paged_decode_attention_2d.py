@@ -23,6 +23,8 @@ import triton
 import triton.language as tl
 
 from ..utils.triton_utils import unpack_grid
+import triton_dejavu
+from triton_dejavu import global_cache_lock
 
 
 gpu_name = torch.cuda.get_device_name()
@@ -68,7 +70,11 @@ def metadata_fn(
 def cdiv_fn(x, y):
     return (x + y - 1) // y
 
-
+@triton_dejavu.jitcache(
+        cache_lock=global_cache_lock, 
+        # empty just bind all non_const_expr
+        check_keys=[],
+        )
 @triton.jit(launch_metadata=metadata_fn)
 def kernel_paged_attention_2d(
     output_ptr, #: tl.pointer_type, # [num_tokens, num_query_heads, head_size]
@@ -364,3 +370,6 @@ def paged_attention_triton_2d(
         filter_by_query_len=False,
         query_start_len_ptr=None,
     )
+    
+    # lock after first run
+    global_cache_lock.lock()

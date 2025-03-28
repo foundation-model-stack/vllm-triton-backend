@@ -80,7 +80,7 @@ SEEDS = [0]
 BATCH_SIZES = [1, 2, 4, 8, 16, 32, 64, 128]
 # BATCH_SIZES = [128]
 # BATCH_SIZES = [64]
-BATCH_SIZES = [4]
+# BATCH_SIZES = [4]
 # BATCH_SIZES = [1, 2, 4, 8, 16, 32, 64, 128, 256]
 # BATCH_SIZES = [1, 2, 3, 4, 5, 7, 8, 12, 16, 32, 64, 128]
 
@@ -91,7 +91,7 @@ NUM_HEADS = [(32, 8)]
 
 SEQUENCE_LENGTHS = [16, 32, 64, 128, 512, 1024, 2048, 4096]
 # SEQUENCE_LENGTHS = [8]
-SEQUENCE_LENGTHS = [128]
+# SEQUENCE_LENGTHS= [128]
 # SEQUENCE_LENGTHS = [16, 17]
 # SEQUENCE_LENGTHS = [4096]
 # SEQUENCE_LENGTHS = [4321]
@@ -142,8 +142,8 @@ IMPLEMENTATION_UT = [
     Implementation.TRITON_FP8,
     Implementation.FLASHINFER,
 ]
-# MAX_VALUES = [0.01, 0.1, 1.0]
-MAX_VALUES = [1.0]
+MAX_VALUES = [0.01, 0.1, 1.0]
+# MAX_VALUES = [1.0]
 BENCHMARK_MODES = [BenchmarkMode.CUDA_EVENTS, BenchmarkMode.CUDA_GRAPHS]
 
 if os.getenv("NGL_FULL_TEST", "0") == "1":
@@ -369,6 +369,8 @@ def test_decode_attention(
             from callers import BaselineTritonCaller as Caller
         elif implementation == Implementation.TRITON_2D:
             from callers import Triton2dAttentionDecodeCaller as Caller
+            # from triton_dejavu import global_cache_lock
+            # global_cache_lock.unlock()
         elif implementation == Implementation.TRITON_3D:
             from callers import Triton3dAttentionDecodeCaller as Caller
         elif implementation == Implementation.TRITON_FP8:
@@ -423,6 +425,9 @@ def test_decode_attention(
 
         # benchmark only correct results
         if do_benchmarks:
+            # if implementation == Implementation.TRITON_2D:
+            #     # switch off compilation...hopefully
+            #     global_cache_lock.lock()
             if my_name not in pytest.global_pds:
                 pytest.global_pds[my_name] = pd.DataFrame()
 
