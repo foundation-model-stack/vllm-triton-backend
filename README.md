@@ -19,6 +19,7 @@ To build the docker image:
 ```
 git clone --recursive https://github.com/foundation-model-stack/vllm-triton-backend.git
 cd vllm-triton-backend
+git submodule update --init --recursive
 make build
 ```
 
