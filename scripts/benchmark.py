@@ -476,38 +476,45 @@ def test_decode_attention(
                 warmup_rep = 1
                 bench_rep = 5
                 if benchmark_mode == BenchmarkMode.TORCH_COMPILE:
-                        compiled_fn = torch.compile(call_func_under_test)
-                        # shortening trace?
-                        compiled_fn()
-                        compiled_fn()
+                    compiled_fn = torch.compile(call_func_under_test)
+                    # shortening trace?
+                    compiled_fn()
+                    compiled_fn()
                 with torch.profiler.profile(
-                activities=[
-                    torch.profiler.ProfilerActivity.CPU,
-                    torch.profiler.ProfilerActivity.CUDA,
-                ],
-                record_shapes=True,
-                with_stack=True,
+                    activities=[
+                        torch.profiler.ProfilerActivity.CPU,
+                        torch.profiler.ProfilerActivity.CUDA,
+                    ],
+                    record_shapes=True,
+                    with_stack=True,
                 ) as prof:
                     torch.cuda.synchronize()
                     if benchmark_mode == BenchmarkMode.CUDA_EVENTS:
                         ms, min_ms, max_ms = triton.testing.do_bench(
-                            call_func_under_test, quantiles=quantiles, 
-                            warmup=warmup_rep, rep=bench_rep,
+                            call_func_under_test,
+                            quantiles=quantiles,
+                            warmup=warmup_rep,
+                            rep=bench_rep,
                         )
                     elif benchmark_mode == BenchmarkMode.TORCH_COMPILE:
                         ms, min_ms, max_ms = triton.testing.do_bench(
-                            compiled_fn, quantiles=quantiles,
-                            warmup=warmup_rep, rep=bench_rep,
+                            compiled_fn,
+                            quantiles=quantiles,
+                            warmup=warmup_rep,
+                            rep=bench_rep,
                         )
                     elif benchmark_mode == BenchmarkMode.CUDA_GRAPHS:
                         ms, min_ms, max_ms = triton.testing.do_bench_cudagraph(
-                            call_func_under_test, quantiles=quantiles,
+                            call_func_under_test,
+                            quantiles=quantiles,
                             rep=bench_rep,
                         )
                     elif benchmark_mode == BenchmarkMode.END2END:
                         ms, min_ms, max_ms = end2end_bench(
-                            call_func_under_test, quantiles=quantiles,
-                            warmup=warmup_rep, rep=bench_rep,
+                            call_func_under_test,
+                            quantiles=quantiles,
+                            warmup=warmup_rep,
+                            rep=bench_rep,
                         )
                     else:
                         ms = float("nan")
@@ -518,18 +525,23 @@ def test_decode_attention(
             else:
                 if benchmark_mode == BenchmarkMode.CUDA_EVENTS:
                     ms, min_ms, max_ms = triton.testing.do_bench(
-                        call_func_under_test, quantiles=quantiles, 
-                        warmup=warmup_rep, rep=bench_rep,
+                        call_func_under_test,
+                        quantiles=quantiles,
+                        warmup=warmup_rep,
+                        rep=bench_rep,
                     )
                 elif benchmark_mode == BenchmarkMode.CUDA_GRAPHS:
                     ms, min_ms, max_ms = triton.testing.do_bench_cudagraph(
-                        call_func_under_test, quantiles=quantiles,
+                        call_func_under_test,
+                        quantiles=quantiles,
                         rep=bench_rep,
                     )
                 elif benchmark_mode == BenchmarkMode.END2END:
                     ms, min_ms, max_ms = end2end_bench(
-                        call_func_under_test, quantiles=quantiles,
-                        warmup=warmup_rep, rep=bench_rep,
+                        call_func_under_test,
+                        quantiles=quantiles,
+                        warmup=warmup_rep,
+                        rep=bench_rep,
                     )
                 else:
                     ms = float("nan")
