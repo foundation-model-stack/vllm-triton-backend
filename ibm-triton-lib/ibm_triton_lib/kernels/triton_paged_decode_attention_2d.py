@@ -73,9 +73,10 @@ def cdiv_fn(x, y):
 
 @triton_dejavu.jitcache(
     cache_lock=global_cache_lock,
+    # list of `tl.constexpr` that should be used as cache index
     # empty just bind all non_const_expr
-    check_keys=[],
-    # check_keys=['query_stride_0'],
+    # check_keys=[],
+    check_keys=["query_stride_0", "query_stride_1", "filter_by_query_len"],
 )
 @triton.jit(launch_metadata=metadata_fn)
 def kernel_paged_attention_2d(
@@ -374,4 +375,4 @@ def paged_attention_triton_2d(
     )
 
     # lock after first run
-    global_cache_lock.lock()
+    # global_cache_lock.lock()

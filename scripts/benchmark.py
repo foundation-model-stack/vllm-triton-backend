@@ -439,9 +439,9 @@ def test_decode_attention(
 
         # benchmark only correct results
         if do_benchmarks:
-            # if implementation == Implementation.TRITON_2D:
-            #     # switch off compilation...hopefully
-            #     global_cache_lock.lock()
+            if implementation == Implementation.TRITON_2D:
+                # switch off compilation...hopefully
+                global_cache_lock.lock()
             if overwrite_df is None and my_name not in pytest.global_pds:
                 pytest.global_pds[my_name] = pd.DataFrame()
             elif overwrite_df is not None and my_name not in overwrite_df:
