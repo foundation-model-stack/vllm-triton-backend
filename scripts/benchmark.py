@@ -252,10 +252,17 @@ def test_decode_attention(
     implementation,
     max_value,
     benchmark_mode,
+    overwrite_df = None,
+    df_file_prefix = None,
+    torch_profiling=False,
 ):
-    my_id = request.node.nodeid.split("::")[-1]
-    my_name = my_id.split("[")[0]
-    my_instance = my_id.split("[")[1][:-1]
+
+    my_name = 'test_decode_attention'
+    my_instance = 'test_decode_attention'
+    if request is not None:
+        my_id = request.node.nodeid.split("::")[-1]
+        my_name = my_id.split("[")[0]
+        my_instance = my_id.split("[")[1][:-1]
     realistic_prompt_mode = len(prompt_pattern) > 1
     gqa_mode = num_heads[0] != num_heads[1]
 
@@ -353,24 +360,25 @@ def test_decode_attention(
         key_cache, value_cache = key_caches[0], value_caches[0]
 
         ref_output = torch.empty_like(query)
-        ref_single_query_cached_kv_attention(
-            ref_output,
-            query,
-            num_queries_per_kv,
-            key_cache,
-            value_cache,
-            block_tables,
-            seq_lens,
-            scale,
-            alibi_slopes,
-        )
+        if not torch_profiling:
+            ref_single_query_cached_kv_attention(
+                ref_output,
+                query,
+                num_queries_per_kv,
+                key_cache,
+                value_cache,
+                block_tables,
+                seq_lens,
+                scale,
+                alibi_slopes,
+            )
 
         if implementation == Implementation.BASELINE_TRITON:
             from callers import BaselineTritonCaller as Caller
         elif implementation == Implementation.TRITON_2D:
             from callers import Triton2dAttentionDecodeCaller as Caller
-            # from triton_dejavu import global_cache_lock
-            # global_cache_lock.unlock()
+            from triton_dejavu import global_cache_lock
+            global_cache_lock.unlock()
         elif implementation == Implementation.TRITON_3D:
             from callers import Triton3dAttentionDecodeCaller as Caller
         elif implementation == Implementation.TRITON_FP8:
@@ -416,20 +424,25 @@ def test_decode_attention(
                     captured += l + " "
 
         # compare
-        if enforce_numerical_correctness:
-            # for better reports
-            triton.testing.assert_close(ref_output, output, atol=ATOL, rtol=RTOL)
-            allclose_pass = True
+        if not torch_profiling:
+            if enforce_numerical_correctness:
+                # for better reports
+                triton.testing.assert_close(ref_output, output, atol=ATOL, rtol=RTOL)
+                allclose_pass = True
+            else:
+                allclose_pass = torch.allclose(ref_output, output, atol=ATOL, rtol=RTOL)
         else:
-            allclose_pass = torch.allclose(ref_output, output, atol=ATOL, rtol=RTOL)
+            allclose_pass = None
 
         # benchmark only correct results
         if do_benchmarks:
             # if implementation == Implementation.TRITON_2D:
             #     # switch off compilation...hopefully
             #     global_cache_lock.lock()
-            if my_name not in pytest.global_pds:
+            if overwrite_df is None and my_name not in pytest.global_pds:
                 pytest.global_pds[my_name] = pd.DataFrame()
+            elif overwrite_df is not None and my_name not in overwrite_df:
+                overwrite_df[my_name] = pd.DataFrame()
 
             profiling_started = False
             if (
@@ -441,6 +454,7 @@ def test_decode_attention(
                     Implementation.BASELINE_TRITON,
                 ]
                 and benchmark_mode == BenchmarkMode.CUDA_EVENTS
+                and not torch_profiling
             ):
                 if store_hatchet:
                     hatchet_name = os.path.abspath(
@@ -539,15 +553,26 @@ def test_decode_attention(
             if torch.version.hip and implementation == Implementation.FLASH_ATTN:
                 record['implementation'] = 'Implementation.ROCM_FLASH_ATTN'
 
-            pytest.global_pds[my_name] = pd.concat(
-                [pytest.global_pds[my_name], pd.Series(record).to_frame().T]
-            ).reset_index(drop=True)
+            if overwrite_df is None: 
+                pytest.global_pds[my_name] = pd.concat(
+                    [pytest.global_pds[my_name], pd.Series(record).to_frame().T]
+                ).reset_index(drop=True)
 
-            if pytest.global_pd_file_prefix is not None:
+                if pytest.global_pd_file_prefix is not None:
+                    filename = os.path.abspath(
+                        f"{pytest.global_pd_file_prefix}/{my_name}.csv"
+                    )
+                    write_df_and_chmod(pytest.global_pds[my_name], filename)
+            else:
+                overwrite_df[my_name] = pd.concat(
+                    [overwrite_df[my_name], pd.Series(record).to_frame().T]
+                ).reset_index(drop=True)
+
                 filename = os.path.abspath(
-                    f"{pytest.global_pd_file_prefix}/{my_name}.csv"
+                    f"{df_file_prefix}/{my_name}.csv"
                 )
-                write_df_and_chmod(pytest.global_pds[my_name], filename)
+                write_df_and_chmod(overwrite_df[my_name], filename)
+
 
     except Exception as e:
         print("\ncaptured:")
