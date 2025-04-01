@@ -13,15 +13,27 @@ from enum import Enum
 import itertools
 
 
-from benchmark import test_decode_attention, create_dir_if_not_exist, create_dir_if_not_exist_recursive, write_df_and_chmod, get_runtime_label, Implementation, BenchmarkMode, impl_translate, get_gpu_label, method_translate
+from benchmark import (
+    test_decode_attention,
+    create_dir_if_not_exist,
+    create_dir_if_not_exist_recursive,
+    write_df_and_chmod,
+    get_runtime_label,
+    Implementation,
+    BenchmarkMode,
+    impl_translate,
+    get_gpu_label,
+    method_translate,
+)
 
 import re
 import string
 
+
 # from https://github.com/pytorch/pytorch/issues/121219#issuecomment-2722329465
 def clean_names_in_json(input_filename, output_filename):
     """
-    Cleans the "name" fields in a JSON file by replacing non-ASCII characters with 'x' 
+    Cleans the "name" fields in a JSON file by replacing non-ASCII characters with 'x'
     and removing internal quotation marks.
 
     Example of problematic input:
@@ -29,27 +41,33 @@ def clean_names_in_json(input_filename, output_filename):
             "name": "@"�sP(0): flat_tensor"
         }
     """
-    with open(input_filename, 'r', encoding='utf-8', errors='replace') as file:
+    with open(input_filename, "r", encoding="utf-8", errors="replace") as file:
         content = file.read()
 
         # Decode Unicode escape sequences
-        content = content.encode().decode('unicode_escape')
+        content = content.encode().decode("unicode_escape")
 
         # Regex to find "name": "<value>"
         def replace_non_ascii_and_quotes(match):
             name = match.group(1)
-            visible_printable = ''.join(c for c in string.printable if c not in '\t\n\r\x0b\x0c}{')
-            cleaned_name = ''.join(c if c in visible_printable else 'x' for c in name)
-            cleaned_name = cleaned_name.replace('"', 'y')  # Replace internal quotes
+            visible_printable = "".join(
+                c for c in string.printable if c not in "\t\n\r\x0b\x0c}{"
+            )
+            cleaned_name = "".join(c if c in visible_printable else "x" for c in name)
+            cleaned_name = cleaned_name.replace('"', "y")  # Replace internal quotes
             return f'"name": "{cleaned_name}"'
-        
+
         # Apply regex to clean names
-        cleaned_content = re.sub(r'"name": "([\s\S]*?)"(?=, |\}|\s*\})', replace_non_ascii_and_quotes, content, flags=re.DOTALL)
+        cleaned_content = re.sub(
+            r'"name": "([\s\S]*?)"(?=, |\}|\s*\})',
+            replace_non_ascii_and_quotes,
+            content,
+            flags=re.DOTALL,
+        )
 
     # Write the cleaned JSON data to a new file
-    with open(output_filename, 'w', encoding='utf-8') as outfile:
+    with open(output_filename, "w", encoding="utf-8") as outfile:
         outfile.write(cleaned_content)
-
 
 
 device = "cuda:0"
@@ -87,7 +105,7 @@ PROMPT_PATTERNS = []
 PROMPT_PATTERNS.append([0.1, 0.4, 0.5, 1.0, 0.2])
 
 BATCH_SIZES = [4]
-SEQUENCE_LENGTHS= [128]
+SEQUENCE_LENGTHS = [128]
 
 
 MY_IUT = [
@@ -103,7 +121,6 @@ if len(MY_METHODS) > 0:
     BENCHMARK_MODES = []
     for cb_value in MY_METHODS:
         BENCHMARK_MODES.append(BenchmarkMode(method_translate[cb_value]))
-
 
 
 if __name__ == "__main__":
@@ -143,15 +160,33 @@ if __name__ == "__main__":
         for impl in IMPLEMENTATION_UT:
             prof_filename = f"{gloabl_pd_file_prefix}/trace_{bench_m}-{impl}.json"
             with torch.profiler.profile(
-                 activities=[
-            torch.profiler.ProfilerActivity.CPU,
-            torch.profiler.ProfilerActivity.CUDA,
-        ],
-        record_shapes=True,
-        with_stack=True,
-            ) as prof: 
+                activities=[
+                    torch.profiler.ProfilerActivity.CPU,
+                    torch.profiler.ProfilerActivity.CUDA,
+                ],
+                record_shapes=True,
+                with_stack=True,
+            ) as prof:
                 torch.cuda.synchronize()
-                test_decode_attention(None, None, BATCH_SIZES[0], NUM_HEADS[0], SEQUENCE_LENGTHS[0], HEAD_SIZES[0], BLOCK_SIZES[0], NUM_BLOCKS[0], PROMPT_PATTERNS[0], DTYPES[0], SEEDS[0], impl, MAX_VALUES[0], bench_m, overwrite_df=global_pds, df_file_prefix=gloabl_pd_file_prefix, torch_profiling=True)
+                test_decode_attention(
+                    None,
+                    None,
+                    BATCH_SIZES[0],
+                    NUM_HEADS[0],
+                    SEQUENCE_LENGTHS[0],
+                    HEAD_SIZES[0],
+                    BLOCK_SIZES[0],
+                    NUM_BLOCKS[0],
+                    PROMPT_PATTERNS[0],
+                    DTYPES[0],
+                    SEEDS[0],
+                    impl,
+                    MAX_VALUES[0],
+                    bench_m,
+                    overwrite_df=global_pds,
+                    df_file_prefix=gloabl_pd_file_prefix,
+                    torch_profiling=True,
+                )
                 torch.cuda.synchronize()
             prof.export_chrome_trace(f"{prof_filename}-broken")
             clean_names_in_json(f"{prof_filename}-broken", prof_filename)
@@ -170,9 +205,7 @@ if __name__ == "__main__":
 
     if STORE_TEST_RESULT_PATH is not None:
         for test, df in global_pds.items():
-            filename = os.path.abspath(
-                f"{gloabl_pd_file_prefix}/{test}_final.csv"
-            )
+            filename = os.path.abspath(f"{gloabl_pd_file_prefix}/{test}_final.csv")
             write_df_and_chmod(df, filename)
             print(f"(stored in {filename})")
         print(f"Torch profile traces stored in {gloabl_pd_file_prefix}/.")

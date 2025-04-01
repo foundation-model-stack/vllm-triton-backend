@@ -70,20 +70,21 @@ def metadata_fn(
 def cdiv_fn(x, y):
     return (x + y - 1) // y
 
+
 @triton_dejavu.jitcache(
-        cache_lock=global_cache_lock, 
-        # empty just bind all non_const_expr
-        check_keys=[],
-        )
+    cache_lock=global_cache_lock,
+    # empty just bind all non_const_expr
+    check_keys=[],
+)
 @triton.jit(launch_metadata=metadata_fn)
 def kernel_paged_attention_2d(
-    output_ptr, #: tl.pointer_type, # [num_tokens, num_query_heads, head_size]
+    output_ptr,  #: tl.pointer_type, # [num_tokens, num_query_heads, head_size]
     query_ptr,  #: tl.pointer_type, # [num_tokens, num_query_heads, head_size]
-    key_cache_ptr, #: tl.pointer_type, # [num_blks, num_kv_heads, head_size // x, blk_size, x]
-    value_cache_ptr, #: tl.pointer_type, # [num_blks, num_kv_heads, head_size, blk_size]
-    block_tables_ptr, #: tl.pointer_type, # [num_seqs, max_num_blocks_per_seq]
+    key_cache_ptr,  #: tl.pointer_type, # [num_blks, num_kv_heads, head_size // x, blk_size, x]
+    value_cache_ptr,  #: tl.pointer_type, # [num_blks, num_kv_heads, head_size, blk_size]
+    block_tables_ptr,  #: tl.pointer_type, # [num_seqs, max_num_blocks_per_seq]
     seq_lens_ptr,  # [num_seqs]
-    alibi_slopes_ptr, #: tl.pointer_type,  # [num_query_heads]
+    alibi_slopes_ptr,  #: tl.pointer_type,  # [num_query_heads]
     scale: float,  # float32
     k_scale: float,  # float32
     v_scale: float,  # float32
@@ -111,7 +112,7 @@ def kernel_paged_attention_2d(
     stride_v_cache_2: tl.constexpr,  # int
     stride_v_cache_3: tl.constexpr,  # int
     filter_by_query_len: tl.constexpr,  # bool
-    query_start_len_ptr, #: tl.pointer_type, # [num_seqs+1]
+    query_start_len_ptr,  #: tl.pointer_type, # [num_seqs+1]
 ):
     seq_idx = tl.program_id(0)
     kv_head_idx = tl.program_id(1)
@@ -370,6 +371,6 @@ def paged_attention_triton_2d(
         filter_by_query_len=False,
         query_start_len_ptr=None,
     )
-    
+
     # lock after first run
     global_cache_lock.lock()

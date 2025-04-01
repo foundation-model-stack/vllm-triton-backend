@@ -252,13 +252,13 @@ def test_decode_attention(
     implementation,
     max_value,
     benchmark_mode,
-    overwrite_df = None,
-    df_file_prefix = None,
+    overwrite_df=None,
+    df_file_prefix=None,
     torch_profiling=False,
 ):
 
-    my_name = 'test_decode_attention'
-    my_instance = 'test_decode_attention'
+    my_name = "test_decode_attention"
+    my_instance = "test_decode_attention"
     if request is not None:
         my_id = request.node.nodeid.split("::")[-1]
         my_name = my_id.split("[")[0]
@@ -378,6 +378,7 @@ def test_decode_attention(
         elif implementation == Implementation.TRITON_2D:
             from callers import Triton2dAttentionDecodeCaller as Caller
             from triton_dejavu import global_cache_lock
+
             global_cache_lock.unlock()
         elif implementation == Implementation.TRITON_3D:
             from callers import Triton3dAttentionDecodeCaller as Caller
@@ -551,9 +552,9 @@ def test_decode_attention(
                 record.update(dejavu_envs)
 
             if torch.version.hip and implementation == Implementation.FLASH_ATTN:
-                record['implementation'] = 'Implementation.ROCM_FLASH_ATTN'
+                record["implementation"] = "Implementation.ROCM_FLASH_ATTN"
 
-            if overwrite_df is None: 
+            if overwrite_df is None:
                 pytest.global_pds[my_name] = pd.concat(
                     [pytest.global_pds[my_name], pd.Series(record).to_frame().T]
                 ).reset_index(drop=True)
@@ -568,11 +569,8 @@ def test_decode_attention(
                     [overwrite_df[my_name], pd.Series(record).to_frame().T]
                 ).reset_index(drop=True)
 
-                filename = os.path.abspath(
-                    f"{df_file_prefix}/{my_name}.csv"
-                )
+                filename = os.path.abspath(f"{df_file_prefix}/{my_name}.csv")
                 write_df_and_chmod(overwrite_df[my_name], filename)
-
 
     except Exception as e:
         print("\ncaptured:")
@@ -863,7 +861,7 @@ def test_prefill_attention(
                 record.update(dejavu_envs)
 
             if torch.version.hip and implementation == Implementation.FLASH_ATTN:
-                record['implementation'] = 'Implementation.ROCM_FLASH_ATTN'
+                record["implementation"] = "Implementation.ROCM_FLASH_ATTN"
 
             pytest.global_pds[my_name] = pd.concat(
                 [pytest.global_pds[my_name], pd.Series(record).to_frame().T]
