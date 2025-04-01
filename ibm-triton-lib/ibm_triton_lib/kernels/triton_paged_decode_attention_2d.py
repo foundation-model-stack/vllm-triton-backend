@@ -75,6 +75,7 @@ def cdiv_fn(x, y):
     cache_lock=global_cache_lock,
     # empty just bind all non_const_expr
     check_keys=[],
+    # check_keys=['query_stride_0'],
 )
 @triton.jit(launch_metadata=metadata_fn)
 def kernel_paged_attention_2d(
