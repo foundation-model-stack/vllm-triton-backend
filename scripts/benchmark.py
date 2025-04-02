@@ -475,11 +475,6 @@ def test_decode_attention(
             if torch_profiling:
                 warmup_rep = 1
                 bench_rep = 5
-                if benchmark_mode == BenchmarkMode.TORCH_COMPILE:
-                    compiled_fn = torch.compile(call_func_under_test)
-                    # shortening trace?
-                    compiled_fn()
-                    compiled_fn()
                 with torch.profiler.profile(
                     activities=[
                         torch.profiler.ProfilerActivity.CPU,
@@ -489,64 +484,15 @@ def test_decode_attention(
                     with_stack=True,
                 ) as prof:
                     torch.cuda.synchronize()
-                    if benchmark_mode == BenchmarkMode.CUDA_EVENTS:
-                        ms, min_ms, max_ms = triton.testing.do_bench(
-                            call_func_under_test,
-                            quantiles=quantiles,
-                            warmup=warmup_rep,
-                            rep=bench_rep,
-                        )
-                    elif benchmark_mode == BenchmarkMode.TORCH_COMPILE:
-                        ms, min_ms, max_ms = triton.testing.do_bench(
-                            compiled_fn,
-                            quantiles=quantiles,
-                            warmup=warmup_rep,
-                            rep=bench_rep,
-                        )
-                    elif benchmark_mode == BenchmarkMode.CUDA_GRAPHS:
-                        ms, min_ms, max_ms = triton.testing.do_bench_cudagraph(
-                            call_func_under_test,
-                            quantiles=quantiles,
-                            rep=bench_rep,
-                        )
-                    elif benchmark_mode == BenchmarkMode.END2END:
-                        ms, min_ms, max_ms = end2end_bench(
-                            call_func_under_test,
-                            quantiles=quantiles,
-                            warmup=warmup_rep,
-                            rep=bench_rep,
-                        )
-                    else:
-                        ms = float("nan")
-                        min_ms = float("nan")
-                        max_ms = float("nan")
+                    ms, min_ms, max_ms = measure_benchmarks(
+                        benchmark_mode, call_func_under_test, warmup_rep, bench_rep
+                    )
                     torch.cuda.synchronize()
                 prof.export_chrome_trace(prof_filename)
             else:
-                if benchmark_mode == BenchmarkMode.CUDA_EVENTS:
-                    ms, min_ms, max_ms = triton.testing.do_bench(
-                        call_func_under_test,
-                        quantiles=quantiles,
-                        warmup=warmup_rep,
-                        rep=bench_rep,
-                    )
-                elif benchmark_mode == BenchmarkMode.CUDA_GRAPHS:
-                    ms, min_ms, max_ms = triton.testing.do_bench_cudagraph(
-                        call_func_under_test,
-                        quantiles=quantiles,
-                        rep=bench_rep,
-                    )
-                elif benchmark_mode == BenchmarkMode.END2END:
-                    ms, min_ms, max_ms = end2end_bench(
-                        call_func_under_test,
-                        quantiles=quantiles,
-                        warmup=warmup_rep,
-                        rep=bench_rep,
-                    )
-                else:
-                    ms = float("nan")
-                    min_ms = float("nan")
-                    max_ms = float("nan")
+                ms, min_ms, max_ms = measure_benchmarks(
+                    benchmark_mode, call_func_under_test, warmup_rep, bench_rep
+                )
 
             proton_count = None
             proton_ns = None
@@ -1468,6 +1414,51 @@ def test_prefix_attention(
         finally:
             if inner_exception is not None:
                 raise inner_exception
+
+
+def measure_benchmarks(
+    benchmark_mode, call_func_under_test, warmup_rep=25, bench_rep=100
+):
+
+    if benchmark_mode == BenchmarkMode.TORCH_COMPILE:
+        compiled_fn = torch.compile(call_func_under_test)
+        # shortening trace?
+        # TODO: necessary? twice?
+        compiled_fn()
+        compiled_fn()
+
+    if benchmark_mode == BenchmarkMode.CUDA_EVENTS:
+        ms, min_ms, max_ms = triton.testing.do_bench(
+            call_func_under_test,
+            quantiles=quantiles,
+            warmup=warmup_rep,
+            rep=bench_rep,
+        )
+    elif benchmark_mode == BenchmarkMode.TORCH_COMPILE:
+        ms, min_ms, max_ms = triton.testing.do_bench(
+            compiled_fn,
+            quantiles=quantiles,
+            warmup=warmup_rep,
+            rep=bench_rep,
+        )
+    elif benchmark_mode == BenchmarkMode.CUDA_GRAPHS:
+        ms, min_ms, max_ms = triton.testing.do_bench_cudagraph(
+            call_func_under_test,
+            quantiles=quantiles,
+            rep=bench_rep,
+        )
+    elif benchmark_mode == BenchmarkMode.END2END:
+        ms, min_ms, max_ms = end2end_bench(
+            call_func_under_test,
+            quantiles=quantiles,
+            warmup=warmup_rep,
+            rep=bench_rep,
+        )
+    else:
+        ms = float("nan")
+        min_ms = float("nan")
+        max_ms = float("nan")
+    return ms, min_ms, max_ms
 
 
 def create_dir_if_not_exist_recursive(path, mode=0o777):
