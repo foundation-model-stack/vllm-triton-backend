@@ -207,6 +207,22 @@ WORKDIR /workspace
 RUN microdnf install -y git nano gcc vim \
     && microdnf clean all
 
+# TODO: make cuda version configurable
+RUN curl -Lo /etc/yum.repos.d/cuda-rhel9.repo \
+https://developer.download.nvidia.com/compute/cuda/repos/rhel9/x86_64/cuda-rhel9.repo
+RUN microdnf install -y nsight-compute-2025.1.0 && microdnf clean all
+
+RUN curl -Lo /tmp/nsight-package.rpm \
+https://developer.nvidia.com/downloads/assets/tools/secure/nsight-systems/2025_1/NsightSystems-linux-cli-public-2025.1.1.103-3542797.rpm
+
+# Linking the Nsight Compute to the venv
+RUN ln -s /opt/nvidia/nsight-compute/2025.1.0/target/linux-desktop-glibc_2_11_3-x64/ncu $VIRTUAL_ENV/bin/ncu
+
+#RUN microdnf install -y /etc/yum.repos.d/nsight-package.rpm && rm -f /etc/yum.repos.d/nsight-package.rpm && microdnf clean all
+RUN rpm -ivh /tmp/nsight-package.rpm && rm -f /tmp/nsight-package.rpm
+
+RUN pip install nvtx
+
 RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=cache,target=/root/.cache/uv \
     uv pip install pytest llnl-hatchet debugpy
@@ -224,7 +240,6 @@ RUN ln -s ${VIRTUAL_ENV}/lib/python${PYTHON_VERSION}/site-packages/nvidia/cuda_c
 RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=cache,target=/root/.cache/uv \
     git clone --depth 1 https://github.com/EleutherAI/lm-evaluation-harness && cd lm-evaluation-harness && uv pip install .
-
 
 ENV STORE_TEST_RESULT_PATH=/results
 
