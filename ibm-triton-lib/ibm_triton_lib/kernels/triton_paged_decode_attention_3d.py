@@ -249,7 +249,11 @@ def kernel_paged_attention_3d(
         + segm_idx * HEAD_SIZE_PADDED
         + tl.arange(0, HEAD_SIZE_PADDED)[None, :]
     )
-    tl.store(segm_output_ptr + segm_output_offset, acc, mask=dim_mask[None, :] & head_mask[:, None])
+    tl.store(
+        segm_output_ptr + segm_output_offset,
+        acc,
+        mask=dim_mask[None, :] & head_mask[:, None],
+    )
 
     segm_offset = (
         seq_idx * (num_query_heads * MAX_NUM_SEGMENTS_PER_SEQ)
@@ -258,7 +262,6 @@ def kernel_paged_attention_3d(
     )
     tl.store(segm_max_ptr + segm_offset, M, mask=head_mask)
     tl.store(segm_expsum_ptr + segm_offset, L, mask=head_mask)
-
 
 
 @triton.jit
@@ -324,7 +327,9 @@ def reduce_segments(
         + tl.arange(0, HEAD_SIZE_PADDED)[None, :]
     )
     segm_output = tl.load(
-        segm_output_ptr + segm_output_offset, mask=segm_mask[:, None] & dim_mask[None, :], other=0.0
+        segm_output_ptr + segm_output_offset,
+        mask=segm_mask[:, None] & dim_mask[None, :],
+        other=0.0,
     )
     segm_output *= tl.exp(segm_max - overall_max)[:, None]
     acc = tl.sum(segm_output, axis=0) / overall_expsum
@@ -435,11 +440,7 @@ def paged_attention_triton_3d(
 
     num_queries_per_kv_padded = max(triton.next_power_of_2(num_queries_per_kv), 16)
 
-    kernel_paged_attention_3d[(
-        num_seqs,
-        num_kv_heads,
-        max_num_segments_per_seq
-    )](
+    kernel_paged_attention_3d[(num_seqs, num_kv_heads, max_num_segments_per_seq)](
         segm_output_ptr=segm_output,
         segm_max_ptr=segm_max,
         segm_expsum_ptr=segm_expsum,

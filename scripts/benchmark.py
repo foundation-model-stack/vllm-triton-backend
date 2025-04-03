@@ -516,7 +516,7 @@ def test_decode_attention(
             }
 
             if torch.version.hip and implementation == Implementation.FLASH_ATTN:
-                record['implementation'] = 'Implementation.ROCM_FLASH_ATTN'
+                record["implementation"] = "Implementation.ROCM_FLASH_ATTN"
 
             pytest.global_pds[my_name] = pd.concat(
                 [pytest.global_pds[my_name], pd.Series(record).to_frame().T]
@@ -801,9 +801,9 @@ def test_prefill_attention(
                 "proton_util_bw": proton_util_bw,
                 "captured": captured,
             }
-            
+
             if torch.version.hip and implementation == Implementation.FLASH_ATTN:
-                record['implementation'] = 'Implementation.ROCM_FLASH_ATTN'
+                record["implementation"] = "Implementation.ROCM_FLASH_ATTN"
 
             pytest.global_pds[my_name] = pd.concat(
                 [pytest.global_pds[my_name], pd.Series(record).to_frame().T]
