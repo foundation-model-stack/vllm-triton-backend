@@ -6,7 +6,7 @@ MAX_JOBS := 64
 all: build
 
 vllm-all.tar: .git/modules/vllm/index
-	cd vllm; ls -A | xargs tar --mtime='1970-01-01' -cf ../vllm-all.tar
+	cd vllm; git ls-files | xargs tar --mtime='1970-01-01' -cf ../vllm-all.tar
 
 all-git.tar: .git/HEAD
 	cd .git; ls -A | xargs tar --mtime='1970-01-01' -cf ../all-git.tar
