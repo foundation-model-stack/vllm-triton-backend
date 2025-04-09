@@ -77,6 +77,7 @@ def cdiv_fn(x, y):
     # check_keys=[],
     check_keys=["query_stride_0", "query_stride_1", "filter_by_query_len"],
     # besides this checks, the cache just binds all non_const_expr
+    cache_launch_grid=False,
 )
 @triton.jit(launch_metadata=metadata_fn)
 def kernel_paged_attention_2d(
@@ -115,8 +116,11 @@ def kernel_paged_attention_2d(
     stride_v_cache_3: tl.constexpr,  # int
     filter_by_query_len: tl.constexpr,  # bool
     query_start_len_ptr,  #: tl.pointer_type, # [num_seqs+1]
+    num_seqs: int, #int
 ):
     seq_idx = tl.program_id(0)
+    if seq_idx >= num_seqs:
+        return
     kv_head_idx = tl.program_id(1)
 
     if filter_by_query_len:
@@ -331,9 +335,16 @@ def paged_attention_triton_2d(
 
     num_queries_per_kv_padded = max(triton.next_power_of_2(num_queries_per_kv), 16)
 
+    # TODO: experiment, make launch grid num_seqs+random, to study traces...
+    import random
+    # random_seq_extension = random.randint(32, 128)
+    # random_seq_extension = random.randint(128, 2048)
+    # print(f"random extension: {random_seq_extension}")
+    random_seq_extension = 0
+
     kernel_paged_attention_2d[
         (
-            num_seqs,
+            num_seqs + random_seq_extension,
             num_kv_heads,
         )
     ](
@@ -372,6 +383,7 @@ def paged_attention_triton_2d(
         stride_v_cache_3=value_cache.stride(3),
         filter_by_query_len=False,
         query_start_len_ptr=None,
+        num_seqs=num_seqs,
     )
 
     # lock after first run
