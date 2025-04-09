@@ -116,7 +116,7 @@ def kernel_paged_attention_2d(
     stride_v_cache_3: tl.constexpr,  # int
     filter_by_query_len: tl.constexpr,  # bool
     query_start_len_ptr,  #: tl.pointer_type, # [num_seqs+1]
-    num_seqs: int, #int
+    num_seqs: int,  # int
 ):
     seq_idx = tl.program_id(0)
     if seq_idx >= num_seqs:
@@ -337,6 +337,7 @@ def paged_attention_triton_2d(
 
     # TODO: experiment, make launch grid num_seqs+random, to study traces...
     import random
+
     # random_seq_extension = random.randint(32, 128)
     # random_seq_extension = random.randint(128, 2048)
     # print(f"random extension: {random_seq_extension}")
