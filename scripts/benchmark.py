@@ -219,7 +219,7 @@ quantiles = [0.5, 0.2, 0.8]
 force_dump_dataframes = False
 enforce_numerical_correctness = True
 # enforce_numerical_correctness = False
-do_profiling = False
+do_profiling = False  # will add overhead to kernel runtime measured via CUDA_EVENTS
 store_hatchet = False
 debug_flag = os.getenv("TRITON_BACKEND_DEBUG") == "1"
 add_triton_dejavu_envs = True
@@ -785,22 +785,12 @@ def test_prefill_attention(
                 proton.start(hatchet_name, hook="triton")
                 profiling_started = True
 
-            if benchmark_mode == BenchmarkMode.CUDA_EVENTS:
-                ms, min_ms, max_ms = triton.testing.do_bench(
-                    call_func_under_test, quantiles=quantiles
-                )
-            elif benchmark_mode == BenchmarkMode.CUDA_GRAPHS:
-                ms, min_ms, max_ms = triton.testing.do_bench_cudagraph(
-                    call_func_under_test, quantiles=quantiles
-                )
-            elif benchmark_mode == BenchmarkMode.END2END:
-                ms, min_ms, max_ms = end2end_bench(
-                    call_func_under_test, quantiles=quantiles
-                )
-            else:
-                ms = float("nan")
-                min_ms = float("nan")
-                max_ms = float("nan")
+            # equals to defaults
+            warmup_rep = 25
+            bench_rep = 100
+            ms, min_ms, max_ms = measure_benchmarks(
+                benchmark_mode, call_func_under_test, warmup_rep, bench_rep
+            )
 
             proton_count = None
             proton_ns = None
@@ -1286,22 +1276,12 @@ def test_prefix_attention(
                 proton.start(hatchet_name, hook="triton")
                 profiling_started = True
 
-            if benchmark_mode == BenchmarkMode.CUDA_EVENTS:
-                ms, min_ms, max_ms = triton.testing.do_bench(
-                    call_func_under_test, quantiles=quantiles
-                )
-            elif benchmark_mode == BenchmarkMode.CUDA_GRAPHS:
-                ms, min_ms, max_ms = triton.testing.do_bench_cudagraph(
-                    call_func_under_test, quantiles=quantiles
-                )
-            elif benchmark_mode == BenchmarkMode.END2END:
-                ms, min_ms, max_ms = end2end_bench(
-                    call_func_under_test, quantiles=quantiles
-                )
-            else:
-                ms = float("nan")
-                min_ms = float("nan")
-                max_ms = float("nan")
+            # equals to defaults
+            warmup_rep = 25
+            bench_rep = 100
+            ms, min_ms, max_ms = measure_benchmarks(
+                benchmark_mode, call_func_under_test, warmup_rep, bench_rep
+            )
 
             proton_count = None
             proton_ns = None
@@ -1542,13 +1522,6 @@ if __name__ == "__main__":
         if len(test_filters) > 0:
             print(f"\tSelected tests: {test_filters}")
         pytest.main(args=args)
-        # from torch.profiler import profile, record_function, ProfilerActivity
-        # with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True) as prof:
-        # with profile(activities=[ProfilerActivity.CPU], record_shapes=True) as prof:
-        #     pytest.main(args=args)
-        # print(prof.key_averages().table())
-        # print(prof.key_averages().table(sort_by="self_cpu_time_total", row_limit=-1))
-        # prof.export_chrome_trace('./trace.json')
     else:
         pytest.main(args=[__file__])
     end_time = datetime.now()

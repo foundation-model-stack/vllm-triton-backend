@@ -159,36 +159,6 @@ if __name__ == "__main__":
     for bench_m in BENCHMARK_MODES:
         for impl in IMPLEMENTATION_UT:
             prof_filename = f"{gloabl_pd_file_prefix}/trace_{bench_m}-{impl}.json"
-            # with torch.profiler.profile(
-            #     activities=[
-            #         torch.profiler.ProfilerActivity.CPU,
-            #         torch.profiler.ProfilerActivity.CUDA,
-            #     ],
-            #     record_shapes=True,
-            #     with_stack=True,
-            # ) as prof:
-            #     torch.cuda.synchronize()
-            #     test_decode_attention(
-            #         None,
-            #         None,
-            #         BATCH_SIZES[0],
-            #         NUM_HEADS[0],
-            #         SEQUENCE_LENGTHS[0],
-            #         HEAD_SIZES[0],
-            #         BLOCK_SIZES[0],
-            #         NUM_BLOCKS[0],
-            #         PROMPT_PATTERNS[0],
-            #         DTYPES[0],
-            #         SEEDS[0],
-            #         impl,
-            #         MAX_VALUES[0],
-            #         bench_m,
-            #         overwrite_df=global_pds,
-            #         df_file_prefix=gloabl_pd_file_prefix,
-            #         torch_profiling=True,
-            #     )
-            #     torch.cuda.synchronize()
-            # prof.export_chrome_trace(f"{prof_filename}-broken")
             test_decode_attention(
                 None,
                 None,
