@@ -107,17 +107,11 @@ def kernel_paged_attention_3d(
     stride_v_cache_3: tl.constexpr,  # int
     filter_by_query_len: tl.constexpr,  # bool
     query_start_len_ptr,  # [num_seqs+1]
-    BLOCKS_PER_SEGMENT: tl.constexpr,  # int
     MAX_NUM_SEGMENTS_PER_SEQ: tl.constexpr,  # int
 ):
     seq_idx = tl.program_id(0)
     kv_head_idx = tl.program_id(1)
     segm_idx = tl.program_id(2)
-
-    # sequence len for this particular sequence
-    seq_len = tl.load(seq_lens_ptr + seq_idx)
-    if segm_idx * BLOCKS_PER_SEGMENT * BLOCK_SIZE >= seq_len:
-        return
 
     if filter_by_query_len:
         cur_batch_in_all_start_index = tl.load(query_start_len_ptr + seq_idx)
@@ -127,6 +121,13 @@ def kernel_paged_attention_3d(
             return
     else:
         cur_batch_in_all_start_index = seq_idx
+
+    # sequence len for this particular sequence
+    seq_len = tl.load(seq_lens_ptr + seq_idx)
+
+    blocks_per_segment = cdiv_fn(seq_len, MAX_NUM_SEGMENTS_PER_SEQ * BLOCK_SIZE)
+    if segm_idx * blocks_per_segment * BLOCK_SIZE >= seq_len:
+        return
 
     query_head_idx = kv_head_idx * num_queries_per_kv + tl.arange(
         0, num_queries_per_kv_padded
@@ -165,8 +166,8 @@ def kernel_paged_attention_3d(
 
     # iterate through tiles within current segment
     for j in range(
-        segm_idx * BLOCKS_PER_SEGMENT,
-        min((segm_idx + 1) * BLOCKS_PER_SEGMENT, num_blocks),
+        segm_idx * blocks_per_segment,
+        min((segm_idx + 1) * blocks_per_segment, num_blocks),
     ):
         physical_block_idx = tl.load(block_tables_ptr + block_table_offset + j)
 
@@ -280,7 +281,6 @@ def reduce_segments(
     HEAD_SIZE_PADDED: tl.constexpr,  # int, must be power of 2
     filter_by_query_len: tl.constexpr,  # bool
     query_start_len_ptr,  # [num_seqs+1]
-    BLOCKS_PER_SEGMENT: tl.constexpr,  # int
     MAX_NUM_SEGMENTS_PER_SEQ: tl.constexpr,  # int, must be power of 2
 ):
     seq_idx = tl.program_id(0)
@@ -295,9 +295,13 @@ def reduce_segments(
     else:
         cur_batch_in_all_start_index = seq_idx
 
-    # create masks for subsequent loads
+    # sequence len for this particular sequence
     seq_len = tl.load(seq_lens_ptr + seq_idx)
-    act_num_segments = cdiv_fn(seq_len, BLOCKS_PER_SEGMENT * BLOCK_SIZE)
+
+    blocks_per_segment = cdiv_fn(seq_len, MAX_NUM_SEGMENTS_PER_SEQ * BLOCK_SIZE)
+
+    # create masks for subsequent loads
+    act_num_segments = cdiv_fn(seq_len, blocks_per_segment * BLOCK_SIZE)
     segm_mask = tl.arange(0, MAX_NUM_SEGMENTS_PER_SEQ) < tl.full(
         [MAX_NUM_SEGMENTS_PER_SEQ], act_num_segments, dtype=tl.int32
     )
@@ -360,9 +364,6 @@ def paged_attention_triton_3d(
     head_size,
 ):
     max_num_segments_per_seq = 4
-    blocks_per_segment = (
-        block_tables.stride(0) + max_num_segments_per_seq - 1
-    ) // max_num_segments_per_seq
 
     segm_output = torch.empty(
         num_seqs,
@@ -477,7 +478,6 @@ def paged_attention_triton_3d(
         stride_v_cache_3=value_cache.stride(3),
         filter_by_query_len=False,
         query_start_len_ptr=None,
-        BLOCKS_PER_SEGMENT=blocks_per_segment,
         MAX_NUM_SEGMENTS_PER_SEQ=max_num_segments_per_seq,
     )
 
@@ -495,6 +495,5 @@ def paged_attention_triton_3d(
         HEAD_SIZE_PADDED=triton.next_power_of_2(head_size),
         filter_by_query_len=False,
         query_start_len_ptr=None,
-        BLOCKS_PER_SEGMENT=blocks_per_segment,
         MAX_NUM_SEGMENTS_PER_SEQ=max_num_segments_per_seq,
     )
