@@ -76,7 +76,12 @@ def cdiv_fn(x, y):
     cache_lock=global_cache_lock,
     # list of `tl.constexpr` that should be used as cache index
     check_keys=["USE_ALIBI_SLOPES", "SLIDING_WINDOW", "filter_by_query_len"],
-    # besides this checks, the cache just binds all non_const_expr
+    assume_const=['scale', 'k_scale', 'v_scale', 'query_stride_1', 
+                  'output_stride_1', 'stride_k_cache_0', 'stride_k_cache_1',
+                  'stride_k_cache_2', 'stride_k_cache_4', 'stride_v_cache_0',
+                  'stride_v_cache_1', 'stride_v_cache_2', 'stride_v_cache_2'],
+    # besides this checks and assumed constants,
+    #  the cache just binds all non_const_expr
 )
 @triton.jit(launch_metadata=metadata_fn)
 def kernel_paged_attention_2d(
