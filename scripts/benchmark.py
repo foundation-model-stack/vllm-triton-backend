@@ -71,6 +71,7 @@ class BenchmarkMode(Enum):
     CUDA_EVENTS = 0
     END2END = 1
     CUDA_GRAPHS = 2
+    TORCH_COMPILE = 3
 
 
 # DTYPES = [torch.half, torch.bfloat16, torch.float]
@@ -85,17 +86,17 @@ BATCH_SIZES = [1, 2, 4, 8, 16, 32, 64, 128]
 # BATCH_SIZES = [1, 2, 3, 4, 5, 7, 8, 12, 16, 32, 64, 128]
 
 # order:  num_query_heads, num_kv_heads
-NUM_HEADS = [(32, 32), (32, 8)]
-# NUM_HEADS = [(32, 8)]
+# NUM_HEADS = [(32, 32), (32, 8)]
+NUM_HEADS = [(32, 8)]
 # NUM_HEADS = [(32, 32)]
 
-# SEQUENCE_LENGTHS = [16, 32, 64, 128, 512, 1024, 2048, 4096]
+SEQUENCE_LENGTHS = [16, 32, 64, 128, 512, 1024, 2048, 4096]
 # SEQUENCE_LENGTHS = [8]
-# SEQUENCE_LENGTHS = [64]
+# SEQUENCE_LENGTHS= [128]
 # SEQUENCE_LENGTHS = [16, 17]
 # SEQUENCE_LENGTHS = [4096]
 # SEQUENCE_LENGTHS = [4321]
-SEQUENCE_LENGTHS = [16, 128, 512, 1024, 2048, 4096]
+# SEQUENCE_LENGTHS = [16, 128, 512, 1024, 2048, 4096]
 # SEQUENCE_LENGTHS = [24, 128, 512, 1024, 2048, 4096]
 
 # CONTEXT_LENGTHS = [16, 128, 512, 1024, 2048, 4096]
@@ -124,7 +125,7 @@ NUM_BLOCKS = [4321]  # "arbitrary values for testing..."
 CAUSAL_FLASH = [True]  # vLLM only needs causal=True
 
 PROMPT_PATTERNS = []
-PROMPT_PATTERNS.append([1.0])
+# PROMPT_PATTERNS.append([1.0])
 # PROMPT_PATTERNS.append([1.0, 0.4, 0.5, 1.0, 0.2])
 PROMPT_PATTERNS.append([0.1, 0.4, 0.5, 1.0, 0.2])
 
@@ -143,6 +144,7 @@ IMPLEMENTATION_UT = [
     Implementation.FLASHINFER,
 ]
 MAX_VALUES = [0.01, 0.1, 1.0]
+# MAX_VALUES = [1.0]
 BENCHMARK_MODES = [BenchmarkMode.CUDA_EVENTS, BenchmarkMode.CUDA_GRAPHS]
 
 if os.getenv("NGL_FULL_TEST", "0") == "1":
@@ -217,9 +219,10 @@ quantiles = [0.5, 0.2, 0.8]
 force_dump_dataframes = False
 enforce_numerical_correctness = True
 # enforce_numerical_correctness = False
-do_profiling = True
+do_profiling = False  # will add overhead to kernel runtime measured via CUDA_EVENTS
 store_hatchet = False
 debug_flag = os.getenv("TRITON_BACKEND_DEBUG") == "1"
+add_triton_dejavu_envs = True
 
 
 @pytest.mark.parametrize("batch_size", BATCH_SIZES)
@@ -250,10 +253,18 @@ def test_decode_attention(
     implementation,
     max_value,
     benchmark_mode,
+    overwrite_df=None,
+    df_file_prefix=None,
+    torch_profiling=False,
+    prof_filename=None,
 ):
-    my_id = request.node.nodeid.split("::")[-1]
-    my_name = my_id.split("[")[0]
-    my_instance = my_id.split("[")[1][:-1]
+
+    my_name = "test_decode_attention"
+    my_instance = "test_decode_attention"
+    if request is not None:
+        my_id = request.node.nodeid.split("::")[-1]
+        my_name = my_id.split("[")[0]
+        my_instance = my_id.split("[")[1][:-1]
     realistic_prompt_mode = len(prompt_pattern) > 1
     gqa_mode = num_heads[0] != num_heads[1]
 
@@ -351,22 +362,26 @@ def test_decode_attention(
         key_cache, value_cache = key_caches[0], value_caches[0]
 
         ref_output = torch.empty_like(query)
-        ref_single_query_cached_kv_attention(
-            ref_output,
-            query,
-            num_queries_per_kv,
-            key_cache,
-            value_cache,
-            block_tables,
-            seq_lens,
-            scale,
-            alibi_slopes,
-        )
+        if not torch_profiling:
+            ref_single_query_cached_kv_attention(
+                ref_output,
+                query,
+                num_queries_per_kv,
+                key_cache,
+                value_cache,
+                block_tables,
+                seq_lens,
+                scale,
+                alibi_slopes,
+            )
 
         if implementation == Implementation.BASELINE_TRITON:
             from callers import BaselineTritonCaller as Caller
         elif implementation == Implementation.TRITON_2D:
             from callers import Triton2dAttentionDecodeCaller as Caller
+            from triton_dejavu import global_cache_lock
+
+            global_cache_lock.unlock()
         elif implementation == Implementation.TRITON_3D:
             from callers import Triton3dAttentionDecodeCaller as Caller
         elif implementation == Implementation.TRITON_FP8:
@@ -412,17 +427,25 @@ def test_decode_attention(
                     captured += l + " "
 
         # compare
-        if enforce_numerical_correctness:
-            # for better reports
-            triton.testing.assert_close(ref_output, output, atol=ATOL, rtol=RTOL)
-            allclose_pass = True
+        if not torch_profiling:
+            if enforce_numerical_correctness:
+                # for better reports
+                triton.testing.assert_close(ref_output, output, atol=ATOL, rtol=RTOL)
+                allclose_pass = True
+            else:
+                allclose_pass = torch.allclose(ref_output, output, atol=ATOL, rtol=RTOL)
         else:
-            allclose_pass = torch.allclose(ref_output, output, atol=ATOL, rtol=RTOL)
+            allclose_pass = None
 
         # benchmark only correct results
         if do_benchmarks:
-            if my_name not in pytest.global_pds:
+            if implementation == Implementation.TRITON_2D:
+                # switch off compilation...hopefully
+                global_cache_lock.lock()
+            if overwrite_df is None and my_name not in pytest.global_pds:
                 pytest.global_pds[my_name] = pd.DataFrame()
+            elif overwrite_df is not None and my_name not in overwrite_df:
+                overwrite_df[my_name] = pd.DataFrame()
 
             profiling_started = False
             if (
@@ -434,6 +457,7 @@ def test_decode_attention(
                     Implementation.BASELINE_TRITON,
                 ]
                 and benchmark_mode == BenchmarkMode.CUDA_EVENTS
+                and not torch_profiling
             ):
                 if store_hatchet:
                     hatchet_name = os.path.abspath(
@@ -446,22 +470,29 @@ def test_decode_attention(
                 proton.start(hatchet_name, hook="triton")
                 profiling_started = True
 
-            if benchmark_mode == BenchmarkMode.CUDA_EVENTS:
-                ms, min_ms, max_ms = triton.testing.do_bench(
-                    call_func_under_test, quantiles=quantiles
-                )
-            elif benchmark_mode == BenchmarkMode.CUDA_GRAPHS:
-                ms, min_ms, max_ms = triton.testing.do_bench_cudagraph(
-                    call_func_under_test, quantiles=quantiles
-                )
-            elif benchmark_mode == BenchmarkMode.END2END:
-                ms, min_ms, max_ms = end2end_bench(
-                    call_func_under_test, quantiles=quantiles
-                )
+            warmup_rep = 25
+            bench_rep = 100
+            if torch_profiling:
+                warmup_rep = 1
+                bench_rep = 5
+                with torch.profiler.profile(
+                    activities=[
+                        torch.profiler.ProfilerActivity.CPU,
+                        torch.profiler.ProfilerActivity.CUDA,
+                    ],
+                    record_shapes=True,
+                    with_stack=True,
+                ) as prof:
+                    torch.cuda.synchronize()
+                    ms, min_ms, max_ms = measure_benchmarks(
+                        benchmark_mode, call_func_under_test, warmup_rep, bench_rep
+                    )
+                    torch.cuda.synchronize()
+                prof.export_chrome_trace(prof_filename)
             else:
-                ms = float("nan")
-                min_ms = float("nan")
-                max_ms = float("nan")
+                ms, min_ms, max_ms = measure_benchmarks(
+                    benchmark_mode, call_func_under_test, warmup_rep, bench_rep
+                )
 
             proton_count = None
             proton_ns = None
@@ -515,18 +546,40 @@ def test_decode_attention(
                 "captured": captured,
             }
 
+            if add_triton_dejavu_envs:
+                dejavu_envs = {}
+                _skip_dejavu_envs = [
+                    "_TRITON_DEJAVU_DETERMINED_CUDA_VERSION",
+                    "DEBUG",
+                    "STORAGE",
+                ]
+                for env in os.environ.keys():
+                    if "TRITON_DEJAVU_" in env:
+                        if any([skip_s in env for skip_s in _skip_dejavu_envs]):
+                            continue
+                        dejavu_envs[env] = os.environ[env]
+                record.update(dejavu_envs)
+
             if torch.version.hip and implementation == Implementation.FLASH_ATTN:
                 record["implementation"] = "Implementation.ROCM_FLASH_ATTN"
 
-            pytest.global_pds[my_name] = pd.concat(
-                [pytest.global_pds[my_name], pd.Series(record).to_frame().T]
-            ).reset_index(drop=True)
+            if overwrite_df is None:
+                pytest.global_pds[my_name] = pd.concat(
+                    [pytest.global_pds[my_name], pd.Series(record).to_frame().T]
+                ).reset_index(drop=True)
 
-            if pytest.global_pd_file_prefix is not None:
-                filename = os.path.abspath(
-                    f"{pytest.global_pd_file_prefix}/{my_name}.csv"
-                )
-                write_df_and_chmod(pytest.global_pds[my_name], filename)
+                if pytest.global_pd_file_prefix is not None:
+                    filename = os.path.abspath(
+                        f"{pytest.global_pd_file_prefix}/{my_name}.csv"
+                    )
+                    write_df_and_chmod(pytest.global_pds[my_name], filename)
+            else:
+                overwrite_df[my_name] = pd.concat(
+                    [overwrite_df[my_name], pd.Series(record).to_frame().T]
+                ).reset_index(drop=True)
+
+                filename = os.path.abspath(f"{df_file_prefix}/{my_name}.csv")
+                write_df_and_chmod(overwrite_df[my_name], filename)
 
     except Exception as e:
         print("\ncaptured:")
@@ -732,22 +785,12 @@ def test_prefill_attention(
                 proton.start(hatchet_name, hook="triton")
                 profiling_started = True
 
-            if benchmark_mode == BenchmarkMode.CUDA_EVENTS:
-                ms, min_ms, max_ms = triton.testing.do_bench(
-                    call_func_under_test, quantiles=quantiles
-                )
-            elif benchmark_mode == BenchmarkMode.CUDA_GRAPHS:
-                ms, min_ms, max_ms = triton.testing.do_bench_cudagraph(
-                    call_func_under_test, quantiles=quantiles
-                )
-            elif benchmark_mode == BenchmarkMode.END2END:
-                ms, min_ms, max_ms = end2end_bench(
-                    call_func_under_test, quantiles=quantiles
-                )
-            else:
-                ms = float("nan")
-                min_ms = float("nan")
-                max_ms = float("nan")
+            # equals to defaults
+            warmup_rep = 25
+            bench_rep = 100
+            ms, min_ms, max_ms = measure_benchmarks(
+                benchmark_mode, call_func_under_test, warmup_rep, bench_rep
+            )
 
             proton_count = None
             proton_ns = None
@@ -801,6 +844,20 @@ def test_prefill_attention(
                 "proton_util_bw": proton_util_bw,
                 "captured": captured,
             }
+
+            if add_triton_dejavu_envs:
+                dejavu_envs = {}
+                _skip_dejavu_envs = [
+                    "_TRITON_DEJAVU_DETERMINED_CUDA_VERSION",
+                    "DEBUG",
+                    "STORAGE",
+                ]
+                for env in os.environ.keys():
+                    if "TRITON_DEJAVU_" in env:
+                        if any([skip_s in env for skip_s in _skip_dejavu_envs]):
+                            continue
+                        dejavu_envs[env] = os.environ[env]
+                record.update(dejavu_envs)
 
             if torch.version.hip and implementation == Implementation.FLASH_ATTN:
                 record["implementation"] = "Implementation.ROCM_FLASH_ATTN"
@@ -865,7 +922,7 @@ def test_prefill_attention(
 @pytest.mark.parametrize("max_value", MAX_VALUES)
 @pytest.mark.parametrize("benchmark_mode", BENCHMARK_MODES)
 @torch.inference_mode()
-def test_prefix_prefill_attention(
+def test_prefix_attention(
     capsys,
     request,
     batch_size,
@@ -1219,22 +1276,12 @@ def test_prefix_prefill_attention(
                 proton.start(hatchet_name, hook="triton")
                 profiling_started = True
 
-            if benchmark_mode == BenchmarkMode.CUDA_EVENTS:
-                ms, min_ms, max_ms = triton.testing.do_bench(
-                    call_func_under_test, quantiles=quantiles
-                )
-            elif benchmark_mode == BenchmarkMode.CUDA_GRAPHS:
-                ms, min_ms, max_ms = triton.testing.do_bench_cudagraph(
-                    call_func_under_test, quantiles=quantiles
-                )
-            elif benchmark_mode == BenchmarkMode.END2END:
-                ms, min_ms, max_ms = end2end_bench(
-                    call_func_under_test, quantiles=quantiles
-                )
-            else:
-                ms = float("nan")
-                min_ms = float("nan")
-                max_ms = float("nan")
+            # equals to defaults
+            warmup_rep = 25
+            bench_rep = 100
+            ms, min_ms, max_ms = measure_benchmarks(
+                benchmark_mode, call_func_under_test, warmup_rep, bench_rep
+            )
 
             proton_count = None
             proton_ns = None
@@ -1292,6 +1339,20 @@ def test_prefix_prefill_attention(
                 "captured": captured,
             }
 
+            if add_triton_dejavu_envs:
+                dejavu_envs = {}
+                _skip_dejavu_envs = [
+                    "_TRITON_DEJAVU_DETERMINED_CUDA_VERSION",
+                    "DEBUG",
+                    "STORAGE",
+                ]
+                for env in os.environ.keys():
+                    if "TRITON_DEJAVU_" in env:
+                        if any([skip_s in env for skip_s in _skip_dejavu_envs]):
+                            continue
+                        dejavu_envs[env] = os.environ[env]
+                record.update(dejavu_envs)
+
             pytest.global_pds[my_name] = pd.concat(
                 [pytest.global_pds[my_name], pd.Series(record).to_frame().T]
             ).reset_index(drop=True)
@@ -1333,6 +1394,51 @@ def test_prefix_prefill_attention(
         finally:
             if inner_exception is not None:
                 raise inner_exception
+
+
+def measure_benchmarks(
+    benchmark_mode, call_func_under_test, warmup_rep=25, bench_rep=100
+):
+
+    if benchmark_mode == BenchmarkMode.TORCH_COMPILE:
+        compiled_fn = torch.compile(call_func_under_test)
+        # shortening trace?
+        # TODO: necessary? twice?
+        compiled_fn()
+        compiled_fn()
+
+    if benchmark_mode == BenchmarkMode.CUDA_EVENTS:
+        ms, min_ms, max_ms = triton.testing.do_bench(
+            call_func_under_test,
+            quantiles=quantiles,
+            warmup=warmup_rep,
+            rep=bench_rep,
+        )
+    elif benchmark_mode == BenchmarkMode.TORCH_COMPILE:
+        ms, min_ms, max_ms = triton.testing.do_bench(
+            compiled_fn,
+            quantiles=quantiles,
+            warmup=warmup_rep,
+            rep=bench_rep,
+        )
+    elif benchmark_mode == BenchmarkMode.CUDA_GRAPHS:
+        ms, min_ms, max_ms = triton.testing.do_bench_cudagraph(
+            call_func_under_test,
+            quantiles=quantiles,
+            rep=bench_rep,
+        )
+    elif benchmark_mode == BenchmarkMode.END2END:
+        ms, min_ms, max_ms = end2end_bench(
+            call_func_under_test,
+            quantiles=quantiles,
+            warmup=warmup_rep,
+            rep=bench_rep,
+        )
+    else:
+        ms = float("nan")
+        min_ms = float("nan")
+        max_ms = float("nan")
+    return ms, min_ms, max_ms
 
 
 def create_dir_if_not_exist_recursive(path, mode=0o777):
