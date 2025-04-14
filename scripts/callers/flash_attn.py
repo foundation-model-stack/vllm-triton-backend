@@ -78,7 +78,6 @@ class FlashAttnDecodeCaller(DecodeCaller):
                 alibi_slopes=alibi_slopes,
             )
 
-
         return call_func_under_test
 
     @classmethod
