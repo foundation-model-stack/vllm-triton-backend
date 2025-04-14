@@ -1,0 +1,73 @@
+## Global Args #################################################################
+ARG BASE_UBI_IMAGE_TAG=9.4
+ARG PYTHON_VERSION=3.12
+ARG MAX_JOBS=64
+ARG PIP_VLLM_VERSION=0.8.1
+
+ARG VLLM_SOURCE=pip 
+# or VLLM_SOURCE=custom 
+
+## Base Layer ##################################################################
+FROM registry.access.redhat.com/ubi9/ubi-minimal:${BASE_UBI_IMAGE_TAG} AS base
+ARG PYTHON_VERSION
+ENV PYTHON_VERSION=${PYTHON_VERSION}
+RUN microdnf -y update && microdnf install -y \
+    python${PYTHON_VERSION}-devel python${PYTHON_VERSION}-pip python${PYTHON_VERSION}-wheel \
+    gzip tar git vim findutils\
+    && microdnf clean all
+
+WORKDIR /workspace
+
+ENV LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8
+
+## Common Builder #################################################################
+FROM base AS common-builder
+ARG PYTHON_VERSION
+
+ENV VIRTUAL_ENV=/opt/build
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+
+# create new venv to build vllm
+RUN python${PYTHON_VERSION} -m venv $VIRTUAL_ENV \
+    && pip install --no-cache -U pip wheel uv
+
+# install compiler cache to speed up compilation leveraging local or remote caching
+# git is required for the cutlass kernels
+RUN rpm -ivh https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm && rpm -ql epel-release && microdnf install -y ccache && microdnf clean all
+
+ARG MAX_JOBS
+
+# install CUDA
+RUN curl -Lo /etc/yum.repos.d/cuda-rhel9.repo \
+        https://developer.download.nvidia.com/compute/cuda/repos/rhel9/x86_64/cuda-rhel9.repo
+
+RUN microdnf install -y \
+        cuda-nvcc-12-4 cuda-nvtx-12-4 cuda-libraries-devel-12-4 tar && \
+    microdnf clean all
+
+ENV CUDA_HOME="/usr/local/cuda" \
+    PATH="${CUDA_HOME}/bin:${PATH}" \
+    LD_LIBRARY_PATH="${CUDA_HOME}/lib64:${CUDA_HOME}/extras/CUPTI/lib64:${LD_LIBRARY_PATH}"
+
+# install build dependencies
+RUN --mount=type=cache,target=/root/.cache/pip \
+    --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=bind,source=vllm/requirements/build.txt,target=requirements-build.txt \
+    uv pip install -r requirements-build.txt
+
+# set env variables for build
+ENV PATH=/usr/local/cuda/bin:$PATH
+ENV TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 8.9 9.0+PTX"
+ENV VLLM_FA_CMAKE_GPU_ARCHES="80-real;90-real"
+ENV MAX_JOBS=${MAX_JOBS}
+ENV NVCC_THREADS=2
+ENV VLLM_INSTALL_PUNICA_KERNELS=1
+
+RUN git clone https://github.com/vllm-project/flash-attention
+RUN mkdir flash-attention/ir_dumps
+# RUN cd flash-attention && TORCH_NVCC_FLAGS="-lineinfo -keep -keep-dir ./ir_dumps/" python setup.py build develop
+# RUN ls -alh flash-attention/ir_dumps
+
+
+ENTRYPOINT ["/bin/bash"]
