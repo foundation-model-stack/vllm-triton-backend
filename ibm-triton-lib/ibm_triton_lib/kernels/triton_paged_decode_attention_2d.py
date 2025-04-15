@@ -76,12 +76,24 @@ def cdiv_fn(x, y):
     cache_lock=global_cache_lock,
     # list of `tl.constexpr` that should be used as cache index
     check_keys=["USE_ALIBI_SLOPES", "SLIDING_WINDOW", "filter_by_query_len"],
-    assume_const=['scale', 'k_scale', 'v_scale', 'query_stride_1', 
-                  'output_stride_1', 'stride_k_cache_0', 'stride_k_cache_1',
-                  'stride_k_cache_2', 'stride_k_cache_4', 'stride_v_cache_0',
-                  'stride_v_cache_1', 'stride_v_cache_2', 'stride_v_cache_2'],
+    assume_const=[
+        "scale",
+        "k_scale",
+        "v_scale",
+        "query_stride_1",
+        "output_stride_1",
+        "stride_k_cache_0",
+        "stride_k_cache_1",
+        "stride_k_cache_2",
+        "stride_k_cache_4",
+        "stride_v_cache_0",
+        "stride_v_cache_1",
+        "stride_v_cache_2",
+        "stride_v_cache_2",
+    ],
     # besides this checks and assumed constants,
     #  the cache just binds all non_const_expr
+    cache_launch_grid=True,
 )
 @triton.jit(launch_metadata=metadata_fn)
 def kernel_paged_attention_2d(
@@ -121,8 +133,11 @@ def kernel_paged_attention_2d(
     stride_v_cache_3: tl.int64,  # int
     filter_by_query_len: tl.constexpr,  # bool
     query_start_len_ptr,  #: tl.pointer_type, # [num_seqs+1]
+    num_seqs: int,
 ):
     seq_idx = tl.program_id(0)
+    if seq_idx >= num_seqs:
+        return
     kv_head_idx = tl.program_id(1)
 
     if filter_by_query_len:
@@ -337,9 +352,10 @@ def paged_attention_triton_2d(
 
     num_queries_per_kv_padded = max(triton.next_power_of_2(num_queries_per_kv), 16)
 
+    assert num_seqs <= 4096
     kernel_paged_attention_2d[
         (
-            num_seqs,
+            4096,
             num_kv_heads,
         )
     ](
@@ -378,4 +394,5 @@ def paged_attention_triton_2d(
         stride_v_cache_3=value_cache.stride(3),
         filter_by_query_len=False,
         query_start_len_ptr=None,
+        num_seqs=num_seqs,
     )
