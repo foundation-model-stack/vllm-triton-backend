@@ -429,7 +429,7 @@ RUN microdnf install -y git nano gcc vim \
 
 RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=cache,target=/root/.cache/uv \
-    uv pip install pytest llnl-hatchet debugpy
+    uv pip install pytest llnl-hatchet debugpy llguidance
 
 # install lm_eval
 RUN --mount=type=cache,target=/root/.cache/pip \
