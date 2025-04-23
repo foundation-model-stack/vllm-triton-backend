@@ -16,28 +16,28 @@
 #
 
 import os
-from functools import lru_cache, wraps
-from typing import TYPE_CHECKING, Callable, List, Optional, Tuple, TypeVar, Union
-
+#from functools import lru_cache, wraps
+#from typing import TYPE_CHECKING, Callable, List, Optional, Tuple, TypeVar, Union
+#
 import torch
-from typing_extensions import ParamSpec
-
-# import custom ops, trigger op registration
-import vllm._C  # noqa
-import vllm.envs as envs
+#from typing_extensions import ParamSpec
+#
+## import custom ops, trigger op registration
+#import vllm._C  # noqa
+#import vllm.envs as envs
 from vllm.logger import init_logger
-
-from vllm.config import VllmConfig
-from vllm.platforms import Platform, PlatformEnum
+#
+#from vllm.config import VllmConfig
+#from vllm.platforms import Platform, PlatformEnum
 from vllm.platforms.cuda import CudaPlatform, device_id_to_physical_device_id
-
-
-from vllm.platforms.interface import DeviceCapability, Platform, PlatformEnum, _Backend
-
-if TYPE_CHECKING:
-    from vllm.config import VllmConfig
-else:
-    VllmConfig = None
+#
+#
+#from vllm.platforms.interface import DeviceCapability, Platform, PlatformEnum, _Backend
+#
+#if TYPE_CHECKING:
+#    from vllm.config import VllmConfig
+#else:
+#    VllmConfig = None
 
 logger = init_logger(__name__)
 
