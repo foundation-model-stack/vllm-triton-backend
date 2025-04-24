@@ -1,7 +1,7 @@
 TAG := vllm-triton-backend-$(shell id -un)
 MAX_JOBS := 64
 
-.PHONY: all build clean format dev rocm rocm-upstream
+.PHONY: all build clean format dev rocm rocm-upstream pyupdate
 
 all: build
 
@@ -16,6 +16,11 @@ ShareGPT_V3_unfiltered_cleaned_split.json:
 
 
 dev: vllm-all.tar all-git.tar Dockerfile ShareGPT_V3_unfiltered_cleaned_split.json
+	docker build --progress=plain --build-arg MAX_JOBS=$(MAX_JOBS) --build-arg VLLM_SOURCE=custom . -t ${TAG} 
+	@echo "Built docker image with tag: ${TAG}"
+
+pyupdate: Dockerfile ShareGPT_V3_unfiltered_cleaned_split.json
+	@echo "This build does only python updates, leaving vllm-all.tar all-git.tar (i.e. the vllm csrc) untouched!"
 	docker build --progress=plain --build-arg MAX_JOBS=$(MAX_JOBS) --build-arg VLLM_SOURCE=custom . -t ${TAG} 
 	@echo "Built docker image with tag: ${TAG}"
 

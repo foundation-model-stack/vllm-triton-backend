@@ -163,7 +163,7 @@ RUN rm -rf /workspace/vllm
 
 # to avaoid incompatibility with our custom triton build
 #  see also https://github.com/vllm-project/vllm/issues/12219
-RUN uv pip install -U 'torch>=2.6' 'torchvision>=0.21' 'torchaudio>=2.6'
+# RUN uv pip install -U 'torch>=2.6' 'torchvision>=0.21' 'torchaudio>=2.6'
 
 # Install Triton (will replace version that vllm/pytorch installed)
 COPY --from=triton-builder /workspace/*.whl .
