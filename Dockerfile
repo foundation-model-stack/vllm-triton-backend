@@ -163,7 +163,7 @@ RUN rm -rf /workspace/vllm
 
 # to avaoid incompatibility with our custom triton build
 #  see also https://github.com/vllm-project/vllm/issues/12219
-RUN uv pip install -U 'torch>=2.6' 'torchvision>=0.21' 'torchaudio>=2.6'
+# RUN uv pip install -U 'torch>=2.6' 'torchvision>=0.21' 'torchaudio>=2.6'
 
 # Install Triton (will replace version that vllm/pytorch installed)
 COPY --from=triton-builder /workspace/*.whl .
@@ -254,10 +254,8 @@ ENV PYTHONPATH /workspace
 ENV TRITON_PRINT_AUTOTUNING=1
 ENV TRITON_DEJAVU_DEBUG=1
 # set as default
-# ENV TRITON_DEJAVU_STORAGE=/storage
 ENV TRITON_DEJAVU_STORAGE=/workspace
 ENV NGL_EXP_FALLBACK=next
-# ENV TRITON_DEJAVU_USE_ONLY_RESTORED=0
 ENV TRITON_DEJAVU_FORCE_FALLBACK=1
 ENV TRITON_DEJAVU_TAG='default'
 ENV TRITON_DEJAVU_HASH_SEARCH_PARAMS=0

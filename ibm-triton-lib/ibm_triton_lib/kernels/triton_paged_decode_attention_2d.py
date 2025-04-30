@@ -23,6 +23,8 @@ import triton
 import triton.language as tl
 
 from ..utils.triton_utils import unpack_grid
+import triton_dejavu
+from triton_dejavu import global_cache_lock
 
 
 gpu_name = torch.cuda.get_device_name()
@@ -69,45 +71,73 @@ def cdiv_fn(x, y):
     return (x + y - 1) // y
 
 
+@triton_dejavu.jitcache(
+    # remove cache_lock if dyanmic cache mode should be used
+    cache_lock=global_cache_lock,
+    # list of `tl.constexpr` that should be used as cache index
+    check_keys=["USE_ALIBI_SLOPES", "SLIDING_WINDOW", "filter_by_query_len"],
+    assume_const=[
+        "scale",
+        "k_scale",
+        "v_scale",
+        "query_stride_1",
+        "output_stride_1",
+        "stride_k_cache_0",
+        "stride_k_cache_1",
+        "stride_k_cache_2",
+        "stride_k_cache_4",
+        "stride_v_cache_0",
+        "stride_v_cache_1",
+        "stride_v_cache_2",
+        "stride_v_cache_2",
+    ],
+    # besides this checks and assumed constants,
+    #  the cache just binds all non_const_expr
+    cache_launch_grid=True,
+)
 @triton.jit(launch_metadata=metadata_fn)
 def kernel_paged_attention_2d(
-    output_ptr,  # [num_tokens, num_query_heads, head_size]
-    query_ptr,  # [num_tokens, num_query_heads, head_size]
-    key_cache_ptr,  # [num_blks, num_kv_heads, head_size // x, blk_size, x]
-    value_cache_ptr,  # [num_blks, num_kv_heads, head_size, blk_size]
-    block_tables_ptr,  # [num_seqs, max_num_blocks_per_seq]
+    # TODO: as soon as fixed in triton: add tl.pointer_type annotation
+    output_ptr,  #: tl.pointer_type, # [num_tokens, num_query_heads, head_size]
+    query_ptr,  #: tl.pointer_type, # [num_tokens, num_query_heads, head_size]
+    key_cache_ptr,  #: tl.pointer_type, # [num_blks, num_kv_heads, head_size // x, blk_size, x]
+    value_cache_ptr,  #: tl.pointer_type, # [num_blks, num_kv_heads, head_size, blk_size]
+    block_tables_ptr,  #: tl.pointer_type, # [num_seqs, max_num_blocks_per_seq]
     seq_lens_ptr,  # [num_seqs]
-    alibi_slopes_ptr,  # [num_query_heads]
-    scale,  # float32
-    k_scale,  # float32
-    v_scale,  # float32
+    alibi_slopes_ptr,  #: tl.pointer_type,  # [num_query_heads]
+    scale: float,  # float32
+    k_scale: float,  # float32
+    v_scale: float,  # float32
     num_query_heads: tl.constexpr,  # int
     num_queries_per_kv: tl.constexpr,  # int
     num_queries_per_kv_padded: tl.constexpr,  # int
-    block_table_stride: tl.constexpr,  # int
-    query_stride_0: tl.constexpr,  # int
-    query_stride_1: tl.constexpr,  # int, should be equal to head_size
-    output_stride_0: tl.constexpr,  # int
-    output_stride_1: tl.constexpr,  # int, should be equal to head_size
+    block_table_stride: tl.int64,  # int
+    query_stride_0: tl.int64,  # int
+    query_stride_1: tl.int64,  # int, should be equal to head_size
+    output_stride_0: tl.int64,  # int
+    output_stride_1: tl.int64,  # int, should be equal to head_size
     BLOCK_SIZE: tl.constexpr,  # int
     HEAD_SIZE: tl.constexpr,  # int
     HEAD_SIZE_PADDED: tl.constexpr,  # int, must be power of 2
     USE_ALIBI_SLOPES: tl.constexpr,  # bool
     SLIDING_WINDOW: tl.constexpr,  # int
     x: tl.constexpr,  # int
-    stride_k_cache_0: tl.constexpr,  # int
-    stride_k_cache_1: tl.constexpr,  # int
-    stride_k_cache_2: tl.constexpr,  # int
-    stride_k_cache_3: tl.constexpr,  # int
-    stride_k_cache_4: tl.constexpr,  # int
-    stride_v_cache_0: tl.constexpr,  # int
-    stride_v_cache_1: tl.constexpr,  # int
-    stride_v_cache_2: tl.constexpr,  # int
-    stride_v_cache_3: tl.constexpr,  # int
+    stride_k_cache_0: tl.int64,  # int
+    stride_k_cache_1: tl.int64,  # int
+    stride_k_cache_2: tl.int64,  # int
+    stride_k_cache_3: tl.int64,  # int
+    stride_k_cache_4: tl.int64,  # int
+    stride_v_cache_0: tl.int64,  # int
+    stride_v_cache_1: tl.int64,  # int
+    stride_v_cache_2: tl.int64,  # int
+    stride_v_cache_3: tl.int64,  # int
     filter_by_query_len: tl.constexpr,  # bool
-    query_start_len_ptr,  # [num_seqs+1]
+    query_start_len_ptr,  #: tl.pointer_type, # [num_seqs+1]
+    num_seqs: int,
 ):
     seq_idx = tl.program_id(0)
+    if seq_idx >= num_seqs:
+        return
     kv_head_idx = tl.program_id(1)
 
     if filter_by_query_len:
@@ -322,9 +352,10 @@ def paged_attention_triton_2d(
 
     num_queries_per_kv_padded = max(triton.next_power_of_2(num_queries_per_kv), 16)
 
+    assert num_seqs <= 4096
     kernel_paged_attention_2d[
         (
-            num_seqs,
+            4096,
             num_kv_heads,
         )
     ](
@@ -363,4 +394,5 @@ def paged_attention_triton_2d(
         stride_v_cache_3=value_cache.stride(3),
         filter_by_query_len=False,
         query_start_len_ptr=None,
+        num_seqs=num_seqs,
     )

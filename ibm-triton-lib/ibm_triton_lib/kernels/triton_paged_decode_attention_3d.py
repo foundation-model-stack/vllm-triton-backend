@@ -69,6 +69,7 @@ def cdiv_fn(x, y):
     return (x + y - 1) // y
 
 
+# TODO: use jit cache
 @triton.jit(launch_metadata=metadata_fn)
 def kernel_paged_attention_3d(
     segm_output_ptr,  # [num_seqs, num_query_heads, num_segments, head_size_padded]
@@ -264,6 +265,7 @@ def kernel_paged_attention_3d(
     tl.store(segm_expsum_ptr + segm_offset, L, mask=head_mask)
 
 
+# TODO: use jit cache
 @triton.jit
 def reduce_segments(
     output_ptr,  # [num_seqs, num_query_heads, head_size]
