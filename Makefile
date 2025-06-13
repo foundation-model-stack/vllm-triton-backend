@@ -8,7 +8,8 @@ SHELL := /bin/bash
 all: build
 
 vllm-all.tar: .git/modules/vllm/index
-	cd vllm; git ls-files | xargs tar --mtime='1970-01-01' -cf ../vllm-all.tar
+	@# cd vllm; git ls-files | xargs tar --mtime='1970-01-01' -cf ../vllm-all.tar
+	cd vllm; git ls-files > .to-compress; tar -T .to-compress --mtime='1970-01-01 00:00:00' -W -cf ../vllm-all.tar; rm .to-compress
 
 all-git.tar: .git/HEAD
 	cd .git; ls -A | xargs tar --mtime='1970-01-01' -cf ../all-git.tar
