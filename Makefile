@@ -1,7 +1,9 @@
 TAG := vllm-triton-backend-$(shell id -un)
 MAX_JOBS := 64
 
-.PHONY: all build clean format dev rocm rocm-upstream pyupdate nightly
+SHELL := /bin/bash
+
+.PHONY: all build clean format dev rocm rocm-upstream pyupdate nightly bm-rocm
 
 all: build
 
@@ -43,6 +45,17 @@ rocm-upstream: Dockerfile.rocm ShareGPT_V3_unfiltered_cleaned_split.json
 	@echo "using https://github.com/ROCm/vllm repository; vllm submodule CURRENTLY IGNORED"
 	docker build --progress=plain --build-arg MAX_JOBS=$(MAX_JOBS) --build-arg VLLM_SOURCE=upsteram . -t ${TAG} -f Dockerfile.rocm
 	@echo "Built docker image with tag: ${TAG}"
+
+# bare metal
+vllm/venv_rocm:
+	@#cd vllm && python3 -m venv ./venv_rocm
+	cd vllm && uv venv venv_rocm --python 3.12
+
+bm-rocm: | vllm/venv_rocm
+	export VLLM_TARGET_DEVICE=rocm
+	cd vllm && source ./venv_rocm/bin/activate && uv pip install -r requirements/rocm-build.txt && uv pip install -e . --no-build-isolation
+	cd -
+
 
 clean:
 	rm -f vllm-all.tar all-git.tar rocm-vllm-all.tar ShareGPT_V3_unfiltered_cleaned_split.json
