@@ -55,7 +55,12 @@ vllm/venv_rocm:
 bm-rocm: | vllm/venv_rocm
 	export VLLM_TARGET_DEVICE=rocm
 	cd vllm && source ./venv_rocm/bin/activate && uv pip install -r requirements/rocm-build.txt && uv pip install -e . --no-build-isolation
-	cd -
+
+vllm/venv_cuda:
+	cd vllm && uv venv venv_cuda --python 3.12
+
+bm-cuda: | vllm/venv_cuda
+	cd vllm && source ./venv_cuda/bin/activate && VLLM_USE_PRECOMPILED=1 uv pip install --editable .
 
 
 clean:

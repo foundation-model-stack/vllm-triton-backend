@@ -29,7 +29,12 @@ os.environ["VLLM_ATTENTION_BACKEND"] = "TRITON_ATTN_VLLM_V1"
 os.environ["VLLM_TRITON_ENABLE_JITCACHE"] = "0"
 
 # enable torch profiler, can also be set on cmd line
-os.environ["VLLM_TORCH_PROFILER_DIR"] = "./vllm_torch_profile"
+# enable_profiling = True
+enable_profiling = False
+
+if enable_profiling:
+    os.environ["VLLM_TORCH_PROFILER_DIR"] = "./vllm_torch_profile"
+
 
 if __name__ == '__main__':
     from vllm import LLM, SamplingParams
@@ -37,7 +42,8 @@ if __name__ == '__main__':
 
 
     llm = LLM(
-        model="/mnt/nvme5n1p1/zrlngl/fmaas/models/llama3.1-8b-instruct/",
+        # model="/mnt/nvme5n1p1/zrlngl/fmaas/models/llama3.1-8b-instruct/",
+        model="/net/storage149/autofs/css22/nmg/models/hf/meta-llama/Llama-3.1-8B-Instruct/main/",
         # max_model_len=2048,
         # enforce_eager=True,
         enable_prefix_caching=False,
@@ -61,14 +67,16 @@ if __name__ == '__main__':
     print(f"SETUP: vllm backend: {os.environ['VLLM_ATTENTION_BACKEND']}  " \
           f"  JITCache: {os.environ['VLLM_TRITON_ENABLE_JITCACHE']}    ")
     print(f"Inference with {len(prompts)} prompts...")
-    llm.start_profile()
+    if enable_profiling:
+        llm.start_profile()
     t0 = time.time()
     # outputs = llm.generate(prompts, sampling_params)
     outputs = []
     for prompt in prompts:
         outputs.append(llm.generate(prompt, sampling_params))
 
-    llm.stop_profile()
+    if enable_profiling:
+        llm.stop_profile()
     t1 = time.time()
 
     print(f"inference time: {t1-t0:.5f}s")
