@@ -1,0 +1,101 @@
+## Global Args #################################################################
+ARG PYTHON_VERSION=3.12
+ARG MAX_JOBS=64
+
+
+## Runtime #################################################################
+FROM rocm/vllm-dev:nightly AS runtime
+
+ENV VIRTUAL_ENV=/usr/local/
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+
+# RUN pip install --no-cache -U pip wheel uv
+
+# # swig is required by triton-dejavu (SMAC optimizer)
+# # SWIG rpm not available for RHEL9
+# RUN microdnf install -y wget tar zlib-devel automake g++ && microdnf clean all
+# RUN wget https://downloads.sourceforge.net/project/swig/swig/swig-3.0.12/swig-3.0.12.tar.gz && \
+#     tar -xzf swig-3.0.12.tar.gz && \
+#     cd swig-3.0.12 && \
+#     bash autogen.sh && \
+#     wget https://downloads.sourceforge.net/project/pcre/pcre/8.45/pcre-8.45.tar.gz && \
+#     bash Tools/pcre-build.sh && \
+#     bash ./configure && \
+#     make && \
+#     make install
+
+COPY vllm/vllm  /usr/local/bin/python${PYTHON_VERSION}/site-packages/vllm/
+
+
+WORKDIR /workspace
+
+# # copy requirements explicitly before to avoid reinstall
+# COPY triton-dejavu/requirements-opt.txt dejavu-requirements-opt.txt
+# # RUN --mount=type=cache,target=/root/.cache/pip \
+# #     --mount=type=cache,target=/root/.cache/uv \
+# #     uv pip install -r dejavu-requirements-opt.txt \ 
+# #     && rm -f dejavu-requirements-opt.txt
+# RUN pip install -r dejavu-requirements-opt.txt \ 
+#     && rm -f dejavu-requirements-opt.txt
+# 
+    # dejavu
+COPY triton-dejavu triton-dejavu
+# RUN --mount=type=cache,target=/root/.cache/pip \
+#     --mount=type=cache,target=/root/.cache/uv \
+#     uv pip install ./triton-dejavu/ \
+#     && rm -rf ./triton-dejavu/
+RUN pip install ./triton-dejavu/ \
+    && rm -rf ./triton-dejavu/
+
+# # Install IBM kernels and vllm plugin
+# #  must be after vllm!
+# COPY ibm-triton-lib ibm-triton-lib
+# RUN --mount=type=cache,target=/root/.cache/pip \
+#     --mount=type=cache,target=/root/.cache/uv \
+#     uv pip install ./ibm-triton-lib \
+#     && rm -rf ibm-triton-lib
+
+## Benchmarking #################################################################
+FROM runtime AS benchmark
+
+WORKDIR /workspace
+
+# RUN microdnf install -y git nano gcc vim \
+#     && microdnf clean all
+
+# RUN --mount=type=cache,target=/root/.cache/pip \
+#     --mount=type=cache,target=/root/.cache/uv \
+#     uv pip install pytest llnl-hatchet debugpy
+RUN pip install pytest llnl-hatchet debugpy
+
+# RUN ln -s ${VIRTUAL_ENV}/lib/python${PYTHON_VERSION}/site-packages/nvidia/cuda_cupti/lib/libcupti.so.12  ${VIRTUAL_ENV}/lib/python${PYTHON_VERSION}/site-packages/nvidia/cuda_cupti/lib/libcupti.so
+
+# RUN --mount=type=cache,target=/root/.cache/pip \
+#     --mount=type=cache,target=/root/.cache/uv \
+#     git clone --depth 1 https://github.com/EleutherAI/lm-evaluation-harness && cd lm-evaluation-harness && uv pip install .
+RUN git clone --depth 1 https://github.com/EleutherAI/lm-evaluation-harness && cd lm-evaluation-harness && pip install .
+
+ENV STORE_TEST_RESULT_PATH=/results
+
+# copy vllm benchmarks
+COPY vllm/benchmarks benchmarks
+COPY ShareGPT_V3_unfiltered_cleaned_split.json ShareGPT_V3_unfiltered_cleaned_split.json
+
+# Copy thid-party kernels and insert into path
+COPY third_party third_party
+ENV PYTHONPATH /workspace
+
+# see https://github.com/IBM/triton-dejavu?tab=readme-ov-file#environment-variables
+ENV TRITON_PRINT_AUTOTUNING=1
+ENV TRITON_DEJAVU_DEBUG=1
+# set as default
+ENV TRITON_DEJAVU_STORAGE=/workspace
+ENV NGL_EXP_FALLBACK=next
+ENV TRITON_DEJAVU_FORCE_FALLBACK=1
+ENV TRITON_DEJAVU_TAG='default'
+ENV TRITON_DEJAVU_HASH_SEARCH_PARAMS=0
+
+# open debugpy port
+EXPOSE 5679
+
+ENTRYPOINT ["python"]

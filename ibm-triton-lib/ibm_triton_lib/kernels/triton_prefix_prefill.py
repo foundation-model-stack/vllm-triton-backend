@@ -21,6 +21,7 @@ IS_TURING = current_platform.get_device_capability() == (7, 5)
 
 if triton.__version__ >= "2.1.0":
 
+    # TODO: use jit cache
     @triton.jit
     def _fwd_kernel(
         Q,
