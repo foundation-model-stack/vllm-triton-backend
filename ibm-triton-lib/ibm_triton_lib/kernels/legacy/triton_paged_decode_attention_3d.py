@@ -22,7 +22,7 @@ import torch
 import triton
 import triton.language as tl
 
-from ..utils.triton_utils import unpack_grid
+from ...utils.triton_utils import unpack_grid
 
 
 gpu_name = torch.cuda.get_device_name()
