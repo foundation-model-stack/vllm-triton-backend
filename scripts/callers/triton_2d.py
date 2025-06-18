@@ -17,7 +17,7 @@
 
 
 import torch
-from ibm_triton_lib.kernels import paged_attention_2d, chunked_prefill_paged_decode
+from ibm_triton_lib.kernels.legacy import paged_attention_2d, chunked_prefill_paged_decode
 from .base import DecodeCaller, PrefixPrefillCaller
 
 
