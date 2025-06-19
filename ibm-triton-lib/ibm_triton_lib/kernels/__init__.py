@@ -65,3 +65,5 @@ except ImportError:
 from .triton_flash_attention import (
     triton_wrapper_forward_prefill as prefill_flash_attention,
 )
+
+from .triton_unified_attention import unified_attention

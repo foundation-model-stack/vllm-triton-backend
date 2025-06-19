@@ -43,3 +43,9 @@ from .fused_triton import (
     FusedTritonChunkedPrefixPrefill25dCaller,
     FusedTritonDecodeOnlyCaller,
 )
+
+from .unified_triton import (
+    UnifiedTriton2dAttentionCaller,
+    UnifiedTriton3dAttentionCaller,
+    UnifiedTritonAutoAttentionCaller,
+)

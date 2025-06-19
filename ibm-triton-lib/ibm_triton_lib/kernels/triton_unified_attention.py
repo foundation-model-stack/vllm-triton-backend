@@ -594,6 +594,7 @@ def unified_attention(
     k_descale,
     v_descale,
     alibi_slopes=None,
+    force_selection=None,  # None, 2, 3 to select kernel
 ):
     assert causal, "Only causal attention is supported"
     assert q_descale is None, "Q scales not supported"
@@ -626,7 +627,8 @@ def unified_attention(
     total_num_q_blocks = q.shape[0] // BLOCK_Q + num_seqs
 
     # if batch contains a prefill
-    if max_seqlen_q > 1 or total_num_q_blocks * num_kv_heads > 128:
+    if (max_seqlen_q > 1 or total_num_q_blocks * num_kv_heads > 128 
+        or force_selection == 2) and force_selection != 3:
         kernel_unified_attention_2d[(
             total_num_q_blocks,
             num_kv_heads,
