@@ -227,7 +227,7 @@ quantiles = [0.5, 0.2, 0.8]
 force_dump_dataframes = False
 enforce_numerical_correctness = True
 # enforce_numerical_correctness = False
-if os.getenv("TEST_ALLOW_INCRORRECT", "0") == "1":
+if os.getenv("TEST_ALLOW_INCORRECT", "0") == "1":
     enforce_numerical_correctness = False
 do_profiling = False  # will add overhead to kernel runtime measured via CUDA_EVENTS
 store_hatchet = False
@@ -1283,7 +1283,7 @@ def test_prefix_vllm_v1_attention(
             allclose_pass = True
         else:
             allclose_pass = torch.allclose(ref_output, output, atol=ATOL, rtol=RTOL)
-        
+
         # benchmark only correct results
         if do_benchmarks:
             if my_name not in pytest.global_pds:
