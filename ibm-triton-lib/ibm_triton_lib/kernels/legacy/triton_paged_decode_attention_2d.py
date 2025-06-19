@@ -76,7 +76,7 @@ def cdiv_fn(x, y):
     cache_lock=global_cache_lock,
     # list of `tl.constexpr` that should be used as cache index
     check_keys=["USE_ALIBI_SLOPES", "SLIDING_WINDOW", "filter_by_query_len"],
-    check_specialization=['num_seqs', 'stride_k_cache_3', "stride_v_cache_3"],
+    check_specialization=["num_seqs", "stride_k_cache_3", "stride_v_cache_3"],
     assume_const=[
         "scale",
         "k_scale",

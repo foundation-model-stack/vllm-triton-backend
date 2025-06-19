@@ -69,8 +69,8 @@ class UnifiedTriton3dAttentionCaller(PrefixPrefillCaller):
                 block_table=block_tables,
                 softcap=0,
                 q_descale=None,
-                k_descale=None, # TODO?
-                v_descale=None, # TODO?
+                k_descale=None,  # TODO?
+                v_descale=None,  # TODO?
                 alibi_slopes=None,
                 force_selection=force_selection,
             )
@@ -80,7 +80,6 @@ class UnifiedTriton3dAttentionCaller(PrefixPrefillCaller):
     @staticmethod
     def requires_allocated_output() -> bool:
         return True
-
 
 
 class UnifiedTriton2dAttentionCaller(UnifiedTriton3dAttentionCaller):
@@ -102,10 +101,23 @@ class UnifiedTriton2dAttentionCaller(UnifiedTriton3dAttentionCaller):
         # kv_cache_dtype,  # unused
         force_selection=3,
     ):
-    
-        return UnifiedTriton3dAttentionCaller.make_call_func(output, query, key_cache, value_cache, key, value, block_tables,
-                                    seq_lens, ctx_lens, query_lens, start_loc, seq_start_loc, softmax_scale,
-                                    force_selection=2)
+
+        return UnifiedTriton3dAttentionCaller.make_call_func(
+            output,
+            query,
+            key_cache,
+            value_cache,
+            key,
+            value,
+            block_tables,
+            seq_lens,
+            ctx_lens,
+            query_lens,
+            start_loc,
+            seq_start_loc,
+            softmax_scale,
+            force_selection=2,
+        )
 
 
 class UnifiedTritonAutoAttentionCaller(UnifiedTriton3dAttentionCaller):
@@ -127,8 +139,20 @@ class UnifiedTritonAutoAttentionCaller(UnifiedTriton3dAttentionCaller):
         # kv_cache_dtype,  # unused
         force_selection=3,
     ):
-    
-        return UnifiedTriton3dAttentionCaller.make_call_func(output, query, key_cache, value_cache, key, value, block_tables,
-                                    seq_lens, ctx_lens, query_lens, start_loc, seq_start_loc, softmax_scale,
-                                    force_selection=None)  # none triggers vllm default behaviour
-    
+
+        return UnifiedTriton3dAttentionCaller.make_call_func(
+            output,
+            query,
+            key_cache,
+            value_cache,
+            key,
+            value,
+            block_tables,
+            seq_lens,
+            ctx_lens,
+            query_lens,
+            start_loc,
+            seq_start_loc,
+            softmax_scale,
+            force_selection=None,
+        )  # none triggers vllm default behaviour

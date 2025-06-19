@@ -289,8 +289,11 @@ def test_decode_vllm_v0_attention(
         pytest.skip()
 
     # TODO
-    if implementation in [Implementation.UNF_TRITON_3D, Implementation.UNF_TRITON_2D,
-                          Implementation.UNF_TRITON_AUTO]:
+    if implementation in [
+        Implementation.UNF_TRITON_3D,
+        Implementation.UNF_TRITON_2D,
+        Implementation.UNF_TRITON_AUTO,
+    ]:
         pytest.skip()
 
     RTOL = 0
@@ -675,10 +678,13 @@ def test_prefill_vllm_v0_attention(
         if batch_size > 200:
             # FIXME(ngl): also causes illegal memory access
             pytest.skip()
-    
+
     # TODO
-    if implementation in [Implementation.UNF_TRITON_3D, Implementation.UNF_TRITON_2D,
-                          Implementation.UNF_TRITON_AUTO]:
+    if implementation in [
+        Implementation.UNF_TRITON_3D,
+        Implementation.UNF_TRITON_2D,
+        Implementation.UNF_TRITON_AUTO,
+    ]:
         pytest.skip()
 
     ATOL = 1e-3 * max_value
