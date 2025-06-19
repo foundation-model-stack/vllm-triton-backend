@@ -65,6 +65,9 @@ class Implementation(Enum):
     TRITON_FP8 = 7
     TRITON_3D = 8
     TRITON_FUSED = 9
+    UNF_TRITON_3D = 10
+    UNF_TRITON_2D = 11
+    UNF_TRITON_AUTO = 12
 
 
 class BenchmarkMode(Enum):
@@ -102,14 +105,14 @@ SEQUENCE_LENGTHS = [16, 32, 64, 128, 512, 1024, 2048, 4096]
 # CONTEXT_LENGTHS = [16, 128, 512, 1024, 2048, 4096]
 # QUERY_LENGTHS = [1, 16, 128, 512, 1024, 2048, 4096]
 # QUERY_LENGTHS = [1, 1024]
-PREFIX_PREFILL_SHARE_OF_DECODE = [0.5]
+# PREFIX_PREFILL_SHARE_OF_DECODE = [0.5]
 # PREFIX_PREFILL_SHARE_OF_DECODE = [1.0]
 # PREFIX_PREFILL_SHARE_OF_DECODE = [0.0]
-# PREFIX_PREFILL_SHARE_OF_DECODE = [1.0, 0.5]
+PREFIX_PREFILL_SHARE_OF_DECODE = [1.0, 0.3]
 # PREFIX_PREFILL_SHARE_OF_DECODE = [0.8]
 # PREFIX_PREFILL_SHARE_OF_DECODE = [0.0, 0.5, 1.0]
-# PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL = [0.0, 0.5]
-PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL = [0.5]
+PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL = [0.0, 0.5]
+# PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL = [0.5]
 # PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL = [0.0]
 
 # HEAD_SIZES_FLASH = [32, 64, 128]  # only powers of 2!
@@ -118,6 +121,8 @@ HEAD_SIZES = [128]  # only powers of 2! for llama2 & 3
 
 # BLOCK_SIZES = [8, 16, 32]
 BLOCK_SIZES = [16]
+# if torch.version.hip:
+#     BLOCK_SIZES = [16, 128]
 # NUM_BLOCKS = [8, 16, 32]
 NUM_BLOCKS = [4321]  # "arbitrary values for testing..."
 
@@ -138,13 +143,16 @@ IMPLEMENTATION_UT = [
     Implementation.BASELINE_TRITON,
     Implementation.VLLM_CUDA_V1,
     Implementation.VLLM_CUDA_V2,
-    Implementation.XFORMERS,
+    # Implementation.XFORMERS,
     Implementation.FLASH_ATTN,
-    Implementation.TRITON_FP8,
-    Implementation.FLASHINFER,
+    # Implementation.TRITON_FP8,
+    # Implementation.FLASHINFER,
+    Implementation.UNF_TRITON_3D,
+    Implementation.UNF_TRITON_2D,
+    Implementation.UNF_TRITON_AUTO,
 ]
-MAX_VALUES = [0.01, 0.1, 1.0]
-# MAX_VALUES = [1.0]
+# MAX_VALUES = [0.01, 0.1, 1.0]
+MAX_VALUES = [1.0]
 BENCHMARK_MODES = [BenchmarkMode.CUDA_EVENTS, BenchmarkMode.CUDA_GRAPHS]
 
 if os.getenv("NGL_FULL_TEST", "0") == "1":
@@ -219,9 +227,11 @@ quantiles = [0.5, 0.2, 0.8]
 force_dump_dataframes = False
 enforce_numerical_correctness = True
 # enforce_numerical_correctness = False
+if os.getenv("TEST_ALLOW_INCORRECT", "0") == "1":
+    enforce_numerical_correctness = False
 do_profiling = False  # will add overhead to kernel runtime measured via CUDA_EVENTS
 store_hatchet = False
-debug_flag = os.getenv("TRITON_BACKEND_DEBUG") == "1"
+debug_flag = os.getenv("TRITON_BACKEND_DEBUG", "0") == "1"
 add_triton_dejavu_envs = True
 
 
@@ -238,7 +248,7 @@ add_triton_dejavu_envs = True
 @pytest.mark.parametrize("max_value", MAX_VALUES)
 @pytest.mark.parametrize("benchmark_mode", BENCHMARK_MODES)
 @torch.inference_mode()
-def test_decode_attention(
+def test_decode_vllm_v0_attention(
     capsys,
     request,
     batch_size,
@@ -278,6 +288,14 @@ def test_decode_attention(
     ):
         pytest.skip("unsupported configuration")
     if implementation == Implementation.XFORMERS and gqa_mode:
+        pytest.skip()
+
+    # TODO
+    if implementation in [
+        Implementation.UNF_TRITON_3D,
+        Implementation.UNF_TRITON_2D,
+        Implementation.UNF_TRITON_AUTO,
+    ]:
         pytest.skip()
 
     RTOL = 0
@@ -621,7 +639,7 @@ def test_decode_attention(
 @pytest.mark.parametrize("max_value", MAX_VALUES)
 @pytest.mark.parametrize("benchmark_mode", BENCHMARK_MODES)
 @torch.inference_mode()
-def test_prefill_attention(
+def test_prefill_vllm_v0_attention(
     capsys,
     request,
     batch_size,
@@ -662,6 +680,14 @@ def test_prefill_attention(
         if batch_size > 200:
             # FIXME(ngl): also causes illegal memory access
             pytest.skip()
+
+    # TODO
+    if implementation in [
+        Implementation.UNF_TRITON_3D,
+        Implementation.UNF_TRITON_2D,
+        Implementation.UNF_TRITON_AUTO,
+    ]:
+        pytest.skip()
 
     ATOL = 1e-3 * max_value
     RTOL = 1e-5
@@ -922,7 +948,7 @@ def test_prefill_attention(
 @pytest.mark.parametrize("max_value", MAX_VALUES)
 @pytest.mark.parametrize("benchmark_mode", BENCHMARK_MODES)
 @torch.inference_mode()
-def test_prefix_attention(
+def test_prefix_vllm_v1_attention(
     capsys,
     request,
     batch_size,
@@ -957,6 +983,9 @@ def test_prefix_attention(
         Implementation.FLASH_ATTN,
         Implementation.TRITON_FUSED,
         Implementation.TRITON_2D,
+        Implementation.UNF_TRITON_3D,
+        Implementation.UNF_TRITON_2D,
+        Implementation.UNF_TRITON_AUTO,
     ]:
         pytest.skip()
 
@@ -1179,6 +1208,12 @@ def test_prefix_attention(
             from callers import Triton2dChunkedPrefillCaller as Caller
         # elif implementation == Implementation.TRITON_3D:
         #     from callers import Triton3dAttentionDecodeCaller as Caller
+        elif implementation == Implementation.UNF_TRITON_3D:
+            from callers import UnifiedTriton3dAttentionCaller as Caller
+        elif implementation == Implementation.UNF_TRITON_2D:
+            from callers import UnifiedTriton2dAttentionCaller as Caller
+        elif implementation == Implementation.UNF_TRITON_AUTO:
+            from callers import UnifiedTritonAutoAttentionCaller as Caller
 
         if Caller.requires_allocated_output:
             output = torch.empty_like(query)

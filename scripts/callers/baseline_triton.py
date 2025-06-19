@@ -18,7 +18,7 @@
 
 import torch
 from third_party.vedantroy_paged_attention import paged_attention_triton_v1
-from ibm_triton_lib.kernels.triton_prefix_prefill import context_attention_fwd
+from ibm_triton_lib.kernels.legacy.triton_prefix_prefill import context_attention_fwd
 from .base import DecodeCaller, PrefixPrefillCaller
 
 

@@ -60,7 +60,8 @@ setup(
         "ibm_triton_lib.utils",
         "ibm_triton_lib.kernels",
         "ibm_triton_lib.backend",
-        "ibm_triton_lib.kernels.fused_gqa_paged",
+        "ibm_triton_lib.kernels.legacy",
+        "ibm_triton_lib.kernels.legacy.fused_gqa_paged",
     ],
     package_data={
         "ibm_triton_lib": dejavu_data,

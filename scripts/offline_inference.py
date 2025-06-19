@@ -36,10 +36,9 @@ if enable_profiling:
     os.environ["VLLM_TORCH_PROFILER_DIR"] = "./vllm_torch_profile"
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     from vllm import LLM, SamplingParams
     from vllm.distributed import cleanup_dist_env_and_memory
-
 
     llm = LLM(
         # model="/mnt/nvme5n1p1/zrlngl/fmaas/models/llama3.1-8b-instruct/",
@@ -63,9 +62,10 @@ if __name__ == '__main__':
         # "Skating and cross country skiing technique differ in",
     ]
 
-
-    print(f"SETUP: vllm backend: {os.environ['VLLM_ATTENTION_BACKEND']}  " \
-          f"  JITCache: {os.environ['VLLM_TRITON_ENABLE_JITCACHE']}    ")
+    print(
+        f"SETUP: vllm backend: {os.environ['VLLM_ATTENTION_BACKEND']}  "
+        f"  JITCache: {os.environ['VLLM_TRITON_ENABLE_JITCACHE']}    "
+    )
     print(f"Inference with {len(prompts)} prompts...")
     if enable_profiling:
         llm.start_profile()

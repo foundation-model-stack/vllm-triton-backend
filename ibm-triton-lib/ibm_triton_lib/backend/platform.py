@@ -28,7 +28,7 @@ import vllm.envs as envs
 from vllm.logger import init_logger
 
 from vllm.platforms import Platform, PlatformEnum
-from vllm.platforms.cuda import CudaPlatform, device_id_to_physical_device_id
+from vllm.platforms.cuda import CudaPlatform
 
 
 from vllm.platforms.interface import DeviceCapability, Platform, PlatformEnum, _Backend
