@@ -1,0 +1,82 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "pytest container",
+            "type": "debugpy",
+            "request": "attach",
+            "connect": {
+                "host": "172.73.0.73",
+                //"host": "localhost",
+                "port": 5679
+            },
+            "pathMappings": [
+                {
+                    "localRoot": "${workspaceFolder}/vllm/vllm",
+                    "remoteRoot": "/usr/local/lib/python3.12/dist-packages/vllm/"
+                },
+                {
+                    "localRoot": "${workspaceFolder}/triton/python/triton",
+                    "remoteRoot": "/opt/runtime/lib64/python3.12/site-packages/triton"
+                },
+                {
+                    "localRoot": "${workspaceFolder}/triton/third_party/nvidia/",
+                    "remoteRoot": "/opt/runtime/lib64/python3.12/site-packages//triton/backends/nvidia/"
+                },
+                {
+                    "localRoot": "${workspaceFolder}/scripts",
+                    "remoteRoot": "/scripts"
+                },
+                {
+                    "localRoot": "${workspaceFolder}/ibm-triton-lib/ibm_triton_lib/",
+                    "remoteRoot": "/opt/runtime/lib64/python3.12/site-packages/ibm_triton_lib/"
+                },
+                {
+                    "localRoot": "${workspaceFolder}/triton-dejavu/triton_dejavu/",
+                    "remoteRoot": "/opt/runtime/lib64/python3.12/site-packages/triton_dejavu"
+                },
+            ],
+            "justMyCode": false,
+        },
+        {
+            "name": "bare metal vllm",
+            "type": "debugpy",
+            "request": "attach",
+            "connect": {
+                //"host": "172.73.0.73",
+                "host": "localhost",
+                "port": 5679
+            },
+            "pathMappings": [
+                {
+                    "localRoot": "${workspaceFolder}/vllm/vllm",
+                    "remoteRoot": "/mnt/nvme5n1p1/zrlngl/fmaas/vllm-triton-backend/vllm/venv_rocm/lib/python3.10/site-packages/vllm-0.1.dev6359+g72d9858.d20250509.rocm624-py3.10-linux-x86_64.egg/vllm/"
+                },
+                {
+                    "localRoot": "${workspaceFolder}/triton/python/triton",
+                    "remoteRoot": "/mnt/nvme5n1p1/zrlngl/fmaas/vllm-triton-backend/vllm/venv_rocm/lib/python3.10/site-packages/triton/"
+                },
+                //{
+                //    "localRoot": "${workspaceFolder}/triton/third_party/nvidia/",
+                //    "remoteRoot": "/opt/runtime/lib64/python3.12/site-packages//triton/backends/nvidia/"
+                //},
+                //{
+                //    "localRoot": "${workspaceFolder}/scripts",
+                //    "remoteRoot": "/scripts"
+                //},
+                //{
+                //    "localRoot": "${workspaceFolder}/ibm-triton-lib/ibm_triton_lib/",
+                //    "remoteRoot": "/opt/runtime/lib64/python3.12/site-packages/ibm_triton_lib/"
+                //},
+                //{
+                //    "localRoot": "${workspaceFolder}/triton-dejavu/triton_dejavu/",
+                //    "remoteRoot": "/opt/runtime/lib64/python3.12/site-packages/triton_dejavu"
+                //},
+            ],
+            "justMyCode": false,
+        }
+    ]
+}

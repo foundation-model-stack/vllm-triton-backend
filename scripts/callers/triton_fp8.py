@@ -17,7 +17,7 @@
 
 
 import torch
-from ibm_triton_lib.kernels import paged_attention_fp8_3d
+from ibm_triton_lib.kernels.legacy import paged_attention_fp8_3d
 from .base import DecodeCaller
 
 

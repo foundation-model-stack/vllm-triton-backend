@@ -17,7 +17,7 @@
 
 
 import torch
-from ibm_triton_lib.kernels import fused_chunked_prefill_paged_decode_25d
+from ibm_triton_lib.kernels.legacy import fused_chunked_prefill_paged_decode_25d
 from .base import PrefixPrefillCaller, DecodeCaller
 
 

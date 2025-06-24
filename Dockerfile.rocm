@@ -7,20 +7,15 @@ ARG MAX_JOBS=64
 # ARG RCCL_REPO="https://github.com/ROCm/rccl"
 # ARG TRITON_BRANCH="e5be006"
 # ARG TRITON_REPO="https://github.com/triton-lang/triton.git"
-ARG PYTORCH_BRANCH="6c0e7463"
+ARG PYTORCH_BRANCH="295f2ed4"
 ARG PYTORCH_VISION_BRANCH="v0.21.0"
 ARG PYTORCH_REPO="https://github.com/pytorch/pytorch.git"
 ARG PYTORCH_VISION_REPO="https://github.com/pytorch/vision.git"
 ARG FA_BRANCH="1a7f4dfa"
 ARG FA_REPO="https://github.com/Dao-AILab/flash-attention.git"
 
-# if not using the submodule
-ARG VLLM_BRANCH="v0.7.3+rocm"
-
-ARG VLLM_VERSION=0.8.1
-ARG PYTORCH_ROCM_ARCH=gfx90a;gfx942
-ARG VLLM_SOURCE=submodule
-# or ARG VLLM_SOURCE=upstream
+ARG VLLM_VERSION=0.9.1
+ARG PYTORCH_ROCM_ARCH=gfx90a;gfx942;gfx1100;gfx1101;gfx1200;gfx1201
 
 ARG ROCM_VERSION=6.3.1
 
@@ -131,6 +126,9 @@ RUN python${PYTHON_VERSION} -m venv $VIRTUAL_ENV \
 # git is required for the cutlass kernels
 RUN rpm -ivh https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm && rpm -ql epel-release && microdnf install -y git ccache && microdnf clean all
 
+RUN git clone https://github.com/ROCm/rocm-cmake.git && cd rocm-cmake && mkdir build && cd build && cmake .. && cmake --build . && cmake --build . --target install
+ENV CMAKE_POLICY_VERSION_MINIMUM=3.5
+
 ## rccl Builder #################################################################
 # FROM common-builder AS rccl-builder
 # ARG MAX_JOBS
@@ -202,21 +200,8 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=cache,target=/root/.cache/uv \
     uv pip install /opt/rocm/share/amd_smi
 
-RUN git clone https://github.com/ROCm/rocm-cmake.git && cd rocm-cmake && mkdir build && cd build && cmake .. && cmake --build . && cmake --build . --target install
-
-## vLLM Builder rocm upstream #################################################################
-FROM vllm-builder-base AS vllm-builder-upstream
-ARG MAX_JOBS
-
-ARG VLLM_REPO="https://github.com/ROCm/vllm.git"
-# ARG VLLM_BRANCH="main"
-ARG VLLM_BRANCH
-RUN git clone ${VLLM_REPO} \
-	    && cd vllm \
-	    && git checkout ${VLLM_BRANCH}
-
 ## vLLM Builder submodule ################################################################
-FROM vllm-builder-base AS vllm-builder-submodule
+FROM vllm-builder-base AS vllm-builder
 ARG MAX_JOBS
 
 # copy git stuff
@@ -231,16 +216,9 @@ WORKDIR /workspace/vllm
 ARG VLLM_VERSION
 ENV SETUPTOOLS_SCM_PRETEND_VERSION=${VLLM_VERSION}
 ENV SETUPTOOLS_SCM_PRETEND_VERSION_LINUX=${VLLM_VERSION}
-COPY rocm-vllm-all.tar .
-RUN tar -xf rocm-vllm-all.tar && \
-    rm rocm-vllm-all.tar
-# COPY vllm-all.tar .
-# RUN tar -xf vllm-all.tar && \
-#     rm vllm-all.tar
-
-## merge vLLM Builder #################################################################
-FROM vllm-builder-${VLLM_SOURCE} AS vllm-builder
-ARG MAX_JOBS
+COPY vllm-all.tar .
+RUN tar -xf vllm-all.tar && \
+    rm vllm-all.tar
 
 WORKDIR /workspace/
 ARG USE_CYTHON
@@ -304,7 +282,7 @@ RUN git clone ${FA_REPO}
 RUN cd flash-attention \
     && git checkout ${FA_BRANCH} \
     && git submodule update --init \
-    && MAX_JOBS=64 GPU_ARCHS=${PYTORCH_ROCM_ARCH} python3 setup.py bdist_wheel --dist-dir=dist
+    && MAX_JOBS=64 GPU_ARCHS=$(echo ${PYTORCH_ROCM_ARCH} | sed -e 's/;gfx1[0-9]\{3\}//g') python3 setup.py bdist_wheel --dist-dir=dist
 RUN mkdir -p /workspace/install && cp /workspace/flash-attention/dist/*.whl /workspace/install
 
 ## Runtime #################################################################
@@ -339,7 +317,7 @@ WORKDIR /workspace
 #ENV PYTORCH_ROCM_ARCH="gfx90a;gfx942"
 ARG PYTORCH_ROCM_ARCH
 ENV PYTORCH_ROCM_ARCH=${PYTORCH_ROCM_ARCH}
-COPY rocm_vllm/requirements/*.txt /workspace/
+COPY vllm/requirements/*.txt /workspace/
 RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=cache,target=/root/.cache/uv \
     uv pip install -r rocm.txt \ 
@@ -429,7 +407,7 @@ RUN microdnf install -y git nano gcc vim \
 
 RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=cache,target=/root/.cache/uv \
-    uv pip install pytest llnl-hatchet debugpy
+    uv pip install pytest llnl-hatchet debugpy llguidance
 
 # install lm_eval
 RUN --mount=type=cache,target=/root/.cache/pip \
@@ -453,7 +431,6 @@ ENV TRITON_DEJAVU_DEBUG=1
 # ENV TRITON_DEJAVU_STORAGE=/storage
 ENV TRITON_DEJAVU_STORAGE=/workspace
 ENV NGL_EXP_FALLBACK=next
-# ENV TRITON_DEJAVU_USE_ONLY_RESTORED=0
 ENV TRITON_DEJAVU_FORCE_FALLBACK=1
 ENV TRITON_DEJAVU_TAG='default'
 ENV TRITON_DEJAVU_HASH_SEARCH_PARAMS=0

@@ -62,19 +62,8 @@ except ImportError:
         "WARNING: Created fake module to work-around missing triton-dejavu module. If you don't expect this warning, this is likely to become an error."
     )
 
-from .triton_chunked_prefill_paged_decode import chunked_prefill_paged_decode
-from .triton_paged_decode_attention_2d import (
-    paged_attention_triton_2d as paged_attention_2d,
-)
-from .triton_paged_decode_attention_3d import (
-    paged_attention_triton_3d as paged_attention_3d,
-)
 from .triton_flash_attention import (
     triton_wrapper_forward_prefill as prefill_flash_attention,
 )
-from .fused_gqa_paged import (
-    paged_attention_triton_3d as paged_attention_fp8_3d,
-)
-from .fused_chunked_prefill_paged_decode import (
-    fused_chunked_prefill_paged_decode as fused_chunked_prefill_paged_decode_25d,
-)
+
+from .triton_unified_attention import unified_attention

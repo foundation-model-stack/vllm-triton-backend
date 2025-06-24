@@ -36,7 +36,7 @@ from .triton_fp8 import TritonFp8Caller
 
 try:
     from .flashinfer import FlashInferCaller
-except ModuleNotFoundError:
+except (ModuleNotFoundError, ImportError):
     # print("[benchmark callers] flashinfer not present, skipping..")
     pass
 from .fused_triton import (
@@ -44,3 +44,9 @@ from .fused_triton import (
     FusedTritonDecodeOnlyCaller,
 )
 from .pytorch_native import PytorchNativeAttentionPrefillCaller
+
+from .unified_triton import (
+    UnifiedTriton2dAttentionCaller,
+    UnifiedTriton3dAttentionCaller,
+    UnifiedTritonAutoAttentionCaller,
+)
