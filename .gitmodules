@@ -6,7 +6,4 @@
 	url = https://github.com/IBM/triton-dejavu.git
 [submodule "vllm"]
 	path = vllm
-	url = https://github.com/tdoublep/vllm.git
-[submodule "rocm_vllm"]
-	path = rocm_vllm
-	url = https://github.com/ROCm/vllm.git
+	url = https://github.com/vllm-project/vllm.git

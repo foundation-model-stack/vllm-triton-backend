@@ -22,7 +22,7 @@ import torch
 import triton
 import triton.language as tl
 
-from ..utils.triton_utils import unpack_grid
+from ...utils.triton_utils import unpack_grid
 import triton_dejavu
 from triton_dejavu import global_cache_lock
 
@@ -76,6 +76,7 @@ def cdiv_fn(x, y):
     cache_lock=global_cache_lock,
     # list of `tl.constexpr` that should be used as cache index
     check_keys=["USE_ALIBI_SLOPES", "SLIDING_WINDOW", "filter_by_query_len"],
+    check_specialization=["num_seqs", "stride_k_cache_3", "stride_v_cache_3"],
     assume_const=[
         "scale",
         "k_scale",
@@ -88,7 +89,6 @@ def cdiv_fn(x, y):
         "stride_k_cache_4",
         "stride_v_cache_0",
         "stride_v_cache_1",
-        "stride_v_cache_2",
         "stride_v_cache_2",
     ],
     # besides this checks and assumed constants,
