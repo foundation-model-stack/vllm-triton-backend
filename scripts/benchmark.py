@@ -68,6 +68,7 @@ class Implementation(Enum):
     UNF_TRITON_3D = 10
     UNF_TRITON_2D = 11
     UNF_TRITON_AUTO = 12
+    PYTORCH_NATIVE = 13
 
 
 class BenchmarkMode(Enum):
@@ -97,6 +98,7 @@ SEQUENCE_LENGTHS = [16, 32, 64, 128, 512, 1024, 2048, 4096]
 # SEQUENCE_LENGTHS = [8]
 # SEQUENCE_LENGTHS= [128]
 # SEQUENCE_LENGTHS = [16, 17]
+# SEQUENCE_LENGTHS = [2048]
 # SEQUENCE_LENGTHS = [4096]
 # SEQUENCE_LENGTHS = [4321]
 # SEQUENCE_LENGTHS = [16, 128, 512, 1024, 2048, 4096]
@@ -277,6 +279,19 @@ def test_decode_vllm_v0_attention(
         my_instance = my_id.split("[")[1][:-1]
     realistic_prompt_mode = len(prompt_pattern) > 1
     gqa_mode = num_heads[0] != num_heads[1]
+
+    if implementation not in [
+        Implementation.BASELINE_TRITON,
+        Implementation.FLASH_ATTN,
+        Implementation.VLLM_CUDA_V1,
+        Implementation.VLLM_CUDA_V2,
+        Implementation.TRITON_2D,
+        Implementation.TRITON_3D,
+        Implementation.TRITON_FP8,
+        Implementation.XFORMERS,
+        Implementation.FLASHINFER,
+    ]:
+        pytest.skip("unsupported configuration")
 
     if implementation == Implementation.BASELINE_TRITON and (
         benchmark_mode == BenchmarkMode.CUDA_GRAPHS or realistic_prompt_mode or gqa_mode
@@ -667,7 +682,11 @@ def test_prefill_vllm_v0_attention(
         pytest.skip()
 
     # TODO
-    if implementation not in [Implementation.TRITON_3D, Implementation.FLASH_ATTN]:
+    if implementation not in [
+        Implementation.TRITON_3D,
+        Implementation.FLASH_ATTN,
+        Implementation.PYTORCH_NATIVE,
+    ]:
         pytest.skip("unsupported configuration")
     elif implementation == Implementation.TRITON_3D:
         if (not math.log(head_size, 2).is_integer()) or (head_size > 256):
@@ -680,6 +699,8 @@ def test_prefill_vllm_v0_attention(
         if batch_size > 200:
             # FIXME(ngl): also causes illegal memory access
             pytest.skip()
+    elif implementation == Implementation.PYTORCH_NATIVE and realistic_prompt_mode:
+        pytest.skip("unsupported configuration")
 
     # TODO
     if implementation in [
@@ -752,6 +773,8 @@ def test_prefill_vllm_v0_attention(
             from callers import FlashAttnPrefillCaller as Caller
         elif implementation == Implementation.TRITON_3D:
             from callers import Triton3dAttentionPrefillCaller as Caller
+        elif implementation == Implementation.PYTORCH_NATIVE:
+            from callers import PytorchNativeAttentionPrefillCaller as Caller
 
         if Caller.requires_allocated_output:
             output = torch.empty_like(query)
