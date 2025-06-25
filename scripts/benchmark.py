@@ -78,6 +78,12 @@ class BenchmarkMode(Enum):
     TORCH_COMPILE = 3
 
 
+class BatchComposition(Enum):
+    DEC_PRE = 0
+    PRE_DEC = 1
+    ALTERNATING = 2
+
+
 # DTYPES = [torch.half, torch.bfloat16, torch.float]
 DTYPES = [torch.float16]
 SEEDS = [0]
@@ -110,12 +116,14 @@ SEQUENCE_LENGTHS = [16, 32, 64, 128, 512, 1024, 2048, 4096]
 # PREFIX_PREFILL_SHARE_OF_DECODE = [0.5]
 # PREFIX_PREFILL_SHARE_OF_DECODE = [1.0]
 # PREFIX_PREFILL_SHARE_OF_DECODE = [0.0]
-PREFIX_PREFILL_SHARE_OF_DECODE = [1.0, 0.3]
+# PREFIX_PREFILL_SHARE_OF_DECODE = [1.0, 0.3]
 # PREFIX_PREFILL_SHARE_OF_DECODE = [0.8]
-# PREFIX_PREFILL_SHARE_OF_DECODE = [0.0, 0.5, 1.0]
+PREFIX_PREFILL_SHARE_OF_DECODE = [0.0, 0.5, 1.0]
 PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL = [0.0, 0.5]
 # PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL = [0.5]
 # PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL = [0.0]
+
+PREFIX_PREFILL_BATCH_COMPOSITION = [BatchComposition.ALTERNATING]
 
 # HEAD_SIZES_FLASH = [32, 64, 128]  # only powers of 2!
 HEAD_SIZES = [128]  # only powers of 2! for llama2 & 3
@@ -132,7 +140,7 @@ NUM_BLOCKS = [4321]  # "arbitrary values for testing..."
 CAUSAL_FLASH = [True]  # vLLM only needs causal=True
 
 PROMPT_PATTERNS = []
-# PROMPT_PATTERNS.append([1.0])
+PROMPT_PATTERNS.append([1.0])
 # PROMPT_PATTERNS.append([1.0, 0.4, 0.5, 1.0, 0.2])
 PROMPT_PATTERNS.append([0.1, 0.4, 0.5, 1.0, 0.2])
 
@@ -965,6 +973,7 @@ def test_prefill_vllm_v0_attention(
 @pytest.mark.parametrize("block_size", BLOCK_SIZES)
 @pytest.mark.parametrize("num_blocks", NUM_BLOCKS)
 @pytest.mark.parametrize("prompt_pattern", PROMPT_PATTERNS)
+@pytest.mark.parametrize("batch_composition", PREFIX_PREFILL_BATCH_COMPOSITION)
 @pytest.mark.parametrize("dtype", DTYPES)
 @pytest.mark.parametrize("seed", SEEDS)
 @pytest.mark.parametrize("implementation", IMPLEMENTATION_UT)
@@ -985,6 +994,7 @@ def test_prefix_vllm_v1_attention(
     block_size,
     num_blocks,
     prompt_pattern,
+    batch_composition,
     dtype,
     seed,
     implementation,
@@ -1081,6 +1091,24 @@ def test_prefix_vllm_v1_attention(
     seq_lens = [a + b for a, b in zip(query_lens, ctx_lens)]
     max_seq_len = max(seq_lens)
 
+    # BatchComposition.DEC_PRE is default
+    if batch_composition == BatchComposition.PRE_DEC:
+        query_lens.reverse()
+        ctx_lens.reverse()
+        seq_lens.reverse()
+    if batch_composition == BatchComposition.ALTERNATING:
+        alorder = []
+        indexs_remaining = list(range(len(query_lens)))
+        for i in range(len(query_lens)//2):
+            alorder.append(i)
+            alorder.append(len(query_lens) - i - 1)
+            indexs_remaining.remove(i)
+            indexs_remaining.remove(len(query_lens) - i - 1)
+        alorder.extend(indexs_remaining)
+        query_lens = [query_lens[i] for i in alorder]
+        ctx_lens = [ctx_lens[i] for i in alorder]
+        seq_lens = [seq_lens[i] for i in alorder]
+
     if debug_flag:
         print(
             f"decode share: {decode_share}; prefill share {1-decode_share} -> of that: partial prefill share {partial_prefill_share}"
@@ -1093,8 +1121,8 @@ def test_prefix_vllm_v1_attention(
         print("partial_prefill_ctx_lens", partial_prefill_ctx_lens)
         print(f"\nAfter assembling the final batch:")
         print(f"\tquery_lens: {query_lens}")
-        print(f"\tctx_lens: {ctx_lens}")
-        print(f"\tseq_lens: {seq_lens}")
+        print(f"\t  ctx_lens: {ctx_lens}")
+        print(f"\t  seq_lens: {seq_lens}")
     assert len(ctx_lens) == len(query_lens)
     if not realistic_prompt_mode:
         # assert max_seq_len == seqlen or max_seq_len == seqlen + 1
