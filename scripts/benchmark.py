@@ -1155,7 +1155,7 @@ def test_prefix_vllm_v1_attention(
             torch.tensor([0] + query_lens, dtype=torch.int), dim=0, dtype=torch.int
         )
         b_seq_start_loc = torch.cumsum(
-            torch.tensor([0] + seq_lens[:-1], dtype=torch.int), dim=0, dtype=torch.int
+            torch.tensor([0] + seq_lens, dtype=torch.int), dim=0, dtype=torch.int
         )
 
         # Create the block tables.
