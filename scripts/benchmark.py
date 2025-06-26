@@ -44,13 +44,11 @@ from torch_utils import get_gpu_label, end2end_bench
 from ibm_triton_lib.utils.triton_utils import get_runtime_label
 from roofline.proton_viewer import parse
 
+# let the three most used variables be overwritten separately
 STORE_TEST_RESULT_PATH = os.environ.get("STORE_TEST_RESULT_PATH", None)
 MY_IUT = [
     e for e in os.environ.get("MY_IUT", "").split(",") if len(e) > 0
 ]  # my implementations under test (IUT)
-MY_MAX_VALUES = [
-    e for e in os.environ.get("MY_MAX_VALUES", "").split(",") if len(e) > 0
-]
 MY_METHODS = [e for e in os.environ.get("MY_METHODS", "").split(",") if len(e) > 0]
 
 
@@ -83,6 +81,13 @@ class BatchComposition(Enum):
     PRE_DEC = 1
     ALTERNATING = 2
 
+impl_translate = {i.name: i.value for i in Implementation}
+method_translate = {i.name: i.value for i in BenchmarkMode}
+batch_comp_translate = {i.name: i.value for i in BatchComposition}
+
+dtype_translate = {'float16': torch.float16, 'half': torch.half, 'bfloat16': torch.bfloat16, 
+                   'float': torch.float, 
+                   'float8_e4m3fn': torch.float8_e4m3fn, 'float5_e5m2': torch.float8_e5m2}
 
 # DTYPES = [torch.half, torch.bfloat16, torch.float]
 DTYPES = [torch.float16]
@@ -144,9 +149,6 @@ PROMPT_PATTERNS.append([1.0])
 # PROMPT_PATTERNS.append([1.0, 0.4, 0.5, 1.0, 0.2])
 PROMPT_PATTERNS.append([0.1, 0.4, 0.5, 1.0, 0.2])
 
-impl_translate = {i.name: i.value for i in Implementation}
-method_translate = {i.name: i.value for i in BenchmarkMode}
-
 IMPLEMENTATION_UT = [
     Implementation.TRITON_2D,
     Implementation.TRITON_3D,
@@ -165,58 +167,50 @@ IMPLEMENTATION_UT = [
 MAX_VALUES = [1.0]
 BENCHMARK_MODES = [BenchmarkMode.CUDA_EVENTS, BenchmarkMode.CUDA_GRAPHS]
 
-if os.getenv("NGL_FULL_TEST", "0") == "1":
-    # IMPLEMENTATION_UT = [
-    #     Implementation.VLLM_CUDA_V1,
-    #     Implementation.ZRL_TRITON,
-    #     Implementation.ZRL_TRITON_3D,
-    # ]
-    BENCHMARK_MODES = [
-        BenchmarkMode.CUDA_EVENTS,
-        BenchmarkMode.END2END,
-        BenchmarkMode.CUDA_GRAPHS,
-    ]
-    # SEQUENCE_LENGTHS = [32, 64, 128, 256, 512, 1024, 2048, 4096, 8192]
-    SEQUENCE_LENGTHS = [32, 64, 128, 256, 512, 1024, 2048, 4096, 8192]
-    # BATCH_SIZES = [1, 2, 4, 8, 16, 32, 64, 128, 256]
-    BATCH_SIZES = [1, 2, 4, 8, 16, 32, 64, 128]
-elif os.getenv("NGL_FULL_TEST", "0") == "2":
-    # IMPLEMENTATION_UT = [
-    #     Implementation.VLLM_CUDA_V1,
-    #     Implementation.ZRL_TRITON,
-    #     Implementation.ZRL_TRITON_3D,
-    # ]
-    BENCHMARK_MODES = [
-        BenchmarkMode.CUDA_EVENTS,
-        BenchmarkMode.END2END,
-        BenchmarkMode.CUDA_GRAPHS,
-    ]
-    SEQUENCE_LENGTHS = [32, 44, 54, 64, 511, 512, 513, 648, 912, 1024, 2025, 3030, 4096]
-    # SEQUENCE_LENGTHS = [6321]
-    BATCH_SIZES = [
-        1,
-        2,
-        4,
-        8,
-        16,
-        28,
-        32,
-        54,
-        64,
-        96,
-        128,
-    ]
-    # BATCH_SIZES = [102]
-    MAX_VALUES = [1.0]
+test_setup_vars = ["SEEDS", "BATCH_SIZES", "NUM_HEADS", "SEQUENCE_LENGTHS",
+                   "PREFIX_PREFILL_SHARE_OF_DECODE", "PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL", # "PREFIX_PREFILL_BATCH_COMPOSITION",
+                   "HEAD_SIZES", "BLOCK_SIZES", "NUM_BLOCKS", "CAUSAL_FLASH", "PROMPT_PATTERNS", "MAX_VALUES"]
+                   # "BENCHMARK_MODES", "IMPLEMENTATION_UT" ]
+
+# need to deal with envfile here
+if len(sys.argv) >= 1:
+    envfile_name = None
+    for ca in sys.argv[1:]:
+        if ".env" in ca:
+            envfile_name = ca
+            break
+    if envfile_name is not None:
+        from dotenv import dotenv_values
+        import json
+
+        envfile_path = os.path.abspath(envfile_name)
+        print(f"\t...applied test setup: {envfile_path}")
+        env_setting = dotenv_values(envfile_path)
+        json.dump(env_setting, sys.stdout)
+        # filter allowed, convert all to lists
+        env_setting_filtered = {k: json.loads(env_setting[k]) for k in test_setup_vars if k in env_setting}
+        # update all
+        globals().update(env_setting_filtered)
+        # fix enums
+        if "DTYPES" in env_setting:
+            sl = json.loads(env_setting["DTYPES"])
+            DTYPES = [dtype_translate[v] for v in sl]
+        if "PREFIX_PREFILL_BATCH_COMPOSITION" in env_setting:
+            sl = json.loads(env_setting["PREFIX_PREFILL_BATCH_COMPOSITION"])
+            PREFIX_PREFILL_BATCH_COMPOSITION = [BatchComposition(batch_comp_translate[v]) for v in sl]
+        # iut and methods could come here too, or are overwritten below
+        if "IMPLEMENTATION_UT" in env_setting:
+            sl = json.loads(env_setting["IMPLEMENTATION_UT"])
+            IMPLEMENTATION_UT = [Implementation(impl_translate[v]) for v in sl]
+        if "BENCHMARK_MODES" in env_setting:
+            sl = json.loads(env_setting["BENCHMARK_MODES"])
+            BENCHMARK_MODES = [BenchmarkMode(method_translate[v]) for v in sl]
+
 
 if len(MY_IUT) > 0:
     IMPLEMENTATION_UT = []
     for ci_value in MY_IUT:
         IMPLEMENTATION_UT.append(Implementation(impl_translate[ci_value]))
-if len(MY_MAX_VALUES) > 0:
-    MAX_VALUES = []
-    for cm_value in MY_MAX_VALUES:
-        MAX_VALUES.append(float(cm_value))
 if len(MY_METHODS) > 0:
     BENCHMARK_MODES = []
     for cb_value in MY_METHODS:
@@ -1597,6 +1591,9 @@ if __name__ == "__main__":
         args = [__file__]
         filter_args = ""
         for ca in sys.argv[1:]:
+            if ".env" in ca:
+                # already processed
+                continue
             if ca[0] == "-":
                 args.append(ca)
             else:
