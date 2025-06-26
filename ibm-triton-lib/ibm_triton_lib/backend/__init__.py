@@ -20,4 +20,3 @@ import os
 def register():
     """Register the triton attention platform."""
     return "ibm_triton_lib.backend.platform.TritonPlatform"
-

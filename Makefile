@@ -3,7 +3,7 @@ MAX_JOBS := 64
 
 SHELL := /bin/bash
 
-.PHONY: all build clean format dev rocm rocm-upstream pyupdate nightly bm-rocm
+.PHONY: all build clean format dev rocm rocm-upstream pyupdate nightly bm-rocm spelling
 
 all: build
 
@@ -65,3 +65,7 @@ else
 format:
 	python -m black --check --verbose scripts ibm-triton-lib third_party
 endif
+
+spelling:
+	codespell ./ibm-triton-lib ./triton-dejavu ./scripts
+

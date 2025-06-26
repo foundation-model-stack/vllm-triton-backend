@@ -34,18 +34,23 @@ import torch
 
 from vllm import _custom_ops as ops
 from vllm import envs
-from vllm.attention.backends.abstract import (AttentionBackend, AttentionImpl,
-                                              AttentionMetadata, AttentionType)
-from vllm.attention.ops.chunked_prefill_paged_decode import (
-    chunked_prefill_paged_decode)
+from vllm.attention.backends.abstract import (
+    AttentionBackend,
+    AttentionImpl,
+    AttentionMetadata,
+    AttentionType,
+)
+from vllm.attention.ops.chunked_prefill_paged_decode import chunked_prefill_paged_decode
 from vllm.attention.ops.paged_attn import PagedAttention
 from ibm_triton_lib.kernels import unified_attention
 from vllm.logger import init_logger
 from vllm.platforms import current_platform
 from vllm.v1.attention.backends.flash_attn import FlashAttentionMetadata
 from vllm.v1.attention.backends.utils import (
-    AttentionMetadataBuilder, CommonAttentionMetadata,
-    make_local_attention_virtual_batches)
+    AttentionMetadataBuilder,
+    CommonAttentionMetadata,
+    make_local_attention_virtual_batches,
+)
 from vllm.v1.kv_cache_interface import AttentionSpec
 from vllm.v1.worker.block_table import BlockTable
 
@@ -97,12 +102,15 @@ class TritonAttentionMetadata:
     local_attn_metadata: Optional[LocalAttentionMetadata] = None
 
 
-class TritonAttentionMetadataBuilder(
-        AttentionMetadataBuilder[TritonAttentionMetadata]):
+class TritonAttentionMetadataBuilder(AttentionMetadataBuilder[TritonAttentionMetadata]):
     full_cudagraph_supported: ClassVar[bool] = True
 
-    def __init__(self, runner: "GPUModelRunner", kv_cache_spec: AttentionSpec,
-                 block_table: BlockTable):
+    def __init__(
+        self,
+        runner: "GPUModelRunner",
+        kv_cache_spec: AttentionSpec,
+        block_table: BlockTable,
+    ):
         self.runner = runner
         self.block_size = kv_cache_spec.block_size
         self.kv_cache_spec = kv_cache_spec
@@ -119,8 +127,7 @@ class TritonAttentionMetadataBuilder(
         return attn_metadata
 
     def build(
-        self, common_prefix_len: int,
-        common_attn_metadata: CommonAttentionMetadata
+        self, common_prefix_len: int, common_attn_metadata: CommonAttentionMetadata
     ) -> TritonAttentionMetadata:
         num_reqs = common_attn_metadata.num_reqs
         num_actual_tokens = common_attn_metadata.num_actual_tokens
@@ -133,8 +140,8 @@ class TritonAttentionMetadataBuilder(
         block_table_tensor = block_table.get_device_tensor()[:num_reqs]
 
         block_table.slot_mapping[:num_actual_tokens].copy_(
-            block_table.slot_mapping_cpu[:num_actual_tokens],
-            non_blocking=True)
+            block_table.slot_mapping_cpu[:num_actual_tokens], non_blocking=True
+        )
         # Fill unused with -1. Needed for reshape_and_cache in full cuda graph
         # mode.
         block_table.slot_mapping[num_actual_tokens:].fill_(-1)
@@ -144,23 +151,28 @@ class TritonAttentionMetadataBuilder(
         # for local attention
         local_attn_metadata = None
         if self.runner.attention_chunk_size is not None:
-            seqlens_q_local_np, virt_q_cu_seqlens_np, virt_k_seqlens_np, \
-                virt_block_table_tensor = make_local_attention_virtual_batches(
-                    self.runner.attention_chunk_size,
-                    self.runner.query_start_loc_np[:num_reqs + 1],
-                    self.runner.seq_lens_np[:num_reqs],
-                    block_table_tensor,
-                    self.block_size,
-                )
+            (
+                seqlens_q_local_np,
+                virt_q_cu_seqlens_np,
+                virt_k_seqlens_np,
+                virt_block_table_tensor,
+            ) = make_local_attention_virtual_batches(
+                self.runner.attention_chunk_size,
+                self.runner.query_start_loc_np[: num_reqs + 1],
+                self.runner.seq_lens_np[:num_reqs],
+                block_table_tensor,
+                self.block_size,
+            )
             local_query_start_loc = torch.from_numpy(virt_q_cu_seqlens_np).to(
-                self.runner.device, non_blocking=True)
+                self.runner.device, non_blocking=True
+            )
             local_seqused_k = torch.from_numpy(virt_k_seqlens_np).to(
-                self.runner.device, non_blocking=True)
+                self.runner.device, non_blocking=True
+            )
             local_max_query_len = seqlens_q_local_np.max()
             local_max_seq_len = virt_k_seqlens_np.max()
 
-            local_attn_metadata = TritonAttentionMetadata \
-                        .LocalAttentionMetadata(
+            local_attn_metadata = TritonAttentionMetadata.LocalAttentionMetadata(
                 local_query_start_loc=local_query_start_loc,
                 local_seqused_k=local_seqused_k,
                 local_block_table=virt_block_table_tensor,
@@ -172,16 +184,14 @@ class TritonAttentionMetadataBuilder(
         use_cascade = common_prefix_len > 0
 
         if use_cascade:
-            cu_prefix_query_lens = torch.tensor([0, num_actual_tokens],
-                                                dtype=torch.int32,
-                                                device=self.runner.device)
-            prefix_kv_lens = torch.tensor([common_prefix_len],
-                                          dtype=torch.int32,
-                                          device=self.runner.device)
-            suffix_kv_lens = (self.runner.seq_lens_np[:num_reqs] -
-                              common_prefix_len)
-            suffix_kv_lens = torch.from_numpy(suffix_kv_lens).to(
-                self.runner.device)
+            cu_prefix_query_lens = torch.tensor(
+                [0, num_actual_tokens], dtype=torch.int32, device=self.runner.device
+            )
+            prefix_kv_lens = torch.tensor(
+                [common_prefix_len], dtype=torch.int32, device=self.runner.device
+            )
+            suffix_kv_lens = self.runner.seq_lens_np[:num_reqs] - common_prefix_len
+            suffix_kv_lens = torch.from_numpy(suffix_kv_lens).to(self.runner.device)
         else:
             cu_prefix_query_lens = None
             prefix_kv_lens = None
@@ -207,7 +217,8 @@ class TritonAttentionMetadataBuilder(
         return attn_metadata
 
     def can_run_in_cudagraph(
-            self, common_attn_metadata: CommonAttentionMetadata) -> bool:
+        self, common_attn_metadata: CommonAttentionMetadata
+    ) -> bool:
         # Full CUDA Graph always supported
         return True
 
@@ -270,8 +281,7 @@ class TritonAttentionImpl(AttentionImpl):
         use_irope: bool = False,
     ) -> None:
         if blocksparse_params is not None:
-            raise ValueError(
-                "TritonAttention does not support block-sparse attention.")
+            raise ValueError("TritonAttention does not support block-sparse attention.")
         self.num_heads = num_heads
         self.head_size = head_size
         self.scale = float(scale)
@@ -298,17 +308,20 @@ class TritonAttentionImpl(AttentionImpl):
         if head_size not in support_head_sizes:
             raise ValueError(
                 f"Head size {head_size} is not supported by TritonAttention. "
-                f"Supported head sizes are: {support_head_sizes}.")
+                f"Supported head sizes are: {support_head_sizes}."
+            )
 
         if attn_type != AttentionType.DECODER:
-            raise NotImplementedError("Encoder self-attention and "
-                                      "encoder/decoder cross-attention "
-                                      "are not implemented for "
-                                      "TritonAttentionImpl")
+            raise NotImplementedError(
+                "Encoder self-attention and "
+                "encoder/decoder cross-attention "
+                "are not implemented for "
+                "TritonAttentionImpl"
+            )
 
         self.fp8_dtype = current_platform.fp8_dtype()
         self.force_prefill_decode_attn = False
-        # TODO: logger.info in a plugin is surpressed?
+        # TODO: logger.info in a plugin is suppressed?
         logger.warning_once("Using vllm-triton-backend attention PLUGIN.")
 
     def forward(
@@ -338,7 +351,8 @@ class TritonAttentionImpl(AttentionImpl):
         if output_scale is not None:
             raise NotImplementedError(
                 "fused output quantization is not yet supported"
-                " for TritonAttentionImpl")
+                " for TritonAttentionImpl"
+            )
 
         if attn_metadata is None:
             # Profiling run.
@@ -360,7 +374,8 @@ class TritonAttentionImpl(AttentionImpl):
 
         if use_prefill_decode_attn:
             key_cache, value_cache = PagedAttention.split_kv_cache(
-                kv_cache, self.num_kv_heads, self.head_size)
+                kv_cache, self.num_kv_heads, self.head_size
+            )
         else:
             key_cache, value_cache = kv_cache.unbind(0)
 
@@ -394,19 +409,21 @@ class TritonAttentionImpl(AttentionImpl):
             key_cache = key_cache.view(self.fp8_dtype)
             value_cache = value_cache.view(self.fp8_dtype)
             num_tokens, num_heads, head_size = query.shape
-            assert layer._q_scale == 1.0, \
-                "A non 1.0 q_scale is not currently supported."
+            assert (
+                layer._q_scale == 1.0
+            ), "A non 1.0 q_scale is not currently supported."
             if not current_platform.is_rocm():
                 # Skip Q quantization on ROCm, since dequantizing back to
                 # f32 in the attention kernel is not supported.
                 query, _ = ops.scaled_fp8_quant(
-                    query.reshape(
-                        (num_tokens, num_heads * head_size)).contiguous(),
-                    layer._q_scale)
+                    query.reshape((num_tokens, num_heads * head_size)).contiguous(),
+                    layer._q_scale,
+                )
             query = query.reshape((num_tokens, num_heads, head_size))
 
-        use_local_attn = \
-            (self.use_irope and attn_metadata.local_attn_metadata is not None)
+        use_local_attn = (
+            self.use_irope and attn_metadata.local_attn_metadata is not None
+        )
 
         if use_local_attn:
             assert attn_metadata.local_attn_metadata is not None
@@ -425,23 +442,25 @@ class TritonAttentionImpl(AttentionImpl):
 
         if use_prefill_decode_attn:
             # Compute attention and update output up to `num_actual_tokens`.
-            chunked_prefill_paged_decode(query=query[:num_actual_tokens],
-                                         key=key[:num_actual_tokens],
-                                         value=value[:num_actual_tokens],
-                                         output=output[:num_actual_tokens],
-                                         kv_cache_dtype=self.kv_cache_dtype,
-                                         key_cache=key_cache,
-                                         value_cache=value_cache,
-                                         block_table=block_table,
-                                         query_start_loc=cu_seqlens_q,
-                                         seq_lens=seqused_k,
-                                         max_seq_len=max_seqlen_k,
-                                         max_query_len=max_seqlen_q,
-                                         k_scale=layer._k_scale,
-                                         v_scale=layer._v_scale,
-                                         alibi_slopes=self.alibi_slopes,
-                                         sliding_window=self.sliding_window[0],
-                                         sm_scale=self.scale)
+            chunked_prefill_paged_decode(
+                query=query[:num_actual_tokens],
+                key=key[:num_actual_tokens],
+                value=value[:num_actual_tokens],
+                output=output[:num_actual_tokens],
+                kv_cache_dtype=self.kv_cache_dtype,
+                key_cache=key_cache,
+                value_cache=value_cache,
+                block_table=block_table,
+                query_start_loc=cu_seqlens_q,
+                seq_lens=seqused_k,
+                max_seq_len=max_seqlen_k,
+                max_query_len=max_seqlen_q,
+                k_scale=layer._k_scale,
+                v_scale=layer._v_scale,
+                alibi_slopes=self.alibi_slopes,
+                sliding_window=self.sliding_window[0],
+                sm_scale=self.scale,
+            )
 
         else:
             descale_shape = (cu_seqlens_q.shape[0] - 1, key.shape[1])

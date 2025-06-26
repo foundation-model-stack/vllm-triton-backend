@@ -72,7 +72,7 @@ def cdiv_fn(x, y):
 
 
 @triton_dejavu.jitcache(
-    # remove cache_lock if dyanmic cache mode should be used
+    # remove cache_lock if dynamic cache mode should be used
     cache_lock=global_cache_lock,
     # list of `tl.constexpr` that should be used as cache index
     check_keys=["USE_ALIBI_SLOPES", "SLIDING_WINDOW", "filter_by_query_len"],

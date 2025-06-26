@@ -313,7 +313,7 @@ def ref_prefix_prefill(
             ref_outputs.append(out)
         else:
             # prefix prefill
-            # construct continous context
+            # construct continuous context
             block_table = block_tables_lst[i]
             seq_len = int(seq_lens_lst[i])
             ctx_len = int(ctx_lens_lst[i])
@@ -450,7 +450,7 @@ def ref_paged_attn(
     for i in range(num_seqs):
         query_len = query_lens[i]
         kv_len = kv_lens[i]
-        q = query[start_idx:start_idx + query_len]
+        q = query[start_idx : start_idx + query_len]
         q *= scale
 
         num_kv_blocks = (kv_len + block_size - 1) // block_size
@@ -468,10 +468,13 @@ def ref_paged_attn(
         empty_mask = torch.ones(query_len, kv_len)
         mask = torch.triu(empty_mask, diagonal=kv_len - query_len + 1).bool()
         if sliding_window is not None:
-            sliding_window_mask = torch.triu(empty_mask,
-                                             diagonal=kv_len -
-                                             (query_len + sliding_window) +
-                                             1).bool().logical_not()
+            sliding_window_mask = (
+                torch.triu(
+                    empty_mask, diagonal=kv_len - (query_len + sliding_window) + 1
+                )
+                .bool()
+                .logical_not()
+            )
             mask |= sliding_window_mask
         if soft_cap is not None and soft_cap > 0:
             attn = soft_cap * torch.tanh(attn / soft_cap)
@@ -483,5 +486,3 @@ def ref_paged_attn(
         start_idx += query_len
 
     return torch.cat(outputs, dim=0)
-
-

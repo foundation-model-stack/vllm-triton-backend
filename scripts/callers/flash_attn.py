@@ -167,6 +167,7 @@ class FlashAttnPrefixPrefillCaller(PrefixPrefillCaller):
         max_seqlen = seq_lens.max()
 
         if torch.version.hip:
+
             def call_and_process_output():
                 # k must have shape (num_blocks, page_block_size, num_heads_k, head_size)
                 return flash_attn_varlen_func(
@@ -184,7 +185,9 @@ class FlashAttnPrefixPrefillCaller(PrefixPrefillCaller):
                     # softcap=0,
                     # fa_version=2, # TODO
                 )
+
         else:
+
             def call_and_process_output():
                 # k must have shape (num_blocks, page_block_size, num_heads_k, head_size)
                 return flash_attn_varlen_func(

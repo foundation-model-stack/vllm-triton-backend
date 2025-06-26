@@ -82,13 +82,19 @@ class BatchComposition(Enum):
     PRE_DEC = 1
     ALTERNATING = 2
 
+
 impl_translate = {i.name: i.value for i in Implementation}
 method_translate = {i.name: i.value for i in BenchmarkMode}
 batch_comp_translate = {i.name: i.value for i in BatchComposition}
 
-dtype_translate = {'float16': torch.float16, 'half': torch.half, 'bfloat16': torch.bfloat16, 
-                   'float': torch.float, 
-                   'float8_e4m3fn': torch.float8_e4m3fn, 'float5_e5m2': torch.float8_e5m2}
+dtype_translate = {
+    "float16": torch.float16,
+    "half": torch.half,
+    "bfloat16": torch.bfloat16,
+    "float": torch.float,
+    "float8_e4m3fn": torch.float8_e4m3fn,
+    "float5_e5m2": torch.float8_e5m2,
+}
 
 # DTYPES = [torch.half, torch.bfloat16, torch.float]
 DTYPES = [torch.float16]
@@ -150,11 +156,26 @@ add_triton_dejavu_envs = True
 debug_flag = False
 
 
-test_setup_vars = ["SEEDS", "BATCH_SIZES", "NUM_HEADS", "SEQUENCE_LENGTHS",
-                   "PREFIX_PREFILL_SHARE_OF_DECODE", "PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL", # "PREFIX_PREFILL_BATCH_COMPOSITION",
-                   "HEAD_SIZES", "BLOCK_SIZES", "NUM_BLOCKS", "CAUSAL_FLASH", "PROMPT_PATTERNS", "MAX_VALUES"]
-                   # "BENCHMARK_MODES", "IMPLEMENTATION_UT" ]
-debug_env_vars = ["STORE_TEST_RESULT_PATH", "TEST_ALLOW_INCORRECT", "TRITON_BACKEND_DEBUG"]
+test_setup_vars = [
+    "SEEDS",
+    "BATCH_SIZES",
+    "NUM_HEADS",
+    "SEQUENCE_LENGTHS",
+    "PREFIX_PREFILL_SHARE_OF_DECODE",
+    "PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL",  # "PREFIX_PREFILL_BATCH_COMPOSITION",
+    "HEAD_SIZES",
+    "BLOCK_SIZES",
+    "NUM_BLOCKS",
+    "CAUSAL_FLASH",
+    "PROMPT_PATTERNS",
+    "MAX_VALUES",
+]
+# "BENCHMARK_MODES", "IMPLEMENTATION_UT" ]
+debug_env_vars = [
+    "STORE_TEST_RESULT_PATH",
+    "TEST_ALLOW_INCORRECT",
+    "TRITON_BACKEND_DEBUG",
+]
 
 # need to deal with envfile here
 if len(sys.argv) >= 1:
@@ -171,7 +192,9 @@ if len(sys.argv) >= 1:
         print(f"\nApplied test config: {envfile_path}")
         env_setting = dotenv_values(envfile_path)
         # filter allowed, convert all to lists
-        env_setting_filtered = {k: json.loads(env_setting[k]) for k in test_setup_vars if k in env_setting}
+        env_setting_filtered = {
+            k: json.loads(env_setting[k]) for k in test_setup_vars if k in env_setting
+        }
         # update all
         globals().update(env_setting_filtered)
         # fix enums
@@ -180,7 +203,9 @@ if len(sys.argv) >= 1:
             DTYPES = [dtype_translate[v] for v in sl]
         if "PREFIX_PREFILL_BATCH_COMPOSITION" in env_setting:
             sl = json.loads(env_setting["PREFIX_PREFILL_BATCH_COMPOSITION"])
-            PREFIX_PREFILL_BATCH_COMPOSITION = [BatchComposition(batch_comp_translate[v]) for v in sl]
+            PREFIX_PREFILL_BATCH_COMPOSITION = [
+                BatchComposition(batch_comp_translate[v]) for v in sl
+            ]
         # iut and methods could come here too, or are overwritten below
         if "IMPLEMENTATION_UT" in env_setting:
             sl = json.loads(env_setting["IMPLEMENTATION_UT"])
@@ -192,9 +217,15 @@ if len(sys.argv) >= 1:
         # set additional flags
         if "STORE_TEST_RESULT_PATH" in env_setting and STORE_TEST_RESULT_PATH is None:
             STORE_TEST_RESULT_PATH = env_setting["STORE_TEST_RESULT_PATH"]
-        if "TEST_ALLOW_INCORRECT" in env_setting and env_setting["TEST_ALLOW_INCORRECT"] == "1":
+        if (
+            "TEST_ALLOW_INCORRECT" in env_setting
+            and env_setting["TEST_ALLOW_INCORRECT"] == "1"
+        ):
             enforce_numerical_correctness = False
-        if "TRITON_BACKEND_DEBUG" in env_setting and env_setting["TRITON_BACKEND_DEBUG"] == "1":
+        if (
+            "TRITON_BACKEND_DEBUG" in env_setting
+            and env_setting["TRITON_BACKEND_DEBUG"] == "1"
+        ):
             debug_flag = True
 
 if len(MY_IUT) > 0:
@@ -215,7 +246,6 @@ if "TRITON_BACKEND_DEBUG" in os.environ:
 for varlen_p in PROMPT_PATTERNS:
     for e in varlen_p:
         assert e <= 1.0
-
 
 
 @pytest.mark.parametrize("batch_size", BATCH_SIZES)
@@ -1028,7 +1058,7 @@ def test_prefix_vllm_v1_attention(
     partial_prefill_seqs = int(np.ceil(prefill_seqs * partial_prefill_share))
     full_prefill_seqs = prefill_seqs - partial_prefill_seqs
 
-    # reuse same prompt pattern for partial promps, but with half the length
+    # reuse same prompt pattern for partial prompts, but with half the length
     len_fraction_half = itertools.cycle([pp * 0.5 for pp in prompt_pattern])
     raw_partial_prefill_ctx_lens = [
         int(np.ceil(l // block_size * next(len_fraction_half))) * block_size
@@ -1053,7 +1083,7 @@ def test_prefix_vllm_v1_attention(
         + init_seq_lens[decode_seqs + partial_prefill_seqs :]
     )
     ctx_lens = (
-        # TODO: substract one from query length or not? (adapt assert below if changing)
+        # TODO: subtract one from query length or not? (adapt assert below if changing)
         [ol - 1 for ol in init_seq_lens[:decode_seqs]]
         # init_seq_lens[:decode_seqs]
         + partial_prefill_ctx_lens[decode_seqs : decode_seqs + partial_prefill_seqs]
@@ -1070,7 +1100,7 @@ def test_prefix_vllm_v1_attention(
     if batch_composition == BatchComposition.ALTERNATING:
         alorder = []
         indexs_remaining = list(range(len(query_lens)))
-        for i in range(len(query_lens)//2):
+        for i in range(len(query_lens) // 2):
             alorder.append(i)
             alorder.append(len(query_lens) - i - 1)
             indexs_remaining.remove(i)

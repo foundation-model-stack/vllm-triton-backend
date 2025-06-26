@@ -20,7 +20,7 @@ def compute_split_l(L, BLOCK_L, P=1, device=None):
         # no need to further split L
         return 1
 
-    # Find mininum num_splits that will result in enough triton programs
+    # Find minimum num_splits that will result in enough triton programs
     # TODO: does num_splits need to be power of 2?
     num_splits = 1
     split_size = L
