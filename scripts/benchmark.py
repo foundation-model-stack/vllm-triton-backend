@@ -94,51 +94,18 @@ DTYPES = [torch.float16]
 SEEDS = [0]
 
 BATCH_SIZES = [1, 2, 4, 8, 16, 32, 64, 128]
-# BATCH_SIZES = [128]
-# BATCH_SIZES = [64]
-# BATCH_SIZES = [4]
-# BATCH_SIZES = [1, 2, 4, 8, 16, 32, 64, 128, 256]
-# BATCH_SIZES = [1, 2, 3, 4, 5, 7, 8, 12, 16, 32, 64, 128]
-
 # order:  num_query_heads, num_kv_heads
-# NUM_HEADS = [(32, 32), (32, 8)]
-NUM_HEADS = [(32, 8)]
-# NUM_HEADS = [(32, 32)]
-
+NUM_HEADS = [(32, 32), (32, 8)]
 SEQUENCE_LENGTHS = [16, 32, 64, 128, 512, 1024, 2048, 4096]
-# SEQUENCE_LENGTHS = [8]
-# SEQUENCE_LENGTHS= [128]
-# SEQUENCE_LENGTHS = [16, 17]
-# SEQUENCE_LENGTHS = [2048]
-# SEQUENCE_LENGTHS = [4096]
-# SEQUENCE_LENGTHS = [4321]
-# SEQUENCE_LENGTHS = [16, 128, 512, 1024, 2048, 4096]
-# SEQUENCE_LENGTHS = [24, 128, 512, 1024, 2048, 4096]
-
-# CONTEXT_LENGTHS = [16, 128, 512, 1024, 2048, 4096]
-# QUERY_LENGTHS = [1, 16, 128, 512, 1024, 2048, 4096]
-# QUERY_LENGTHS = [1, 1024]
-# PREFIX_PREFILL_SHARE_OF_DECODE = [0.5]
-# PREFIX_PREFILL_SHARE_OF_DECODE = [1.0]
-# PREFIX_PREFILL_SHARE_OF_DECODE = [0.0]
-# PREFIX_PREFILL_SHARE_OF_DECODE = [1.0, 0.3]
-# PREFIX_PREFILL_SHARE_OF_DECODE = [0.8]
 PREFIX_PREFILL_SHARE_OF_DECODE = [0.0, 0.5, 1.0]
 PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL = [0.0, 0.5]
-# PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL = [0.5]
-# PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL = [0.0]
 
-PREFIX_PREFILL_BATCH_COMPOSITION = [BatchComposition.ALTERNATING]
-
-# HEAD_SIZES_FLASH = [32, 64, 128]  # only powers of 2!
 HEAD_SIZES = [128]  # only powers of 2! for llama2 & 3
 # head_size * head_numbers = hidden_size
 
-# BLOCK_SIZES = [8, 16, 32]
 BLOCK_SIZES = [16]
 # if torch.version.hip:
 #     BLOCK_SIZES = [16, 128]
-# NUM_BLOCKS = [8, 16, 32]
 NUM_BLOCKS = [4321]  # "arbitrary values for testing..."
 
 # options most likely not used...but keep for now?
@@ -146,7 +113,6 @@ CAUSAL_FLASH = [True]  # vLLM only needs causal=True
 
 PROMPT_PATTERNS = []
 PROMPT_PATTERNS.append([1.0])
-# PROMPT_PATTERNS.append([1.0, 0.4, 0.5, 1.0, 0.2])
 PROMPT_PATTERNS.append([0.1, 0.4, 0.5, 1.0, 0.2])
 
 IMPLEMENTATION_UT = [
@@ -167,16 +133,33 @@ IMPLEMENTATION_UT = [
 MAX_VALUES = [1.0]
 BENCHMARK_MODES = [BenchmarkMode.CUDA_EVENTS, BenchmarkMode.CUDA_GRAPHS]
 
+device = "cuda:0"
+gpu_name = get_gpu_label()
+
+do_benchmarks = True
+# do_benchmarks = False
+quantiles = [0.5, 0.2, 0.8]
+# should maybe also be controlled via env variable
+force_dump_dataframes = False
+enforce_numerical_correctness = True
+# enforce_numerical_correctness = False
+do_profiling = False  # will add overhead to kernel runtime measured via CUDA_EVENTS
+store_hatchet = False
+add_triton_dejavu_envs = True
+debug_flag = False
+
+
 test_setup_vars = ["SEEDS", "BATCH_SIZES", "NUM_HEADS", "SEQUENCE_LENGTHS",
                    "PREFIX_PREFILL_SHARE_OF_DECODE", "PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL", # "PREFIX_PREFILL_BATCH_COMPOSITION",
                    "HEAD_SIZES", "BLOCK_SIZES", "NUM_BLOCKS", "CAUSAL_FLASH", "PROMPT_PATTERNS", "MAX_VALUES"]
                    # "BENCHMARK_MODES", "IMPLEMENTATION_UT" ]
+debug_env_vars = ["STORE_TEST_RESULT_PATH", "TEST_ALLOW_INCORRECT", "TRITON_BACKEND_DEBUG"]
 
 # need to deal with envfile here
 if len(sys.argv) >= 1:
     envfile_name = None
     for ca in sys.argv[1:]:
-        if ".env" in ca:
+        if ".conf" in ca:
             envfile_name = ca
             break
     if envfile_name is not None:
@@ -184,9 +167,8 @@ if len(sys.argv) >= 1:
         import json
 
         envfile_path = os.path.abspath(envfile_name)
-        print(f"\t...applied test setup: {envfile_path}")
+        print(f"\nApplied test config: {envfile_path}")
         env_setting = dotenv_values(envfile_path)
-        json.dump(env_setting, sys.stdout)
         # filter allowed, convert all to lists
         env_setting_filtered = {k: json.loads(env_setting[k]) for k in test_setup_vars if k in env_setting}
         # update all
@@ -206,6 +188,13 @@ if len(sys.argv) >= 1:
             sl = json.loads(env_setting["BENCHMARK_MODES"])
             BENCHMARK_MODES = [BenchmarkMode(method_translate[v]) for v in sl]
 
+        # set additional flags
+        if "STORE_TEST_RESULT_PATH" in env_setting and STORE_TEST_RESULT_PATH is None:
+            STORE_TEST_RESULT_PATH = env_setting["STORE_TEST_RESULT_PATH"]
+        if "TEST_ALLOW_INCORRECT" in env_setting and env_setting["TEST_ALLOW_INCORRECT"] == "1":
+            enforce_numerical_correctness = False
+        if "TRITON_BACKEND_DEBUG" in env_setting and env_setting["TRITON_BACKEND_DEBUG"] == "1":
+            debug_flag = True
 
 if len(MY_IUT) > 0:
     IMPLEMENTATION_UT = []
@@ -215,28 +204,15 @@ if len(MY_METHODS) > 0:
     BENCHMARK_MODES = []
     for cb_value in MY_METHODS:
         BENCHMARK_MODES.append(BenchmarkMode(method_translate[cb_value]))
+if os.getenv("TEST_ALLOW_INCORRECT", "0") == "1":
+    enforce_numerical_correctness = False
+debug_flag = os.getenv("TRITON_BACKEND_DEBUG", "0") == "1"
 
 
 for varlen_p in PROMPT_PATTERNS:
     for e in varlen_p:
         assert e <= 1.0
 
-device = "cuda:0"
-gpu_name = get_gpu_label()
-
-do_benchmarks = True
-# do_benchmarks = False
-quantiles = [0.5, 0.2, 0.8]
-# should maybe also be controlled via env variable
-force_dump_dataframes = False
-enforce_numerical_correctness = True
-# enforce_numerical_correctness = False
-if os.getenv("TEST_ALLOW_INCORRECT", "0") == "1":
-    enforce_numerical_correctness = False
-do_profiling = False  # will add overhead to kernel runtime measured via CUDA_EVENTS
-store_hatchet = False
-debug_flag = os.getenv("TRITON_BACKEND_DEBUG", "0") == "1"
-add_triton_dejavu_envs = True
 
 
 @pytest.mark.parametrize("batch_size", BATCH_SIZES)
@@ -1591,7 +1567,7 @@ if __name__ == "__main__":
         args = [__file__]
         filter_args = ""
         for ca in sys.argv[1:]:
-            if ".env" in ca:
+            if ".conf" in ca:
                 # already processed
                 continue
             if ca[0] == "-":
