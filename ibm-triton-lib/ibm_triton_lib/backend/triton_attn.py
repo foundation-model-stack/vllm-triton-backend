@@ -26,9 +26,7 @@ and the PagedAttention implementation (https://github.com/vllm-project/vllm/blob
 
 """
 
-# SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""Attention layer with PagedAttention and Triton prefix prefill."""
+import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
@@ -41,7 +39,7 @@ from vllm.attention.backends.abstract import (AttentionBackend, AttentionImpl,
 from vllm.attention.ops.chunked_prefill_paged_decode import (
     chunked_prefill_paged_decode)
 from vllm.attention.ops.paged_attn import PagedAttention
-from vllm.attention.ops.triton_unified_attention import unified_attention
+from ibm_triton_lib.kernels import unified_attention
 from vllm.logger import init_logger
 from vllm.platforms import current_platform
 from vllm.v1.attention.backends.flash_attn import FlashAttentionMetadata
@@ -54,7 +52,7 @@ from vllm.v1.worker.block_table import BlockTable
 if TYPE_CHECKING:
     from vllm.v1.worker.gpu_model_runner import GPUModelRunner
 
-logger = init_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -309,8 +307,9 @@ class TritonAttentionImpl(AttentionImpl):
                                       "TritonAttentionImpl")
 
         self.fp8_dtype = current_platform.fp8_dtype()
-        self.force_prefill_decode_attn = \
-            envs.VLLM_V1_USE_PREFILL_DECODE_ATTENTION
+        self.force_prefill_decode_attn = False
+        # TODO: logger.info in a plugin is surpressed?
+        logger.warning_once("Using vllm-triton-backend attention PLUGIN.")
 
     def forward(
         self,
