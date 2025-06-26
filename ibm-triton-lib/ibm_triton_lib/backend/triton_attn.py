@@ -322,7 +322,7 @@ class TritonAttentionImpl(AttentionImpl):
         self.fp8_dtype = current_platform.fp8_dtype()
         self.force_prefill_decode_attn = False
         # TODO: logger.info in a plugin is suppressed?
-        logger.warning_once("Using vllm-triton-backend attention PLUGIN.")
+        logger.warning_once("Using vllm-triton-backend attention PLUGIN V1.")
 
     def forward(
         self,
