@@ -87,15 +87,6 @@ impl_translate = {i.name: i.value for i in Implementation}
 method_translate = {i.name: i.value for i in BenchmarkMode}
 batch_comp_translate = {i.name: i.value for i in BatchComposition}
 
-dtype_translate = {
-    "float16": torch.float16,
-    "half": torch.half,
-    "bfloat16": torch.bfloat16,
-    "float": torch.float,
-    "float8_e4m3fn": torch.float8_e4m3fn,
-    "float5_e5m2": torch.float8_e5m2,
-}
-
 # DTYPES = [torch.half, torch.bfloat16, torch.float]
 DTYPES = [torch.float16]
 SEEDS = [0]
@@ -106,6 +97,7 @@ NUM_HEADS = [(32, 32), (32, 8)]
 SEQUENCE_LENGTHS = [16, 32, 64, 128, 512, 1024, 2048, 4096]
 PREFIX_PREFILL_SHARE_OF_DECODE = [0.0, 0.5, 1.0]
 PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL = [0.0, 0.5]
+PREFIX_PREFILL_BATCH_COMPOSITION = [BatchComposition.ALTERNATING]
 
 HEAD_SIZES = [128]  # only powers of 2! for llama2 & 3
 # head_size * head_numbers = hidden_size
@@ -121,6 +113,10 @@ CAUSAL_FLASH = [True]  # vLLM only needs causal=True
 PROMPT_PATTERNS = []
 PROMPT_PATTERNS.append([1.0])
 PROMPT_PATTERNS.append([0.1, 0.4, 0.5, 1.0, 0.2])
+
+STATE_DIM = [128]
+STATE_N_GROUPS = [1]
+HAS_INITIAL_STATE = [True]
 
 IMPLEMENTATION_UT = [
     Implementation.TRITON_2D,
@@ -169,6 +165,8 @@ test_setup_vars = [
     "CAUSAL_FLASH",
     "PROMPT_PATTERNS",
     "MAX_VALUES",
+    "STATE_DIM",
+    "STATE_N_GROUPS",
 ]
 # "BENCHMARK_MODES", "IMPLEMENTATION_UT" ]
 debug_env_vars = [
@@ -200,7 +198,7 @@ if len(sys.argv) >= 1:
         # fix enums
         if "DTYPES" in env_setting:
             sl = json.loads(env_setting["DTYPES"])
-            DTYPES = [dtype_translate[v] for v in sl]
+            DTYPES = [getattr(torch, v) for v in sl]
         if "PREFIX_PREFILL_BATCH_COMPOSITION" in env_setting:
             sl = json.loads(env_setting["PREFIX_PREFILL_BATCH_COMPOSITION"])
             PREFIX_PREFILL_BATCH_COMPOSITION = [
@@ -213,6 +211,9 @@ if len(sys.argv) >= 1:
         if "BENCHMARK_MODES" in env_setting:
             sl = json.loads(env_setting["BENCHMARK_MODES"])
             BENCHMARK_MODES = [BenchmarkMode(method_translate[v]) for v in sl]
+        if "HAS_INITIAL_STATE" in env_setting:
+            sl = json.loads(env_setting["HAS_INITIAL_STATE"])
+            HAS_INITIAL_STATE = [True if v == "True" else False for v in sl]
 
         # set additional flags
         if "STORE_TEST_RESULT_PATH" in env_setting and STORE_TEST_RESULT_PATH is None:
@@ -1490,6 +1491,198 @@ def test_prefix_vllm_v1_attention(
         finally:
             if inner_exception is not None:
                 raise inner_exception
+
+
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+@pytest.mark.parametrize("num_heads", NUM_HEADS)
+@pytest.mark.parametrize("head_size", HEAD_SIZES)
+@pytest.mark.parametrize("dstate", STATE_DIM)
+@pytest.mark.parametrize("n_groups", STATE_N_GROUPS)
+@pytest.mark.parametrize("has_initial_state", HAS_INITIAL_STATE)
+@pytest.mark.parametrize("dtype", DTYPES)
+@pytest.mark.parametrize("seed", SEEDS)
+# @pytest.mark.parametrize("implementation", IMPLEMENTATION_UT)
+@pytest.mark.parametrize("benchmark_mode", BENCHMARK_MODES)
+@torch.inference_mode()
+def test_mamba_ssm(
+    capsys,
+    request,
+    batch_size,
+    num_heads,
+    head_size,
+    dstate,
+    n_groups,
+    has_initial_state,
+    dtype,
+    seed,
+    # implementation,
+    benchmark_mode,
+):
+    my_id = request.node.nodeid.split("::")[-1]
+    my_name = my_id.split("[")[0]
+    my_instance = my_id.split("[")[1][:-1]
+
+    # if torch.cuda.get_device_capability()[0] < 8:
+    #     # reduce operations are not supported (?)
+    #     pytest.skip()
+
+    # TODO 
+    assert num_heads[0] == num_heads[1]
+    nheads = num_heads[0]
+    headdim = head_size
+    
+    def generate_dummy_data(batch_size):
+
+        hidden_states = torch.randn(batch_size, nheads, headdim, dtype=dtype, device=device)
+        A = torch.rand(nheads, dtype=dtype, device=device)
+        B = torch.randn(batch_size, dstate, dtype=dtype, device=device)
+        C = torch.randn(batch_size, dstate, dtype=dtype, device=device)
+        D = torch.randn(nheads, dtype=dtype, device=device)
+        dt = torch.randn(batch_size, nheads, dtype=dtype, device=device)
+        dt_bias = torch.randn(nheads, dtype=dtype, device=device)
+        state_indices_tensor = torch.arange(batch_size, dtype=torch.int32, device=device)
+        
+        A = A[:, None, ...][:, :, None].expand(
+            -1, headdim, dstate).to(dtype=torch.float32)
+        dt = dt[:, :, None].expand(-1, -1, headdim)
+        dt_bias = dt_bias[:, None, ...].expand(-1, headdim)
+        D = D[:, None, ...].expand(-1, headdim)
+        B = B.view(-1, n_groups, B.shape[1] // n_groups)
+        C = C.view(-1, n_groups, C.shape[1] // n_groups)
+
+        initial_states = (
+            torch.randn(batch_size, nheads, headdim, dstate, dtype=dtype, device=device)
+            if has_initial_state else None
+        )
+
+        return (
+            hidden_states, initial_states, 
+            A, B, C, D, dt, dt_bias,
+            state_indices_tensor,
+        )
+
+    captured = ""
+    try:
+        (
+            hidden_states, initial_states, 
+            A, B, C, D, dt, dt_bias, 
+            state_indices_tensor,
+        ) = generate_dummy_data(batch_size)
+
+        from ibm_triton_lib.kernels import selective_state_update
+    
+        # TODO?
+        # warm up
+        warmup_start = datetime.now()
+        for _ in range(3):
+                _ = selective_state_update(
+                    initial_states,
+                    hidden_states,
+                    dt,
+                    A,
+                    B,
+                    C,
+                    D,
+                    z=None,
+                    dt_bias=dt_bias,
+                    dt_softplus=True,
+                    state_batch_indices=state_indices_tensor,
+                )
+        print (f"warmup time {datetime.now()-warmup_start}")
+
+        if capsys is not None:
+            captured_raw = capsys.readouterr()  # returns stdout, stderr
+            for l in captured_raw:
+                if len(l) > 0:
+                    # captured += l  # + '|'
+                    captured += l + " "
+        # # compare
+        # if enforce_numerical_correctness:
+        #     # for better reports
+        #     triton.testing.assert_close(ref_output, output, atol=ATOL, rtol=RTOL)
+        #     allclose_pass = True
+        # else:
+        #     allclose_pass = torch.allclose(ref_output, output, atol=ATOL, rtol=RTOL)
+        
+        call_func_under_test = lambda : selective_state_update(
+                initial_states,
+                hidden_states,
+                dt,
+                A,
+                B,
+                C,
+                D,
+                z=None,
+                dt_bias=dt_bias,
+                dt_softplus=True,
+                state_batch_indices=state_indices_tensor,
+            )
+
+        # benchmark only correct results
+        if do_benchmarks:
+            if my_name not in pytest.global_pds:
+                pytest.global_pds[my_name] = pd.DataFrame()
+
+            # equals to defaults
+            warmup_rep = 25
+            bench_rep = 100
+            ms, min_ms, max_ms = measure_benchmarks(
+                benchmark_mode, call_func_under_test, warmup_rep, bench_rep
+            )
+
+            record = {
+                "batch_size": batch_size,
+                "num_heads": nheads,
+                "head_size": head_size,
+                "dstate": dstate,
+                "n_groups": n_groups,
+                "has_initial_state": has_initial_state,
+                "dtype": dtype,
+                # "implementation": implementation,
+                "ms": ms,
+                "min_ms": min_ms,
+                "max_ms": max_ms,
+                "benchmark_mode": benchmark_mode,
+                # "allclose_pass": allclose_pass,
+                # "ATOL": ATOL,
+                # "RTOL": RTOL,
+                # "proton_count": proton_count,
+                # "proton_ns": proton_ns,
+                # "proton_util_compute": proton_util_compute,
+                # "proton_util_bw": proton_util_bw,
+                "captured": captured,
+            }
+
+            if add_triton_dejavu_envs:
+                dejavu_envs = {}
+                _skip_dejavu_envs = [
+                    "_TRITON_DEJAVU_DETERMINED_CUDA_VERSION",
+                    "DEBUG",
+                    "STORAGE",
+                ]
+                for env in os.environ.keys():
+                    if "TRITON_DEJAVU_" in env:
+                        if any([skip_s in env for skip_s in _skip_dejavu_envs]):
+                            continue
+                        dejavu_envs[env] = os.environ[env]
+                record.update(dejavu_envs)
+
+            pytest.global_pds[my_name] = pd.concat(
+                [pytest.global_pds[my_name], pd.Series(record).to_frame().T]
+            ).reset_index(drop=True)
+
+            if pytest.global_pd_file_prefix is not None:
+                filename = os.path.abspath(
+                    f"{pytest.global_pd_file_prefix}/{my_name}.csv"
+                )
+                write_df_and_chmod(pytest.global_pds[my_name], filename)
+
+    except Exception as e:
+        print("\ncaptured:")
+        print(captured)
+        print("\nexception:")
+        print(e)
+        raise e
 
 
 def measure_benchmarks(
