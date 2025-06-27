@@ -11,6 +11,7 @@ import torch
 import triton
 import triton.language as tl
 
+import os
 import triton_dejavu
 
 
@@ -61,6 +62,27 @@ for m in [16, 32, 64, 128]:
 
 
 #@triton.autotune(configs=configs, key=["tpa_test_q", "tpa_test_k"])
+@triton_dejavu.autotune(
+    config_space=triton_dejavu.ConfigSpace(
+        {
+            'BLOCK_N': [16, 32, 64, 128, 256, 512],
+            'BLOCK_M': [16, 32, 64, 128, 256, 512]
+        },
+    num_warps=[2, 4, 8],
+    num_stages=[1, 2, 4, 6, 8],
+    ),
+    key = ["tpa_test_q", "tpa_test_k",
+           "num_query_heads", "num_queries_per_kv", 
+           "BLOCK_SIZE", "HEAD_SIZE", "HEAD_SIZE_PADDED",
+           "SLIDING_WINDOW",
+           "stride_k_cache_3", "stride_v_cache_3"
+           ],
+    custom_data_storage=os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "dejavu_data")),
+    use_cuda_graph=True,
+    use_bo=True,
+    search_max_search_t=360,
+)
 # @triton_dejavu.jitcache(
 #     check_keys=[],
 #     check_specialization=["num_seqs"],
@@ -784,8 +806,8 @@ def unified_attention(
             num_seqs=num_seqs,
             tpa_test_q=tpa_test_q,
             tpa_test_k=tpa_test_k,
-            BLOCK_M=BLOCK_M,
-            BLOCK_N=BLOCK_N,
+            # BLOCK_M=BLOCK_M,
+            # BLOCK_N=BLOCK_N,
         )
     else:
         # for initial version, NUM_SEGMENTS = 16 is chosen as a default
