@@ -61,24 +61,24 @@ for m in [16, 32, 64, 128]:
 
 
 #@triton.autotune(configs=configs, key=["tpa_test_q", "tpa_test_k"])
-@triton_dejavu.jitcache(
-    check_keys=[],
-    check_specialization=["num_seqs"],
-    assume_const=[
-        "scale",
-        "k_scale",
-        "v_scale",
-        "query_stride_1",
-        "output_stride_1",
-        "stride_k_cache_0",
-        "stride_k_cache_1",
-        "stride_k_cache_2",
-        "stride_k_cache_4",
-        "stride_v_cache_0",
-        "stride_v_cache_1",
-        "stride_v_cache_2",
-    ],
-)
+# @triton_dejavu.jitcache(
+#     check_keys=[],
+#     check_specialization=["num_seqs"],
+#     assume_const=[
+#         "scale",
+#         "k_scale",
+#         "v_scale",
+#         "query_stride_1",
+#         "output_stride_1",
+#         "stride_k_cache_0",
+#         "stride_k_cache_1",
+#         "stride_k_cache_2",
+#         "stride_k_cache_4",
+#         "stride_v_cache_0",
+#         "stride_v_cache_1",
+#         "stride_v_cache_2",
+#     ],
+# )
 @triton.jit
 def kernel_unified_attention_2d(
     output_ptr,  # [num_tokens, num_query_heads, head_size]
