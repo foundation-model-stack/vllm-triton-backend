@@ -151,9 +151,9 @@ def main(
     torch.cuda.synchronize()
     end_time = time()
     elapsed_time = (end_time - start_time) * 1000 # ms
-    print (f"{elapsed_time=:.3f} mseconds")
+    print (f"total {elapsed_time=:.3f} mseconds")
     iter_time = elapsed_time / repeats # ms
-    print (f"{iter_time=:.3f} mseconds")
+    print (f"per iter:{iter_time=:.3f} mseconds")
 
 if __name__ == '__main__':
     import fire
