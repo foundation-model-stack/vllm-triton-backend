@@ -13,6 +13,9 @@ from vllm.attention.backends.utils import PAD_SLOT_ID
 import triton
 import triton.language as tl
 
+import os
+import triton_dejavu
+
 # TRITON3 = HAS_TRITON and (version.parse(triton.__version__)
 #                           >= version.parse("3.0.0"))
 # 
@@ -40,6 +43,24 @@ def softplus(dt):
 })
 @triton.heuristics(
     {"BLOCK_SIZE_DSTATE": lambda args: triton.next_power_of_2(args["dstate"])})
+@triton_dejavu.autotune(
+    config_space=triton_dejavu.ConfigSpace(
+        {
+            'BLOCK_SIZE_M': [4, 8, 16, 32, 64]
+        },
+    num_warps=[2, 4, 8],
+    num_stages=[1, 2, 4, 6, 8],
+    ),
+    key = ["dstate", "BLOCK_SIZE_DSTATE",
+           "dim", "nheads_ngroups_ratio",
+           # TODO strides? 
+           ],
+    custom_data_storage=os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "dejavu_data")),
+    use_cuda_graph=True,
+    use_bo=True,
+    search_max_search_t=360,
+)
 @triton.jit
 def _selective_scan_update_kernel(
     # Pointers to matrices
@@ -58,9 +79,9 @@ def _selective_scan_update_kernel(
     # Matrix dimensions
     batch,
     nheads,
-    dim,
-    dstate,
-    nheads_ngroups_ratio,
+    dim: tl.constexpr,
+    dstate: tl.constexpr,
+    nheads_ngroups_ratio: tl.constexpr,
     # Strides
     stride_state_batch,
     stride_state_head,
@@ -94,12 +115,13 @@ def _selective_scan_update_kernel(
     # Meta-parameters
     DT_SOFTPLUS: tl.constexpr,
     TIE_HDIM: tl.constexpr,
-    BLOCK_SIZE_M: tl.constexpr,
     HAS_DT_BIAS: tl.constexpr,
     HAS_D: tl.constexpr,
     HAS_Z: tl.constexpr,
     HAS_STATE_BATCH_INDICES: tl.constexpr,
     BLOCK_SIZE_DSTATE: tl.constexpr,
+    # autotune arguments last!
+    BLOCK_SIZE_M: tl.constexpr,
 ):
     pid_m = tl.program_id(axis=0)
     pid_b = tl.program_id(axis=1)
@@ -272,10 +294,10 @@ def selective_state_update(state,
                  (0, 0, 0))
     # We don't want autotune since it will overwrite the state
     # We instead tune by hand.
-    BLOCK_SIZE_M, num_warps = ((32, 4) if dstate <= 16 else
-                               ((16, 4) if dstate <= 32 else
-                                ((8, 4) if dstate <= 64 else
-                                 ((4, 4) if dstate <= 128 else ((4, 8))))))
+    # BLOCK_SIZE_M, num_warps = ((32, 4) if dstate <= 16 else
+    #                            ((16, 4) if dstate <= 32 else
+    #                             ((8, 4) if dstate <= 64 else
+    #                              ((4, 4) if dstate <= 128 else ((4, 8))))))
     tie_hdim = A.stride(-1) == 0 and A.stride(-2) == 0 and dt.stride(
         -1) == 0 and dt_bias.stride(-1) == 0
     with torch.cuda.device(x.device.index):
@@ -327,8 +349,8 @@ def selective_state_update(state,
             out.stride(2),
             dt_softplus,
             tie_hdim,
-            BLOCK_SIZE_M,
-            num_warps=num_warps,
+            # BLOCK_SIZE_M,
+            # num_warps=num_warps,
         )
     if not has_heads:
         out = out.squeeze(1)
