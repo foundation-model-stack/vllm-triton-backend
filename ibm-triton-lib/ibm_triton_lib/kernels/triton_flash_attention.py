@@ -1416,7 +1416,7 @@ def triton_wrapper_forward_prefill(
     # number of compute units available
     NUM_CU = torch.cuda.get_device_properties("cuda").multi_processor_count
 
-    # TODO: test persitent
+    # TODO: test persistent
     if metadata.persistent is not None:
         grid = lambda META: (
             min(

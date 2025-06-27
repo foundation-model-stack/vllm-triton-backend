@@ -61,4 +61,6 @@ class TritonPlatform(CudaPlatform):
         use_v1,
         use_mla,
     ) -> str:
+        if not envs.VLLM_USE_V1:
+            raise RuntimeError("vllm-triton-backend plugin only supports vLLM V1")
         return "ibm_triton_lib.backend.triton_attn.TritonAttentionBackend"

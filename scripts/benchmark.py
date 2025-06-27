@@ -39,18 +39,17 @@ from vllm_utils import (
     ref_prefix_prefill,
     ref_reshape_and_cache_flash,
     ref_reshape_and_cache,
+    ref_paged_attn,
 )
 from torch_utils import get_gpu_label, end2end_bench
 from ibm_triton_lib.utils.triton_utils import get_runtime_label
 from roofline.proton_viewer import parse
 
+# let the three most used variables be overwritten separately
 STORE_TEST_RESULT_PATH = os.environ.get("STORE_TEST_RESULT_PATH", None)
 MY_IUT = [
     e for e in os.environ.get("MY_IUT", "").split(",") if len(e) > 0
 ]  # my implementations under test (IUT)
-MY_MAX_VALUES = [
-    e for e in os.environ.get("MY_MAX_VALUES", "").split(",") if len(e) > 0
-]
 MY_METHODS = [e for e in os.environ.get("MY_METHODS", "").split(",") if len(e) > 0]
 
 
@@ -78,66 +77,50 @@ class BenchmarkMode(Enum):
     TORCH_COMPILE = 3
 
 
+class BatchComposition(Enum):
+    DEC_PRE = 0
+    PRE_DEC = 1
+    ALTERNATING = 2
+
+
+impl_translate = {i.name: i.value for i in Implementation}
+method_translate = {i.name: i.value for i in BenchmarkMode}
+batch_comp_translate = {i.name: i.value for i in BatchComposition}
+
+dtype_translate = {
+    "float16": torch.float16,
+    "half": torch.half,
+    "bfloat16": torch.bfloat16,
+    "float": torch.float,
+    "float8_e4m3fn": torch.float8_e4m3fn,
+    "float5_e5m2": torch.float8_e5m2,
+}
+
 # DTYPES = [torch.half, torch.bfloat16, torch.float]
 DTYPES = [torch.float16]
 SEEDS = [0]
 
 BATCH_SIZES = [1, 2, 4, 8, 16, 32, 64, 128]
-# BATCH_SIZES = [128]
-# BATCH_SIZES = [64]
-# BATCH_SIZES = [4]
-# BATCH_SIZES = [1, 2, 4, 8, 16, 32, 64, 128, 256]
-# BATCH_SIZES = [1, 2, 3, 4, 5, 7, 8, 12, 16, 32, 64, 128]
-
 # order:  num_query_heads, num_kv_heads
-# NUM_HEADS = [(32, 32), (32, 8)]
-NUM_HEADS = [(32, 8)]
-# NUM_HEADS = [(32, 32)]
-
+NUM_HEADS = [(32, 32), (32, 8)]
 SEQUENCE_LENGTHS = [16, 32, 64, 128, 512, 1024, 2048, 4096]
-# SEQUENCE_LENGTHS = [8]
-# SEQUENCE_LENGTHS= [128]
-# SEQUENCE_LENGTHS = [16, 17]
-# SEQUENCE_LENGTHS = [2048]
-# SEQUENCE_LENGTHS = [4096]
-# SEQUENCE_LENGTHS = [4321]
-# SEQUENCE_LENGTHS = [16, 128, 512, 1024, 2048, 4096]
-# SEQUENCE_LENGTHS = [24, 128, 512, 1024, 2048, 4096]
-
-# CONTEXT_LENGTHS = [16, 128, 512, 1024, 2048, 4096]
-# QUERY_LENGTHS = [1, 16, 128, 512, 1024, 2048, 4096]
-# QUERY_LENGTHS = [1, 1024]
-# PREFIX_PREFILL_SHARE_OF_DECODE = [0.5]
-# PREFIX_PREFILL_SHARE_OF_DECODE = [1.0]
-# PREFIX_PREFILL_SHARE_OF_DECODE = [0.0]
-PREFIX_PREFILL_SHARE_OF_DECODE = [1.0, 0.3]
-# PREFIX_PREFILL_SHARE_OF_DECODE = [0.8]
-# PREFIX_PREFILL_SHARE_OF_DECODE = [0.0, 0.5, 1.0]
+PREFIX_PREFILL_SHARE_OF_DECODE = [0.0, 0.5, 1.0]
 PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL = [0.0, 0.5]
-# PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL = [0.5]
-# PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL = [0.0]
 
-# HEAD_SIZES_FLASH = [32, 64, 128]  # only powers of 2!
 HEAD_SIZES = [128]  # only powers of 2! for llama2 & 3
 # head_size * head_numbers = hidden_size
 
-# BLOCK_SIZES = [8, 16, 32]
 BLOCK_SIZES = [16]
 # if torch.version.hip:
 #     BLOCK_SIZES = [16, 128]
-# NUM_BLOCKS = [8, 16, 32]
 NUM_BLOCKS = [4321]  # "arbitrary values for testing..."
 
 # options most likely not used...but keep for now?
 CAUSAL_FLASH = [True]  # vLLM only needs causal=True
 
 PROMPT_PATTERNS = []
-# PROMPT_PATTERNS.append([1.0])
-# PROMPT_PATTERNS.append([1.0, 0.4, 0.5, 1.0, 0.2])
+PROMPT_PATTERNS.append([1.0])
 PROMPT_PATTERNS.append([0.1, 0.4, 0.5, 1.0, 0.2])
-
-impl_translate = {i.name: i.value for i in Implementation}
-method_translate = {i.name: i.value for i in BenchmarkMode}
 
 IMPLEMENTATION_UT = [
     Implementation.TRITON_2D,
@@ -157,68 +140,6 @@ IMPLEMENTATION_UT = [
 MAX_VALUES = [1.0]
 BENCHMARK_MODES = [BenchmarkMode.CUDA_EVENTS, BenchmarkMode.CUDA_GRAPHS]
 
-if os.getenv("NGL_FULL_TEST", "0") == "1":
-    # IMPLEMENTATION_UT = [
-    #     Implementation.VLLM_CUDA_V1,
-    #     Implementation.ZRL_TRITON,
-    #     Implementation.ZRL_TRITON_3D,
-    # ]
-    BENCHMARK_MODES = [
-        BenchmarkMode.CUDA_EVENTS,
-        BenchmarkMode.END2END,
-        BenchmarkMode.CUDA_GRAPHS,
-    ]
-    # SEQUENCE_LENGTHS = [32, 64, 128, 256, 512, 1024, 2048, 4096, 8192]
-    SEQUENCE_LENGTHS = [32, 64, 128, 256, 512, 1024, 2048, 4096, 8192]
-    # BATCH_SIZES = [1, 2, 4, 8, 16, 32, 64, 128, 256]
-    BATCH_SIZES = [1, 2, 4, 8, 16, 32, 64, 128]
-elif os.getenv("NGL_FULL_TEST", "0") == "2":
-    # IMPLEMENTATION_UT = [
-    #     Implementation.VLLM_CUDA_V1,
-    #     Implementation.ZRL_TRITON,
-    #     Implementation.ZRL_TRITON_3D,
-    # ]
-    BENCHMARK_MODES = [
-        BenchmarkMode.CUDA_EVENTS,
-        BenchmarkMode.END2END,
-        BenchmarkMode.CUDA_GRAPHS,
-    ]
-    SEQUENCE_LENGTHS = [32, 44, 54, 64, 511, 512, 513, 648, 912, 1024, 2025, 3030, 4096]
-    # SEQUENCE_LENGTHS = [6321]
-    BATCH_SIZES = [
-        1,
-        2,
-        4,
-        8,
-        16,
-        28,
-        32,
-        54,
-        64,
-        96,
-        128,
-    ]
-    # BATCH_SIZES = [102]
-    MAX_VALUES = [1.0]
-
-if len(MY_IUT) > 0:
-    IMPLEMENTATION_UT = []
-    for ci_value in MY_IUT:
-        IMPLEMENTATION_UT.append(Implementation(impl_translate[ci_value]))
-if len(MY_MAX_VALUES) > 0:
-    MAX_VALUES = []
-    for cm_value in MY_MAX_VALUES:
-        MAX_VALUES.append(float(cm_value))
-if len(MY_METHODS) > 0:
-    BENCHMARK_MODES = []
-    for cb_value in MY_METHODS:
-        BENCHMARK_MODES.append(BenchmarkMode(method_translate[cb_value]))
-
-
-for varlen_p in PROMPT_PATTERNS:
-    for e in varlen_p:
-        assert e <= 1.0
-
 device = "cuda:0"
 gpu_name = get_gpu_label()
 
@@ -229,12 +150,102 @@ quantiles = [0.5, 0.2, 0.8]
 force_dump_dataframes = False
 enforce_numerical_correctness = True
 # enforce_numerical_correctness = False
-if os.getenv("TEST_ALLOW_INCORRECT", "0") == "1":
-    enforce_numerical_correctness = False
 do_profiling = False  # will add overhead to kernel runtime measured via CUDA_EVENTS
 store_hatchet = False
-debug_flag = os.getenv("TRITON_BACKEND_DEBUG", "0") == "1"
 add_triton_dejavu_envs = True
+debug_flag = False
+
+
+test_setup_vars = [
+    "SEEDS",
+    "BATCH_SIZES",
+    "NUM_HEADS",
+    "SEQUENCE_LENGTHS",
+    "PREFIX_PREFILL_SHARE_OF_DECODE",
+    "PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL",  # "PREFIX_PREFILL_BATCH_COMPOSITION",
+    "HEAD_SIZES",
+    "BLOCK_SIZES",
+    "NUM_BLOCKS",
+    "CAUSAL_FLASH",
+    "PROMPT_PATTERNS",
+    "MAX_VALUES",
+]
+# "BENCHMARK_MODES", "IMPLEMENTATION_UT" ]
+debug_env_vars = [
+    "STORE_TEST_RESULT_PATH",
+    "TEST_ALLOW_INCORRECT",
+    "TRITON_BACKEND_DEBUG",
+]
+
+# need to deal with envfile here
+if len(sys.argv) >= 1:
+    envfile_name = None
+    for ca in sys.argv[1:]:
+        if ".conf" in ca:
+            envfile_name = ca
+            break
+    if envfile_name is not None:
+        from dotenv import dotenv_values
+        import json
+
+        envfile_path = os.path.abspath(envfile_name)
+        print(f"\nApplied test config: {envfile_path}")
+        env_setting = dotenv_values(envfile_path)
+        # filter allowed, convert all to lists
+        env_setting_filtered = {
+            k: json.loads(env_setting[k]) for k in test_setup_vars if k in env_setting
+        }
+        # update all
+        globals().update(env_setting_filtered)
+        # fix enums
+        if "DTYPES" in env_setting:
+            sl = json.loads(env_setting["DTYPES"])
+            DTYPES = [dtype_translate[v] for v in sl]
+        if "PREFIX_PREFILL_BATCH_COMPOSITION" in env_setting:
+            sl = json.loads(env_setting["PREFIX_PREFILL_BATCH_COMPOSITION"])
+            PREFIX_PREFILL_BATCH_COMPOSITION = [
+                BatchComposition(batch_comp_translate[v]) for v in sl
+            ]
+        # iut and methods could come here too, or are overwritten below
+        if "IMPLEMENTATION_UT" in env_setting:
+            sl = json.loads(env_setting["IMPLEMENTATION_UT"])
+            IMPLEMENTATION_UT = [Implementation(impl_translate[v]) for v in sl]
+        if "BENCHMARK_MODES" in env_setting:
+            sl = json.loads(env_setting["BENCHMARK_MODES"])
+            BENCHMARK_MODES = [BenchmarkMode(method_translate[v]) for v in sl]
+
+        # set additional flags
+        if "STORE_TEST_RESULT_PATH" in env_setting and STORE_TEST_RESULT_PATH is None:
+            STORE_TEST_RESULT_PATH = env_setting["STORE_TEST_RESULT_PATH"]
+        if (
+            "TEST_ALLOW_INCORRECT" in env_setting
+            and env_setting["TEST_ALLOW_INCORRECT"] == "1"
+        ):
+            enforce_numerical_correctness = False
+        if (
+            "TRITON_BACKEND_DEBUG" in env_setting
+            and env_setting["TRITON_BACKEND_DEBUG"] == "1"
+        ):
+            debug_flag = True
+
+if len(MY_IUT) > 0:
+    IMPLEMENTATION_UT = []
+    for ci_value in MY_IUT:
+        IMPLEMENTATION_UT.append(Implementation(impl_translate[ci_value]))
+if len(MY_METHODS) > 0:
+    BENCHMARK_MODES = []
+    for cb_value in MY_METHODS:
+        BENCHMARK_MODES.append(BenchmarkMode(method_translate[cb_value]))
+# only overwrite the .conf file if the environment variable is present!
+if "TEST_ALLOW_INCORRECT" in os.environ:
+    enforce_numerical_correctness = os.environ["TEST_ALLOW_INCORRECT"] == "1"
+if "TRITON_BACKEND_DEBUG" in os.environ:
+    debug_flag = os.environ["TRITON_BACKEND_DEBUG"] == "1"
+
+
+for varlen_p in PROMPT_PATTERNS:
+    for e in varlen_p:
+        assert e <= 1.0
 
 
 @pytest.mark.parametrize("batch_size", BATCH_SIZES)
@@ -965,6 +976,7 @@ def test_prefill_vllm_v0_attention(
 @pytest.mark.parametrize("block_size", BLOCK_SIZES)
 @pytest.mark.parametrize("num_blocks", NUM_BLOCKS)
 @pytest.mark.parametrize("prompt_pattern", PROMPT_PATTERNS)
+@pytest.mark.parametrize("batch_composition", PREFIX_PREFILL_BATCH_COMPOSITION)
 @pytest.mark.parametrize("dtype", DTYPES)
 @pytest.mark.parametrize("seed", SEEDS)
 @pytest.mark.parametrize("implementation", IMPLEMENTATION_UT)
@@ -985,6 +997,7 @@ def test_prefix_vllm_v1_attention(
     block_size,
     num_blocks,
     prompt_pattern,
+    batch_composition,
     dtype,
     seed,
     implementation,
@@ -1026,11 +1039,9 @@ def test_prefix_vllm_v1_attention(
     if realistic_prompt_mode:
         ATOL *= 2.2  # for 0.0313% of the cases...
     RTOL = 1e-5
-    # TODO
-    if implementation == Implementation.FLASH_ATTN and decode_share != 1.0:
-        ATOL = 2 * max_value  # for 0.0269%
-        if seqlen >= 512:
-            ATOL = 2.5 * max_value  # 4.77e-05%
+    # TODO?? due to incomplete output batch?
+    if decode_share != 1.0:
+        ATOL = 2 * max_value
 
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
@@ -1047,7 +1058,7 @@ def test_prefix_vllm_v1_attention(
     partial_prefill_seqs = int(np.ceil(prefill_seqs * partial_prefill_share))
     full_prefill_seqs = prefill_seqs - partial_prefill_seqs
 
-    # reuse same prompt pattern for partial promps, but with half the length
+    # reuse same prompt pattern for partial prompts, but with half the length
     len_fraction_half = itertools.cycle([pp * 0.5 for pp in prompt_pattern])
     raw_partial_prefill_ctx_lens = [
         int(np.ceil(l // block_size * next(len_fraction_half))) * block_size
@@ -1072,7 +1083,7 @@ def test_prefix_vllm_v1_attention(
         + init_seq_lens[decode_seqs + partial_prefill_seqs :]
     )
     ctx_lens = (
-        # TODO: substract one from query length or not? (adapt assert below if changing)
+        # TODO: subtract one from query length or not? (adapt assert below if changing)
         [ol - 1 for ol in init_seq_lens[:decode_seqs]]
         # init_seq_lens[:decode_seqs]
         + partial_prefill_ctx_lens[decode_seqs : decode_seqs + partial_prefill_seqs]
@@ -1080,6 +1091,24 @@ def test_prefix_vllm_v1_attention(
     )
     seq_lens = [a + b for a, b in zip(query_lens, ctx_lens)]
     max_seq_len = max(seq_lens)
+
+    # BatchComposition.DEC_PRE is default
+    if batch_composition == BatchComposition.PRE_DEC:
+        query_lens.reverse()
+        ctx_lens.reverse()
+        seq_lens.reverse()
+    if batch_composition == BatchComposition.ALTERNATING:
+        alorder = []
+        indexs_remaining = list(range(len(query_lens)))
+        for i in range(len(query_lens) // 2):
+            alorder.append(i)
+            alorder.append(len(query_lens) - i - 1)
+            indexs_remaining.remove(i)
+            indexs_remaining.remove(len(query_lens) - i - 1)
+        alorder.extend(indexs_remaining)
+        query_lens = [query_lens[i] for i in alorder]
+        ctx_lens = [ctx_lens[i] for i in alorder]
+        seq_lens = [seq_lens[i] for i in alorder]
 
     if debug_flag:
         print(
@@ -1093,8 +1122,8 @@ def test_prefix_vllm_v1_attention(
         print("partial_prefill_ctx_lens", partial_prefill_ctx_lens)
         print(f"\nAfter assembling the final batch:")
         print(f"\tquery_lens: {query_lens}")
-        print(f"\tctx_lens: {ctx_lens}")
-        print(f"\tseq_lens: {seq_lens}")
+        print(f"\t  ctx_lens: {ctx_lens}")
+        print(f"\t  seq_lens: {seq_lens}")
     assert len(ctx_lens) == len(query_lens)
     if not realistic_prompt_mode:
         # assert max_seq_len == seqlen or max_seq_len == seqlen + 1
@@ -1156,7 +1185,7 @@ def test_prefix_vllm_v1_attention(
             torch.tensor([0] + query_lens, dtype=torch.int), dim=0, dtype=torch.int
         )
         b_seq_start_loc = torch.cumsum(
-            torch.tensor([0] + seq_lens[:-1], dtype=torch.int), dim=0, dtype=torch.int
+            torch.tensor([0] + seq_lens, dtype=torch.int), dim=0, dtype=torch.int
         )
 
         # Create the block tables.
@@ -1220,6 +1249,15 @@ def test_prefix_vllm_v1_attention(
             scale,
             dtype,
         )
+        # ref_output = ref_paged_attn(
+        #     query,
+        #     key_cache,
+        #     value_cache,
+        #     b_query_lens,
+        #     b_ctx_lens,
+        #     block_table_t,
+        #     scale,
+        # )
 
         if implementation == Implementation.FLASH_ATTN:
             from callers import FlashAttnPrefixPrefillCaller as Caller
@@ -1569,6 +1607,9 @@ if __name__ == "__main__":
         args = [__file__]
         filter_args = ""
         for ca in sys.argv[1:]:
+            if ".conf" in ca:
+                # already processed
+                continue
             if ca[0] == "-":
                 args.append(ca)
             else:

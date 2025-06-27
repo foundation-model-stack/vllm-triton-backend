@@ -11,10 +11,7 @@ import torch
 import triton
 import triton.language as tl
 
-from vllm.logger import init_logger
-from vllm.triton_utils.jit_cache import jitcache
-
-logger = init_logger(__name__)
+import triton_dejavu
 
 
 @triton.jit
@@ -53,7 +50,7 @@ def find_seq_idx(
     return left - 1
 
 
-@jitcache(
+@triton_dejavu.jitcache(
     check_keys=[],
     check_specialization=["num_seqs"],
     assume_const=[
