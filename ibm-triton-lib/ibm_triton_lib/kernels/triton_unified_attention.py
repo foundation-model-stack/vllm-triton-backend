@@ -87,7 +87,25 @@ def prepare_informed_fallback(cache):
     ret = {int(k[2]): c for k, c in cache.items()}
     return ret
 
-
+@triton_dejavu.jitcache(
+    check_keys=["tpa_test_q", "tpa_test_k", "stride_k_cache_3", "stride_v_cache_3"],
+    check_specialization=["num_seqs"],
+    assume_const=[
+        "scale",
+        "k_scale",
+        "v_scale",
+        "query_stride_1",
+        "output_stride_1",
+        "stride_k_cache_0",
+        "stride_k_cache_1",
+        "stride_k_cache_2",
+        "stride_k_cache_4",
+        "stride_v_cache_0",
+        "stride_v_cache_1",
+        "stride_v_cache_2",
+    ],
+    autotuner_args=["BLOCK_N", "BLOCK_M"],
+)
 @triton_dejavu.autotune(
     config_space=triton_dejavu.ConfigSpace(
         {
@@ -113,24 +131,6 @@ def prepare_informed_fallback(cache):
     fallback_heuristic=fallback_heuristic_dt2,
     ignore_dtypes=True,
 )
-# @triton_dejavu.jitcache(
-#     check_keys=[],
-#     check_specialization=["num_seqs"],
-#     assume_const=[
-#         "scale",
-#         "k_scale",
-#         "v_scale",
-#         "query_stride_1",
-#         "output_stride_1",
-#         "stride_k_cache_0",
-#         "stride_k_cache_1",
-#         "stride_k_cache_2",
-#         "stride_k_cache_4",
-#         "stride_v_cache_0",
-#         "stride_v_cache_1",
-#         "stride_v_cache_2",
-#     ],
-# )
 @triton.jit
 def kernel_unified_attention_2d(
     output_ptr,  # [num_tokens, num_query_heads, head_size]
@@ -793,11 +793,11 @@ def unified_attention(
         BLOCK_N : tl.constexpr = max(16, min(tpa_test_k, 128) // m_factor)
         '''
 
-        #grid = lambda META : (q.shape[0] // (META['BLOCK_M'] // num_queries_per_kv)
-        #                        + num_seqs, num_kv_heads)
+        grid = lambda META : (q.shape[0] // (META['BLOCK_M'] // num_queries_per_kv)
+                                + num_seqs, num_kv_heads)
 
-        grid = (q.shape[0] // (BLOCK_M // num_queries_per_kv)
-            + num_seqs, num_kv_heads)
+        # grid = (q.shape[0] // (BLOCK_M // num_queries_per_kv)
+        #     + num_seqs, num_kv_heads)
 
         kernel_unified_attention_2d[grid](
             output_ptr=out,
