@@ -50,18 +50,44 @@ def find_seq_idx(
 
     return left - 1
 
+# not as lambda, for python3.9
+def fallback_heuristic_dt2(key):
+    tpa_test_q = key[1]
+    tpa_test_k = key[2]
+    # Model trained on max
+    if tpa_test_q < 1024:
+        BLOCK_M = 16
+    else:
+        BLOCK_M = 64
 
-configs = []
-for m in [16, 32, 64, 128]:
-    for n in [16, 32, 64, 128]:
-        configs.append(
-            triton.Config(kwargs={
-                'BLOCK_M': m,
-                'BLOCK_N': n,
-            }, ))
+    if tpa_test_k < 64:
+        if tpa_test_k < 32:
+            BLOCK_N = 16
+        else:
+            BLOCK_N = 32
+    else:
+        if tpa_test_q < 256:
+            BLOCK_N = 128
+        else:
+            BLOCK_N = 64
+    ret = triton.Config(
+        {"BLOCK_M": BLOCK_M, "BLOCK_N": BLOCK_N}, 
+        num_stages=4, num_warps=8)
+    return ret
 
 
-#@triton.autotune(configs=configs, key=["tpa_test_q", "tpa_test_k"])
+def informed_fallback_next(key, cache):
+    # key[27] = MAX_SEQLENS_Q
+    ret = cache[min(cache.keys(), key=lambda x: abs(x - key[2]))]
+    return ret
+
+
+def prepare_informed_fallback(cache):
+    # key[2] = max k
+    ret = {int(k[2]): c for k, c in cache.items()}
+    return ret
+
+
 @triton_dejavu.autotune(
     config_space=triton_dejavu.ConfigSpace(
         {
@@ -82,6 +108,9 @@ for m in [16, 32, 64, 128]:
     use_cuda_graph=True,
     use_bo=True,
     search_max_search_t=360,
+    informed_fallback=informed_fallback_next,
+    prepare_informed_fallback=prepare_informed_fallback,
+    fallback_heuristic=fallback_heuristic_dt2,
 )
 # @triton_dejavu.jitcache(
 #     check_keys=[],
