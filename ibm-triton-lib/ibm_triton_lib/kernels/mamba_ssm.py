@@ -305,10 +305,10 @@ def selective_state_update(state,
                  (0, 0, 0))
     # We don't want autotune since it will overwrite the state
     # We instead tune by hand.
-    # BLOCK_SIZE_M, num_warps = ((32, 4) if dstate <= 16 else
-    #                            ((16, 4) if dstate <= 32 else
-    #                             ((8, 4) if dstate <= 64 else
-    #                              ((4, 4) if dstate <= 128 else ((4, 8))))))
+    BLOCK_SIZE_M, num_warps = ((32, 4) if dstate <= 16 else
+                               ((16, 4) if dstate <= 32 else
+                                ((8, 4) if dstate <= 64 else
+                                 ((4, 4) if dstate <= 128 else ((4, 8))))))
     tie_hdim = A.stride(-1) == 0 and A.stride(-2) == 0 and dt.stride(
         -1) == 0 and dt_bias.stride(-1) == 0
     with torch.cuda.device(x.device.index):
@@ -360,7 +360,7 @@ def selective_state_update(state,
             out.stride(2),
             dt_softplus,
             tie_hdim,
-            # BLOCK_SIZE_M,
+            # BLOCK_SIZE_M=BLOCK_SIZE_M,
             # num_warps=num_warps,
         )
     if not has_heads:
