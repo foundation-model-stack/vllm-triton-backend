@@ -40,8 +40,6 @@ from vllm.attention.backends.abstract import (
     AttentionMetadata,
     AttentionType,
 )
-from vllm.attention.ops.chunked_prefill_paged_decode import chunked_prefill_paged_decode
-from vllm.attention.ops.paged_attn import PagedAttention
 from ibm_triton_lib.kernels import unified_attention
 from vllm.logger import init_logger
 from vllm.platforms import current_platform
@@ -369,41 +367,23 @@ class TritonAttentionImpl(AttentionImpl):
         # Whenever making a change in this method, please benchmark the
         # performance to make sure it does not introduce any overhead.
 
-        use_prefill_decode_attn = self.force_prefill_decode_attn
         num_actual_tokens = attn_metadata.num_actual_tokens
 
-        if use_prefill_decode_attn:
-            key_cache, value_cache = PagedAttention.split_kv_cache(
-                kv_cache, self.num_kv_heads, self.head_size
-            )
-        else:
-            key_cache, value_cache = kv_cache.unbind(0)
+        key_cache, value_cache = kv_cache.unbind(0)
 
         if self.kv_sharing_target_layer_name is None:
             # Reshape the input keys and values and store them in the cache.
             # Skip this if sharing KV cache with an earlier attention layer.
-            if use_prefill_decode_attn:
-                PagedAttention.write_to_paged_cache(
-                    key,
-                    value,
-                    key_cache,
-                    value_cache,
-                    attn_metadata.slot_mapping,
-                    self.kv_cache_dtype,
-                    layer._k_scale,
-                    layer._v_scale,
-                )
-            else:
-                torch.ops._C_cache_ops.reshape_and_cache_flash(
-                    key,
-                    value,
-                    key_cache,
-                    value_cache,
-                    attn_metadata.slot_mapping,
-                    self.kv_cache_dtype,
-                    layer._k_scale,
-                    layer._v_scale,
-                )
+            torch.ops._C_cache_ops.reshape_and_cache_flash(
+                key,
+                value,
+                key_cache,
+                value_cache,
+                attn_metadata.slot_mapping,
+                self.kv_cache_dtype,
+                layer._k_scale,
+                layer._v_scale,
+            )
 
         if self.kv_cache_dtype.startswith("fp8"):
             key_cache = key_cache.view(self.fp8_dtype)
@@ -440,49 +420,26 @@ class TritonAttentionImpl(AttentionImpl):
             max_seqlen_k = attn_metadata.max_seq_len
             block_table = attn_metadata.block_table
 
-        if use_prefill_decode_attn:
-            # Compute attention and update output up to `num_actual_tokens`.
-            chunked_prefill_paged_decode(
-                query=query[:num_actual_tokens],
-                key=key[:num_actual_tokens],
-                value=value[:num_actual_tokens],
-                output=output[:num_actual_tokens],
-                kv_cache_dtype=self.kv_cache_dtype,
-                key_cache=key_cache,
-                value_cache=value_cache,
-                block_table=block_table,
-                query_start_loc=cu_seqlens_q,
-                seq_lens=seqused_k,
-                max_seq_len=max_seqlen_k,
-                max_query_len=max_seqlen_q,
-                k_scale=layer._k_scale,
-                v_scale=layer._v_scale,
-                alibi_slopes=self.alibi_slopes,
-                sliding_window=self.sliding_window[0],
-                sm_scale=self.scale,
-            )
+        descale_shape = (cu_seqlens_q.shape[0] - 1, key.shape[1])
 
-        else:
-            descale_shape = (cu_seqlens_q.shape[0] - 1, key.shape[1])
-
-            unified_attention(
-                q=query[:num_actual_tokens],
-                k=key_cache,
-                v=value_cache,
-                out=output[:num_actual_tokens],
-                cu_seqlens_q=cu_seqlens_q,
-                max_seqlen_q=max_seqlen_q,
-                seqused_k=seqused_k,
-                max_seqlen_k=max_seqlen_k,
-                softmax_scale=self.scale,
-                causal=True,
-                alibi_slopes=self.alibi_slopes,
-                window_size=self.sliding_window,
-                block_table=block_table,
-                softcap=self.logits_soft_cap,
-                q_descale=None,  # Not supported
-                k_descale=layer._k_scale.expand(descale_shape),
-                v_descale=layer._v_scale.expand(descale_shape),
-            )
+        unified_attention(
+            q=query[:num_actual_tokens],
+            k=key_cache,
+            v=value_cache,
+            out=output[:num_actual_tokens],
+            cu_seqlens_q=cu_seqlens_q,
+            max_seqlen_q=max_seqlen_q,
+            seqused_k=seqused_k,
+            max_seqlen_k=max_seqlen_k,
+            softmax_scale=self.scale,
+            causal=True,
+            alibi_slopes=self.alibi_slopes,
+            window_size=self.sliding_window,
+            block_table=block_table,
+            softcap=self.logits_soft_cap,
+            q_descale=None,  # Not supported
+            k_descale=layer._k_scale.expand(descale_shape),
+            v_descale=layer._v_scale.expand(descale_shape),
+        )
 
         return output
