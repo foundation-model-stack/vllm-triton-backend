@@ -111,6 +111,7 @@ def prepare_informed_fallback(cache):
     informed_fallback=informed_fallback_next,
     prepare_informed_fallback=prepare_informed_fallback,
     fallback_heuristic=fallback_heuristic_dt2,
+    ignore_dtypes=True,
 )
 # @triton_dejavu.jitcache(
 #     check_keys=[],
