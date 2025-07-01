@@ -1,0 +1,27 @@
+{
+    "signature": "JITFunction(ibm_triton_lib.kernels.mamba_ssm:_selective_scan_update_kernel)",
+    "total_bench_time_s": 113.2074065208435,
+    "evaluated_configs": 75,
+    "keys": [
+        "dstate",
+        "BLOCK_SIZE_DSTATE",
+        "dim",
+        "nheads_ngroups_ratio"
+    ],
+    "cache": {
+        "('128', '128', '64', '128', 'torch.bfloat16', 'torch.bfloat16', 'torch.bfloat16', 'torch.bfloat16', 'torch.float32', 'torch.bfloat16', 'torch.bfloat16', 'torch.bfloat16', 'torch.bfloat16', 'torch.int32')": "BLOCK_SIZE_M: 16, num_warps: 4, num_ctas: 1, num_stages: 6, num_buffers_warp_spec: 0, num_consumer_groups: 0, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None"
+    },
+    "timings": {
+        "('128', '128', '64', '128', 'torch.bfloat16', 'torch.bfloat16', 'torch.bfloat16', 'torch.bfloat16', 'torch.float32', 'torch.bfloat16', 'torch.bfloat16', 'torch.bfloat16', 'torch.bfloat16', 'torch.int32')": [
+            0.0050251600332558155
+        ]
+    },
+    "timings_data": {
+        "labels": [
+            "ms"
+        ],
+        "rep_t_ms": 100,
+        "warmup_t_ms": 25,
+        "cuda_graphs": true
+    }
+}
