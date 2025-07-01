@@ -33,6 +33,16 @@ def softplus(dt):
 #         return dt
 
 
+def fallback_heuristic_simple(key):
+    dstate = key[1]
+    BLOCK_SIZE_M, num_warps = ((32, 4) if dstate <= 16 else
+                               ((16, 4) if dstate <= 32 else
+                                ((8, 4) if dstate <= 64 else
+                                 ((4, 4) if dstate <= 128 else ((4, 8))))))
+    ret = triton.Config({'BLOCK_SIZE_M': BLOCK_SIZE_M}, num_warps=num_warps)
+    return ret
+
+
 @triton.heuristics(
     {"HAS_DT_BIAS": lambda args: args["dt_bias_ptr"] is not None})
 @triton.heuristics({"HAS_D": lambda args: args["D_ptr"] is not None})
@@ -60,6 +70,7 @@ def softplus(dt):
     use_cuda_graph=True,
     use_bo=True,
     search_max_search_t=360,
+    fallback_heuristic=fallback_heuristic_simple,
 )
 @triton.jit
 def _selective_scan_update_kernel(
