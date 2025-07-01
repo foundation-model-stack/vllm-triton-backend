@@ -88,7 +88,9 @@ def prepare_informed_fallback(cache):
     return ret
 
 @triton_dejavu.jitcache(
-    check_keys=["tpa_test_q", "tpa_test_k", "stride_k_cache_3", "stride_v_cache_3"],
+    # this list is shorter, since it will be called only within one model
+    check_keys=["MAX_SEQ_Q", "MAX_SEQ_K", "AVG_SEQ_Q", "AVG_SEQ_K", 
+                "stride_k_cache_3", "stride_v_cache_3"],
     check_specialization=["num_seqs"],
     assume_const=[
         "scale",
@@ -115,7 +117,8 @@ def prepare_informed_fallback(cache):
     num_warps=[2, 4, 8],
     num_stages=[1, 2, 4, 6, 8],
     ),
-    key = ["tpa_test_q", "tpa_test_k",
+    # this list is longer, since it would be used for multiple models
+    key = ["MAX_SEQ_Q", "MAX_SEQ_K", "AVG_SEQ_Q", "AVG_SEQ_K",
            "num_query_heads", "num_queries_per_kv", 
            "BLOCK_SIZE", "HEAD_SIZE", "HEAD_SIZE_PADDED",
            "SLIDING_WINDOW",
@@ -125,7 +128,7 @@ def prepare_informed_fallback(cache):
         os.path.join(os.path.dirname(__file__), "dejavu_data")),
     use_cuda_graph=True,
     use_bo=True,
-    search_max_search_t=360,
+    search_max_search_t=600,
     informed_fallback=informed_fallback_next,
     prepare_informed_fallback=prepare_informed_fallback,
     fallback_heuristic=fallback_heuristic_dt2,
@@ -167,8 +170,12 @@ def kernel_unified_attention_2d(
     stride_v_cache_3: tl.constexpr,  # int
     query_start_len_ptr,  # [num_seqs+1]
     num_seqs: tl.int32,
-    tpa_test_q: tl.constexpr,
-    tpa_test_k: tl.constexpr,
+    # used as input to the autotuner
+    MAX_SEQ_Q: tl.constexpr,
+    MAX_SEQ_K: tl.constexpr,
+    AVG_SEQ_Q: tl.constexpr,
+    AVG_SEQ_K: tl.constexpr,
+    # autotuner args
     BLOCK_M: tl.constexpr,
     BLOCK_N: tl.constexpr,
 ):
@@ -735,69 +742,74 @@ def unified_attention(
         or force_selection == 2
     ) and force_selection != 3:
 
-        '''
-        BLOCK_M = 16 if avg_seqlen_q < 8 else (16 if avg_seqlen_k < 128 else 64)
+        # '''
+        # BLOCK_M = 16 if avg_seqlen_q < 8 else (16 if avg_seqlen_k < 128 else 64)
 
-        if avg_seqlen_q < 8:
-            if avg_seqlen_k < 64:
-                BLOCK_N = 16
-            else:
-                BLOCK_N = 128
-        else:
-            if avg_seqlen_k < 32:
-                BLOCK_N = 16
-            else:
-                BLOCK_N = 32
-        '''
+        # if avg_seqlen_q < 8:
+        #     if avg_seqlen_k < 64:
+        #         BLOCK_N = 16
+        #     else:
+        #         BLOCK_N = 128
+        # else:
+        #     if avg_seqlen_k < 32:
+        #         BLOCK_N = 16
+        #     else:
+        #         BLOCK_N = 32
+        # '''
 
-        tpa_test_q = triton.next_power_of_2(int(max_seqlen_q))
-        tpa_test_k = triton.next_power_of_2(int(max_seqlen_k))
+        # tpa_test_q = triton.next_power_of_2(int(max_seqlen_q))
+        # tpa_test_k = triton.next_power_of_2(int(max_seqlen_k))
 
-        '''
-        # Model trained on avg
-        BLOCK_M = 16 if tpa_test_q < 8 else (16 if tpa_test_k < 128 else 64)
+        # '''
+        # # Model trained on avg
+        # BLOCK_M = 16 if tpa_test_q < 8 else (16 if tpa_test_k < 128 else 64)
 
-        if tpa_test_q < 8:
-            if tpa_test_k < 64:
-                BLOCK_N = 16
-            else:
-                BLOCK_N = 128
-        else:
-            if tpa_test_k < 32:
-                BLOCK_N = 16
-            else:
-                BLOCK_N = 32
-        '''
+        # if tpa_test_q < 8:
+        #     if tpa_test_k < 64:
+        #         BLOCK_N = 16
+        #     else:
+        #         BLOCK_N = 128
+        # else:
+        #     if tpa_test_k < 32:
+        #         BLOCK_N = 16
+        #     else:
+        #         BLOCK_N = 32
+        # '''
 
-        # Model trained on max
-        if tpa_test_q < 1024:
-            BLOCK_M = 16
-        else:
-            BLOCK_M = 64
+        # # Model trained on max
+        # if tpa_test_q < 1024:
+        #     BLOCK_M = 16
+        # else:
+        #     BLOCK_M = 64
 
-        if tpa_test_k < 64:
-            if tpa_test_k < 32:
-                BLOCK_N = 16
-            else:
-                BLOCK_N = 32
-        else:
-            if tpa_test_q < 256:
-                BLOCK_N = 128
-            else:
-                BLOCK_N = 64
+        # if tpa_test_k < 64:
+        #     if tpa_test_k < 32:
+        #         BLOCK_N = 16
+        #     else:
+        #         BLOCK_N = 32
+        # else:
+        #     if tpa_test_q < 256:
+        #         BLOCK_N = 128
+        #     else:
+        #         BLOCK_N = 64
 
-        '''
-        m_factor = 1 if tpa_test_q < 1024 else 4
+        # '''
+        # m_factor = 1 if tpa_test_q < 1024 else 4
 
-        BLOCK_M : tl.constexpr = 16 * m_factor
-        BLOCK_N : tl.constexpr = max(16, min(tpa_test_k, 128) // m_factor)
-        '''
+        # BLOCK_M : tl.constexpr = 16 * m_factor
+        # BLOCK_N : tl.constexpr = max(16, min(tpa_test_k, 128) // m_factor)
+        # '''
+        # # grid = (q.shape[0] // (BLOCK_M // num_queries_per_kv)
+        # #     + num_seqs, num_kv_heads)
+        
+        MAX_SEQ_Q = triton.next_power_of_2(int(max_seqlen_q))
+        MAX_SEQ_K = triton.next_power_of_2(int(max_seqlen_k))
+        AVG_SEQ_Q = triton.next_power_of_2(int(avg_seqlen_q))
+        AVG_SEQ_K = triton.next_power_of_2(int(avg_seqlen_k))
 
         grid = lambda META : (q.shape[0] // (META['BLOCK_M'] // num_queries_per_kv)
                                 + num_seqs, num_kv_heads)
 
-        # grid = (q.shape[0] // (BLOCK_M // num_queries_per_kv)
-        #     + num_seqs, num_kv_heads)
 
         kernel_unified_attention_2d[grid](
             output_ptr=out,
@@ -834,8 +846,12 @@ def unified_attention(
             stride_v_cache_3=v.stride(3),
             query_start_len_ptr=cu_seqlens_q,
             num_seqs=num_seqs,
-            tpa_test_q=tpa_test_q,
-            tpa_test_k=tpa_test_k,
+            MAX_SEQ_Q=MAX_SEQ_Q,
+            MAX_SEQ_K=MAX_SEQ_K,
+            AVG_SEQ_Q=AVG_SEQ_Q,
+            AVG_SEQ_K=AVG_SEQ_K,
+            # tpa_test_q=tpa_test_q,
+            # tpa_test_k=tpa_test_k,
             # BLOCK_M=BLOCK_M,
             # BLOCK_N=BLOCK_N,
         )

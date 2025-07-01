@@ -413,12 +413,16 @@ class TritonAttentionImpl(AttentionImpl):
             max_seqlen_q = local_metadata.local_max_query_len
             max_seqlen_k = local_metadata.local_max_seq_len
             block_table = local_metadata.local_block_table
+            avg_seqlen_q = local_metadata.local_avg_query_len
+            avg_seqlen_k = local_metadata.local_avg_seq_len
         else:
             cu_seqlens_q = attn_metadata.query_start_loc
             seqused_k = attn_metadata.seq_lens
             max_seqlen_q = attn_metadata.max_query_len
             max_seqlen_k = attn_metadata.max_seq_len
             block_table = attn_metadata.block_table
+            avg_seqlen_q = attn_metadata.avg_query_len
+            avg_seqlen_k = attn_metadata.avg_seq_len
 
         descale_shape = (cu_seqlens_q.shape[0] - 1, key.shape[1])
 
@@ -440,6 +444,8 @@ class TritonAttentionImpl(AttentionImpl):
             q_descale=None,  # Not supported
             k_descale=layer._k_scale.expand(descale_shape),
             v_descale=layer._v_scale.expand(descale_shape),
+            avg_seqlen_q=avg_seqlen_q,
+            avg_seqlen_k=avg_seqlen_k,
         )
 
         return output
