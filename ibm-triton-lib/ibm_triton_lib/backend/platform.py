@@ -27,8 +27,12 @@ import vllm._C  # noqa
 import vllm.envs as envs
 from vllm.logger import init_logger
 
+
 from vllm.platforms import Platform, PlatformEnum
-from vllm.platforms.cuda import CudaPlatform
+if not torch.version.hip:
+    from vllm.platforms.cuda import CudaPlatform
+else:
+    from vllm.platforms.rocm import RocmPlatform
 
 
 from vllm.platforms.interface import DeviceCapability, Platform, PlatformEnum, _Backend
@@ -46,21 +50,39 @@ logger = init_logger(__name__)
 torch.backends.cuda.enable_cudnn_sdp(False)
 
 
-# CudaPlatform is a constant, not a class, but it dynamically decdes between Nvml and NonNVML class
-#  so we should inherit from this
-class TritonPlatform(CudaPlatform):
+if not torch.version.hip:
+    # CudaPlatform is a constant, not a class, but it dynamically decdes between Nvml and NonNVML class
+    #  so we should inherit from this
+    class TritonPlatform(CudaPlatform):
 
-    @classmethod
-    def get_attn_backend_cls(
-        cls,
-        selected_backend,
-        head_size,
-        dtype,
-        kv_cache_dtype,
-        block_size,
-        use_v1,
-        use_mla,
-    ) -> str:
-        if not envs.VLLM_USE_V1:
-            raise RuntimeError("vllm-triton-backend plugin only supports vLLM V1")
-        return "ibm_triton_lib.backend.triton_attn.TritonAttentionBackend"
+        @classmethod
+        def get_attn_backend_cls(
+            cls,
+            selected_backend,
+            head_size,
+            dtype,
+            kv_cache_dtype,
+            block_size,
+            use_v1,
+            use_mla,
+        ) -> str:
+            if not envs.VLLM_USE_V1:
+                raise RuntimeError("vllm-triton-backend plugin only supports vLLM V1")
+            return "ibm_triton_lib.backend.triton_attn.TritonAttentionBackend"
+else:
+    class TritonPlatform(RocmPlatform):
+
+        @classmethod
+        def get_attn_backend_cls(
+            cls,
+            selected_backend,
+            head_size,
+            dtype,
+            kv_cache_dtype,
+            block_size,
+            use_v1,
+            use_mla,
+        ) -> str:
+            if not envs.VLLM_USE_V1:
+                raise RuntimeError("vllm-triton-backend plugin only supports vLLM V1")
+            return "ibm_triton_lib.backend.triton_attn.TritonAttentionBackend"
