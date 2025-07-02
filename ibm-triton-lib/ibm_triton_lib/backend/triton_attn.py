@@ -76,6 +76,9 @@ class TritonAttentionMetadata:
     block_table: torch.Tensor
     slot_mapping: torch.Tensor
 
+    avg_query_len: int
+    avg_seq_len: int
+
     # For cascade attention.
     use_cascade: bool
     common_prefix_len: int
@@ -136,6 +139,10 @@ class TritonAttentionMetadataBuilder(AttentionMetadataBuilder[TritonAttentionMet
         seq_lens = common_attn_metadata.seq_lens
         block_table = self.block_table
         block_table_tensor = block_table.get_device_tensor()[:num_reqs]
+
+        avg_seq_len = int(self.runner.seq_lens_np[:num_reqs].mean())
+        avg_query_len = int(self.runner.query_start_loc_np[num_reqs]/num_reqs)
+
 
         block_table.slot_mapping[:num_actual_tokens].copy_(
             block_table.slot_mapping_cpu[:num_actual_tokens], non_blocking=True
@@ -211,6 +218,8 @@ class TritonAttentionMetadataBuilder(AttentionMetadataBuilder[TritonAttentionMet
             suffix_kv_lens=suffix_kv_lens,
             local_attn_metadata=local_attn_metadata,
             prefix_scheduler_metadata=prefix_scheduler_metadata,
+            avg_query_len=avg_query_len,
+            avg_seq_len=avg_seq_len,
         )
         return attn_metadata
 
@@ -413,8 +422,9 @@ class TritonAttentionImpl(AttentionImpl):
             max_seqlen_q = local_metadata.local_max_query_len
             max_seqlen_k = local_metadata.local_max_seq_len
             block_table = local_metadata.local_block_table
-            avg_seqlen_q = local_metadata.local_avg_query_len
-            avg_seqlen_k = local_metadata.local_avg_seq_len
+            # FIXME
+            # avg_seqlen_q = local_metadata.local_avg_query_len
+            # avg_seqlen_k = local_metadata.local_avg_seq_len
         else:
             cu_seqlens_q = attn_metadata.query_start_loc
             seqused_k = attn_metadata.seq_lens
@@ -423,6 +433,9 @@ class TritonAttentionImpl(AttentionImpl):
             block_table = attn_metadata.block_table
             avg_seqlen_q = attn_metadata.avg_query_len
             avg_seqlen_k = attn_metadata.avg_seq_len
+            # # FIXME
+            # avg_seqlen_q = attn_metadata.max_query_len
+            # avg_seqlen_k = attn_metadata.max_seq_len
 
         descale_shape = (cu_seqlens_q.shape[0] - 1, key.shape[1])
 
