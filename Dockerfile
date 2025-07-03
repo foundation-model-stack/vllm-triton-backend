@@ -240,6 +240,8 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=cache,target=/root/.cache/uv \
     git clone --depth 1 https://github.com/EleutherAI/lm-evaluation-harness && cd lm-evaluation-harness && uv pip install .
 
+RUN git clone --depth 1 https://github.com/IBM/fmwork.git
+
 ENV STORE_TEST_RESULT_PATH=/results
 
 # copy vllm benchmarks
