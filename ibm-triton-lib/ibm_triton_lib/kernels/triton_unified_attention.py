@@ -88,13 +88,15 @@ def prepare_informed_fallback(cache):
     ret = {int(k[2]): c for k, c in cache.items()}
     return ret
     
+gpu_name = torch.cuda.get_device_name()
+# print(gpu_name)
 
-@functools.lru_cache
+
+# @functools.lru_cache
 def prefill_heuristics_2d_BLOCK_M(MAX_SEQ_Q, MAX_SEQ_K):
-    gpu_name = torch.cuda.get_device_name()
-    if "NVIDIA_H100" in gpu_name:
+    if "NVIDIA H100" in gpu_name:
         BLOCK_M = 16 if MAX_SEQ_Q <= 192 else 128
-    elif "AMD_Instinct_MI300" in gpu_name:
+    elif "AMD Instinct MI300" in gpu_name:
         if MAX_SEQ_Q <= 384:
             if MAX_SEQ_K > 384 and MAX_SEQ_Q > 192:
                 BLOCK_M = 32
@@ -104,15 +106,16 @@ def prefill_heuristics_2d_BLOCK_M(MAX_SEQ_Q, MAX_SEQ_K):
             BLOCK_M = 64
     else:
         BLOCK_M = 64 if MAX_SEQ_Q > 1 else 16
+    # print(f"MAX_SEQ_Q {MAX_SEQ_Q}, MAX_SEQ_K {MAX_SEQ_K}")
+    # print("BLOCK_M: ", BLOCK_M)
     return BLOCK_M
 
 
-@functools.lru_cache
+# @functools.lru_cache
 def prefill_heuristics_2d_BLOCK_N(MAX_SEQ_Q, MAX_SEQ_K):
-    gpu_name = torch.cuda.get_device_name()
-    if "NVIDIA_H100" in gpu_name:
+    if "NVIDIA H100" in gpu_name:
         BLOCK_N = 32 if MAX_SEQ_K <= 192 else 128
-    elif "AMD_Instinct_MI300" in gpu_name:
+    elif "AMD Instinct MI300" in gpu_name:
         if MAX_SEQ_Q <= 384:
             if 96 < MAX_SEQ_K <= 192 and MAX_SEQ_Q <= 96:
                 BLOCK_N = 128
@@ -127,15 +130,15 @@ def prefill_heuristics_2d_BLOCK_N(MAX_SEQ_Q, MAX_SEQ_K):
                 BLOCK_N = 64
     else:
         BLOCK_N = 16 if MAX_SEQ_K < 128 else 64
+    # print("BLOCK_N: ", BLOCK_N)
     return BLOCK_N
 
 
-@functools.lru_cache
+# @functools.lru_cache
 def prefill_heuristics_2d_WARPS(MAX_SEQ_Q, MAX_SEQ_K):
-    gpu_name = torch.cuda.get_device_name()
-    if "NVIDIA_H100" in gpu_name:
+    if "NVIDIA H100" in gpu_name:
         num_warps = 4 if MAX_SEQ_K <= 96 else 8
-    elif "AMD_Instinct_MI300" in gpu_name:
+    elif "AMD Instinct MI300" in gpu_name:
         if MAX_SEQ_Q <= 384:
             if 96 < MAX_SEQ_K <= 192 and MAX_SEQ_Q <= 96:
                 num_warps = 8
@@ -148,14 +151,13 @@ def prefill_heuristics_2d_WARPS(MAX_SEQ_Q, MAX_SEQ_K):
                 num_warps = 2
     else:
         num_warps = 4  # default
-    print("num_warps: ", num_warps)
+    # print("num_warps: ", num_warps)
     return num_warps 
 
 
-@functools.lru_cache
+# @functools.lru_cache
 def prefill_heuristics_2d_STAGES(MAX_SEQ_Q, MAX_SEQ_K):
-    gpu_name = torch.cuda.get_device_name()
-    if "NVIDIA_H100" in gpu_name:
+    if "NVIDIA H100" in gpu_name:
         if MAX_SEQ_K <= 96:
             num_stages = 4
         else:
@@ -166,20 +168,27 @@ def prefill_heuristics_2d_STAGES(MAX_SEQ_Q, MAX_SEQ_K):
                     num_stages = 8
             else:
                 num_stages = 1
-    elif "AMD_Instinct_MI300" in gpu_name:
+    elif "AMD Instinct MI300" in gpu_name:
         if MAX_SEQ_Q <= 192:
-            if 96 < MAX_SEQ_K <= 192 and MAX_SEQ_Q <= 96:
+            # if 96 < MAX_SEQ_K <= 192 and MAX_SEQ_Q <= 96:
+            if 192 < MAX_SEQ_K < 1536:
                 num_stages = 2
-            else:
-                num_stages = 4
-        else:
-            if MAX_SEQ_K > 384 and (MAX_SEQ_Q <= 384 or MAX_SEQ_K > 768):
+            elif MAX_SEQ_K >= 1536:
                 num_stages = 1
             else:
                 num_stages = 4
+        else:
+            if MAX_SEQ_K <= 768:
+                if MAX_SEQ_K > 384 and MAX_SEQ_Q <= 384:
+                    num_stages = 1
+                else:
+                    num_stages = 4
+            else:
+                num_stages = 1
+
     else:
         num_stages = 3  # default
-    print("num_stages: ", num_stages)
+    # print("num_stages: ", num_stages)
     return num_stages
 
 # @triton_dejavu.jitcache(
