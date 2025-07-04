@@ -13,6 +13,7 @@ import triton.language as tl
 
 import os
 import triton_dejavu
+import functools
 
 
 @triton.jit
@@ -86,53 +87,155 @@ def prepare_informed_fallback(cache):
     # key[2] = max k
     ret = {int(k[2]): c for k, c in cache.items()}
     return ret
+    
 
-@triton_dejavu.jitcache(
-    # this list is shorter, since it will be called only within one model
-    check_keys=["MAX_SEQ_Q", "MAX_SEQ_K", "AVG_SEQ_Q", "AVG_SEQ_K", 
-                "stride_k_cache_3", "stride_v_cache_3"],
-    check_specialization=["num_seqs"],
-    assume_const=[
-        "scale",
-        "k_scale",
-        "v_scale",
-        "query_stride_1",
-        "output_stride_1",
-        "stride_k_cache_0",
-        "stride_k_cache_1",
-        "stride_k_cache_2",
-        "stride_k_cache_4",
-        "stride_v_cache_0",
-        "stride_v_cache_1",
-        "stride_v_cache_2",
-    ],
-    autotuner_args=["BLOCK_N", "BLOCK_M"],
-)
-@triton_dejavu.autotune(
-    config_space=triton_dejavu.ConfigSpace(
-        {
-            'BLOCK_N': [16, 32, 64, 128, 256, 512],
-            'BLOCK_M': [16, 32, 64, 128, 256, 512]
-        },
-    num_warps=[2, 4, 8],
-    num_stages=[1, 2, 4, 6, 8],
-    ),
-    # this list is longer, since it would be used for multiple models
-    key = ["MAX_SEQ_Q", "MAX_SEQ_K", "AVG_SEQ_Q", "AVG_SEQ_K",
-           "num_query_heads", "num_queries_per_kv", 
-           "BLOCK_SIZE", "HEAD_SIZE", "HEAD_SIZE_PADDED",
-           "SLIDING_WINDOW",
-           "stride_k_cache_3", "stride_v_cache_3"
-           ],
-    custom_data_storage=os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "dejavu_data")),
-    use_cuda_graph=True,
-    use_bo=True,
-    search_max_search_t=600,
-    informed_fallback=informed_fallback_next,
-    prepare_informed_fallback=prepare_informed_fallback,
-    fallback_heuristic=fallback_heuristic_dt2,
-    ignore_dtypes=True,
+@functools.lru_cache
+def prefill_heuristics_2d_BLOCK_M(MAX_SEQ_Q, MAX_SEQ_K):
+    gpu_name = torch.cuda.get_device_name()
+    if "NVIDIA_H100" in gpu_name:
+        BLOCK_M = 16 if MAX_SEQ_Q <= 192 else 128
+    elif "AMD_Instinct_MI300" in gpu_name:
+        if MAX_SEQ_Q <= 384:
+            if MAX_SEQ_K > 384 and MAX_SEQ_Q > 192:
+                BLOCK_M = 32
+            else:
+                BLOCK_M = 16
+        else: 
+            BLOCK_M = 64
+    else:
+        BLOCK_M = 64 if MAX_SEQ_Q > 1 else 16
+    return BLOCK_M
+
+
+@functools.lru_cache
+def prefill_heuristics_2d_BLOCK_N(MAX_SEQ_Q, MAX_SEQ_K):
+    gpu_name = torch.cuda.get_device_name()
+    if "NVIDIA_H100" in gpu_name:
+        BLOCK_N = 32 if MAX_SEQ_K <= 192 else 128
+    elif "AMD_Instinct_MI300" in gpu_name:
+        if MAX_SEQ_Q <= 384:
+            if 96 < MAX_SEQ_K <= 192 and MAX_SEQ_Q <= 96:
+                BLOCK_N = 128
+            elif MAX_SEQ_K > 384:
+                BLOCK_N = 256
+            else:
+                BLOCK_N = 32
+        else:
+            if MAX_SEQ_K <= 768:
+                BLOCK_N = 16
+            else:
+                BLOCK_N = 64
+    else:
+        BLOCK_N = 16 if MAX_SEQ_K < 128 else 64
+    return BLOCK_N
+
+
+@functools.lru_cache
+def prefill_heuristics_2d_WARPS(MAX_SEQ_Q, MAX_SEQ_K):
+    gpu_name = torch.cuda.get_device_name()
+    if "NVIDIA_H100" in gpu_name:
+        num_warps = 4 if MAX_SEQ_K <= 96 else 8
+    elif "AMD_Instinct_MI300" in gpu_name:
+        if MAX_SEQ_Q <= 384:
+            if 96 < MAX_SEQ_K <= 192 and MAX_SEQ_Q <= 96:
+                num_warps = 8
+            else:
+                num_warps = 4
+        else:
+            if MAX_SEQ_K <= 768:
+                num_warps = 4
+            else:
+                num_warps = 2
+    else:
+        num_warps = 4  # default
+    print("num_warps: ", num_warps)
+    return num_warps 
+
+
+@functools.lru_cache
+def prefill_heuristics_2d_STAGES(MAX_SEQ_Q, MAX_SEQ_K):
+    gpu_name = torch.cuda.get_device_name()
+    if "NVIDIA_H100" in gpu_name:
+        if MAX_SEQ_K <= 96:
+            num_stages = 4
+        else:
+            if MAX_SEQ_Q <= 192:
+                if MAX_SEQ_K <= 1536:
+                    num_stages = 2
+                else:
+                    num_stages = 8
+            else:
+                num_stages = 1
+    elif "AMD_Instinct_MI300" in gpu_name:
+        if MAX_SEQ_Q <= 192:
+            if 96 < MAX_SEQ_K <= 192 and MAX_SEQ_Q <= 96:
+                num_stages = 2
+            else:
+                num_stages = 4
+        else:
+            if MAX_SEQ_K > 384 and (MAX_SEQ_Q <= 384 or MAX_SEQ_K > 768):
+                num_stages = 1
+            else:
+                num_stages = 4
+    else:
+        num_stages = 3  # default
+    print("num_stages: ", num_stages)
+    return num_stages
+
+# @triton_dejavu.jitcache(
+#     # this list is shorter, since it will be called only within one model
+#     check_keys=["MAX_SEQ_Q", "MAX_SEQ_K", "AVG_SEQ_Q", "AVG_SEQ_K", 
+#                 "stride_k_cache_3", "stride_v_cache_3"],
+#     check_specialization=["num_seqs"],
+#     assume_const=[
+#         "scale",
+#         "k_scale",
+#         "v_scale",
+#         "query_stride_1",
+#         "output_stride_1",
+#         "stride_k_cache_0",
+#         "stride_k_cache_1",
+#         "stride_k_cache_2",
+#         "stride_k_cache_4",
+#         "stride_v_cache_0",
+#         "stride_v_cache_1",
+#         "stride_v_cache_2",
+#     ],
+#     autotuner_args=["BLOCK_N", "BLOCK_M"],
+# )
+# @triton_dejavu.autotune(
+#     config_space=triton_dejavu.ConfigSpace(
+#         {
+#             'BLOCK_N': [16, 32, 64, 128, 256, 512],
+#             'BLOCK_M': [16, 32, 64, 128, 256, 512]
+#         },
+#     num_warps=[2, 4, 8],
+#     num_stages=[1, 2, 4, 6, 8],
+#     ),
+#     # this list is longer, since it would be used for multiple models
+#     key = ["MAX_SEQ_Q", "MAX_SEQ_K", "AVG_SEQ_Q", "AVG_SEQ_K",
+#            "num_query_heads", "num_queries_per_kv", 
+#            "BLOCK_SIZE", "HEAD_SIZE", "HEAD_SIZE_PADDED",
+#            "SLIDING_WINDOW",
+#            "stride_k_cache_3", "stride_v_cache_3"
+#            ],
+#     custom_data_storage=os.path.abspath(
+#         os.path.join(os.path.dirname(__file__), "dejavu_data")),
+#     use_cuda_graph=True,
+#     use_bo=True,
+#     search_max_search_t=600,
+#     informed_fallback=informed_fallback_next,
+#     prepare_informed_fallback=prepare_informed_fallback,
+#     fallback_heuristic=fallback_heuristic_dt2,
+#     ignore_dtypes=True,
+# )
+@triton.heuristics(
+       {
+           "BLOCK_M": lambda args: prefill_heuristics_2d_BLOCK_M(args['MAX_SEQ_Q'], args['MAX_SEQ_K']),
+           "BLOCK_N": lambda args: prefill_heuristics_2d_BLOCK_N(args['MAX_SEQ_Q'], args['MAX_SEQ_K']),
+           "num_warps": lambda args: prefill_heuristics_2d_WARPS(args['MAX_SEQ_Q'], args['MAX_SEQ_K']),
+           "num_stages": lambda args: prefill_heuristics_2d_STAGES(args['MAX_SEQ_Q'], args['MAX_SEQ_K']),
+        } 
 )
 @triton.jit
 def kernel_unified_attention_2d(
@@ -170,7 +273,7 @@ def kernel_unified_attention_2d(
     stride_v_cache_3: tl.constexpr,  # int
     query_start_len_ptr,  # [num_seqs+1]
     num_seqs: tl.int32,
-    # used as input to the autotuner
+    # used as input to the autotuner/heuristics
     MAX_SEQ_Q: tl.constexpr,
     MAX_SEQ_K: tl.constexpr,
     AVG_SEQ_Q: tl.constexpr,
