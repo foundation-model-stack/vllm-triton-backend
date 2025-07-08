@@ -42,15 +42,15 @@ def create_dir_if_not_exist(path, mode=0o777):
             print(f"can't set permission of directory {path}: {e}")
 
 if len(sys.argv) < 4:
-    print(f"Usage: {sys.argv[0]} <model_path> <testcase_name> <repitions>")
+    print(f"Usage: {sys.argv[0]} <model_path> <testcase_name> <repitions> [<port>]")
 
-repitions = sys.argv[3]
+repitions = int(sys.argv[3])
 gpu_name = torch.cuda.get_device_name().replace(" ", "_").replace("/", "_")
 
 # model = "/model/llama3.1-8b/instruct/"
 model = sys.argv[1]
-model_path = f"/models/{model}/"
 testcase_name = sys.argv[2]
+port = sys.argv[4] if len(sys.argv) == 5 else "8000"
 
 # max_rounds = 128
 max_rounds = 64
@@ -66,20 +66,21 @@ result_dir = (
 # os.system(f"mkdir -p {result_dir}")
 create_dir_if_not_exist_recursive(result_dir)
 
-for i in repitions:
+for i in range(repitions):
     print(f"====== Repition {i} =====")
     cmd = (
         f"VLLM_USE_V1=1 python /workspace/benchmarks/benchmark_serving.py "
-        f"--model {model_path} "
+        f"--model {model} "
         f"--dataset-name sharegpt --dataset-path ShareGPT_V3_unfiltered_cleaned_split.json "
-        f"--save-result --result-dir {result_dir}"
+        f"--save-result --result-dir {result_dir} "
         f"--percentile-metrics ttft,tpot,itl,e2el --metric-percentiles 20,50,80,99 "
+        f"--port {port}"
     )
     print(cmd)
     rv = os.system(cmd)
     if rv != 0:
         print(f"benchmark command returned {rv}, stopping...")
-        break
+        exit(rv)
 
 print(f"results stored in: {result_dir}")
 # os.system(f"ls -alh {result_dir}")
@@ -106,6 +107,6 @@ avg_dict["avg_ttft"] /= repitions
 avg_dict["avg_itl"] /= repitions
 
 print(f"\nSummary of {repitions} repitions:")
-print(f"Average total token throughput: {avg_dict['avg_total_token_throughput']} tokens/sec")
-print(f"Average TTFT: {avg_dict['avg_ttft']} ms")
-print(f"Average ITL: {avg_dict['avg_itl']} ms")
+print(f"Average of total token throughputs: {avg_dict['avg_total_token_throughput']} tokens/sec")
+print(f"Average of Median TTFTs: {avg_dict['avg_ttft']} ms")
+print(f"Average of Median ITLs: {avg_dict['avg_itl']} ms")
