@@ -214,7 +214,7 @@ def prefill_heuristics_2d(MAX_SEQ_Q, MAX_SEQ_K):
         #         BLOCK_N = 64
         # config = {'num_stages': 3, 'num_warps': 4,
         #           'BLOCK_N': BLOCK_N, 'BLOCK_M': BLOCK_M}
-        #  dejavu with microbenchmarks
+        # dejavu with microbenchmarks
         if MAX_SEQ_K <= 96:
             config = {'num_stages' : 4, 'num_warps': 4, 
                       'BLOCK_N' : 32, 'BLOCK_M' : 16}
@@ -230,7 +230,6 @@ def prefill_heuristics_2d(MAX_SEQ_Q, MAX_SEQ_K):
                 config = {'num_stages' : 1, 'num_warps': 8, 
                           'BLOCK_N' : 128, 'BLOCK_M' : 128}
     elif "AMD Instinct MI300" in gpu_name:
-        #  dejavu with microbenchmarks
         if MAX_SEQ_Q <= 384:
             if MAX_SEQ_K <= 96:
                 config = {"num_stages": 4, "num_warps": 4, "BLOCK_N": 32, "BLOCK_M": 16}
@@ -439,13 +438,20 @@ def kernel_unified_attention_2d(
                               mask=query_mask_1,
                               other=0.0)
 
-    #num_blocks = cdiv_fn(seq_len, BLOCK_SIZE)
+    # compute the length of the longest sequence prefix spanned by any
+    # query token in the current q_block (q_block_local_idx)
+    max_seq_prefix_len = context_len + q_block_local_idx * BLOCK_Q + (
+        BLOCK_M - 1) // num_queries_per_kv + 1
+
+    # adjust for potential padding in the last q_block by considering the
+    # actual sequence length
+    max_seq_prefix_len = tl.minimum(max_seq_prefix_len, seq_len)
 
     offs_n = tl.arange(0, BLOCK_N)
 
-    # iterate through tiles
+    # iterate through tiles (below the mask)
     for start_n in range(0,
-                         seq_len,
+                         max_seq_prefix_len,
                          BLOCK_N):
 
         start_n = tl.multiple_of(start_n, BLOCK_N)
