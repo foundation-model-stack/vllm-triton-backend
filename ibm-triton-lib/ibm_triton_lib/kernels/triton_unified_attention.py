@@ -197,39 +197,38 @@ def prefill_heuristics_2d(MAX_SEQ_Q, MAX_SEQ_K):
     gpu_name = torch.cuda.get_device_name()
     # print(f"MAX_SEQ_Q {MAX_SEQ_Q}, MAX_SEQ_K {MAX_SEQ_K}")
     if "NVIDIA H100" in gpu_name:
-        # TPA original heuristic
-        if MAX_SEQ_Q < 1024:
-            BLOCK_M = 16
-        else:
-            BLOCK_M = 64
-
-        if MAX_SEQ_K < 64:
-            if MAX_SEQ_K < 32:
-                BLOCK_N = 16
-            else:
-                BLOCK_N = 32
-        else:
-            if MAX_SEQ_Q < 256:
-                BLOCK_N = 128
-            else:
-                BLOCK_N = 64
-        config = {'num_stages': 3, 'num_warps': 4,
-                  'BLOCK_N': BLOCK_N, 'BLOCK_M': BLOCK_M}
-        # dejavu with microbenchmarks
-        # if MAX_SEQ_K <= 96:
-        #     config = {'num_stages' : 4, 'num_warps': 4, 
-        #               'BLOCK_N' : 32, 'BLOCK_M' : 16}
+        # # TPA original heuristic
+        # if MAX_SEQ_Q < 1024:
+        #     BLOCK_M = 16
         # else:
-        #     if MAX_SEQ_Q <= 192:
-        #         if MAX_SEQ_K <= 1536:
-        #             config = {'num_stages' : 2, 'num_warps': 8, 
-        #                       'BLOCK_N' : 128, 'BLOCK_M' : 16}
-        #         else:
-        #             config = {'num_stages' : 8, 'num_warps': 8, 
-        #                       'BLOCK_N' : 128, 'BLOCK_M' : 16}
+        #     BLOCK_M = 64
+        # if MAX_SEQ_K < 64:
+        #     if MAX_SEQ_K < 32:
+        #         BLOCK_N = 16
         #     else:
-        #         config = {'num_stages' : 1, 'num_warps': 8, 
-        #                   'BLOCK_N' : 128, 'BLOCK_M' : 128}
+        #         BLOCK_N = 32
+        # else:
+        #     if MAX_SEQ_Q < 256:
+        #         BLOCK_N = 128
+        #     else:
+        #         BLOCK_N = 64
+        # config = {'num_stages': 3, 'num_warps': 4,
+        #           'BLOCK_N': BLOCK_N, 'BLOCK_M': BLOCK_M}
+        #  dejavu with microbenchmarks
+        if MAX_SEQ_K <= 96:
+            config = {'num_stages' : 4, 'num_warps': 4, 
+                      'BLOCK_N' : 32, 'BLOCK_M' : 16}
+        else:
+            if MAX_SEQ_Q <= 192:
+                if MAX_SEQ_K <= 1536:
+                    config = {'num_stages' : 2, 'num_warps': 8, 
+                              'BLOCK_N' : 128, 'BLOCK_M' : 16}
+                else:
+                    config = {'num_stages' : 8, 'num_warps': 8, 
+                              'BLOCK_N' : 128, 'BLOCK_M' : 16}
+            else:
+                config = {'num_stages' : 1, 'num_warps': 8, 
+                          'BLOCK_N' : 128, 'BLOCK_M' : 128}
     elif "AMD Instinct MI300" in gpu_name:
         if MAX_SEQ_Q <= 384:
             if MAX_SEQ_K <= 96:
