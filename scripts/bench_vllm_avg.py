@@ -41,8 +41,8 @@ def create_dir_if_not_exist(path, mode=0o777):
         except PermissionError as e:
             print(f"can't set permission of directory {path}: {e}")
 
-if len(sys.argv) < 4:
-    print(f"Usage: {sys.argv[0]} <model_path> <testcase_name> <repitions> [<port>]")
+if len(sys.argv) < 5:
+    print(f"Usage: {sys.argv[0]} <model_path> <testcase_name> <repitions> <result_path> [<port>]")
 
 repitions = int(sys.argv[3])
 gpu_name = torch.cuda.get_device_name().replace(" ", "_").replace("/", "_")
@@ -50,7 +50,8 @@ gpu_name = torch.cuda.get_device_name().replace(" ", "_").replace("/", "_")
 # model = "/model/llama3.1-8b/instruct/"
 model = sys.argv[1]
 testcase_name = sys.argv[2]
-port = sys.argv[4] if len(sys.argv) == 5 else "8000"
+result_path = os.path.abspath(sys.argv[4])
+port = sys.argv[5] if len(sys.argv) == 6 else "8000"
 
 # max_rounds = 128
 max_rounds = 64
@@ -60,16 +61,23 @@ timestamp_f = datetime.now().strftime("%Y-%m-%d_%H%M")
 
 # result_dir = f"/results/{model.replace('/','-')}/{gpu_name}/{testcase_name}"
 result_dir = (
-    f"/results/{model.replace('/','-')}/{gpu_name}/{testcase_name}/exp_{timestamp_f}/"
+    f"{result_path}/{model.replace('/','-')}/{gpu_name}/{testcase_name}/exp_{timestamp_f}/"
 )
 
 # os.system(f"mkdir -p {result_dir}")
 create_dir_if_not_exist_recursive(result_dir)
 
+bench_script = "/workspace/benchmarks/benchmark_serving.py"
+if not os.path.isfile(bench_script):
+    bench_script = "vllm-triton-backend/vllm/benchmarks/benchmark_serving.py"
+    if not os.path.isfile(bench_script):
+        print(f"can't find benchmark script benchmark_serving.py")
+        exit(-1)
+
 for i in range(repitions):
     print(f"====== Repition {i} =====")
     cmd = (
-        f"VLLM_USE_V1=1 python /workspace/benchmarks/benchmark_serving.py "
+        f"VLLM_USE_V1=1 python {bench_script} "
         f"--model {model} "
         f"--dataset-name sharegpt --dataset-path ShareGPT_V3_unfiltered_cleaned_split.json "
         f"--save-result --result-dir {result_dir} "
@@ -107,6 +115,6 @@ avg_dict["avg_ttft"] /= repitions
 avg_dict["avg_itl"] /= repitions
 
 print(f"\nSummary of {repitions} repitions:")
-print(f"Average of total token throughputs: {avg_dict['avg_total_token_throughput']} tokens/sec")
-print(f"Average of Median TTFTs: {avg_dict['avg_ttft']} ms")
-print(f"Average of Median ITLs: {avg_dict['avg_itl']} ms")
+print(f"Average of total token throughputs: {avg_dict['avg_total_token_throughput']:.2f} tokens/sec")
+print(f"Average of Median TTFTs:            {avg_dict['avg_ttft']:.2f} ms")
+print(f"Average of Median ITLs:             {avg_dict['avg_itl']:.2f} ms")

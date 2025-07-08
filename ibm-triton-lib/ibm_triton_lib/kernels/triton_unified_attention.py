@@ -230,6 +230,7 @@ def prefill_heuristics_2d(MAX_SEQ_Q, MAX_SEQ_K):
                 config = {'num_stages' : 1, 'num_warps': 8, 
                           'BLOCK_N' : 128, 'BLOCK_M' : 128}
     elif "AMD Instinct MI300" in gpu_name:
+        #  dejavu with microbenchmarks
         if MAX_SEQ_Q <= 384:
             if MAX_SEQ_K <= 96:
                 config = {"num_stages": 4, "num_warps": 4, "BLOCK_N": 32, "BLOCK_M": 16}
