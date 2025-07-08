@@ -284,40 +284,40 @@ def prefill_heuristics_2d(MAX_SEQ_Q, MAX_SEQ_K):
 #     ],
 #     autotuner_args=["BLOCK_N", "BLOCK_M"],
 # )
-# @triton_dejavu.autotune(
-#     config_space=triton_dejavu.ConfigSpace(
-#         {
-#             'BLOCK_N': [16, 32, 64, 128, 256, 512],
-#             'BLOCK_M': [16, 32, 64, 128, 256, 512]
-#         },
-#     num_warps=[2, 4, 8],
-#     num_stages=[1, 2, 4, 6, 8],
-#     ),
-#     # this list is longer, since it would be used for multiple models
-#     key = ["MAX_SEQ_Q", "MAX_SEQ_K", "AVG_SEQ_Q", "AVG_SEQ_K",
-#            "num_query_heads", "num_queries_per_kv", 
-#            "BLOCK_SIZE", "HEAD_SIZE", "HEAD_SIZE_PADDED",
-#            "SLIDING_WINDOW",
-#            "stride_k_cache_3", "stride_v_cache_3"
-#            ],
-#     custom_data_storage=os.path.abspath(
-#         os.path.join(os.path.dirname(__file__), "dejavu_data")),
-#     use_cuda_graph=True,
-#     use_bo=True,
-#     search_max_search_t=600,
-#     informed_fallback=informed_fallback_next,
-#     prepare_informed_fallback=prepare_informed_fallback,
-#     fallback_heuristic=fallback_heuristic_dt2,
-#     ignore_dtypes=True,
-# )
-@triton.heuristics(
-       {
-           "BLOCK_M": lambda args: prefill_heuristics_2d(args['MAX_SEQ_Q'], args['MAX_SEQ_K'])['BLOCK_M'],
-           "BLOCK_N": lambda args: prefill_heuristics_2d(args['MAX_SEQ_Q'], args['MAX_SEQ_K'])['BLOCK_N'],
-           "num_warps": lambda args: prefill_heuristics_2d(args['MAX_SEQ_Q'], args['MAX_SEQ_K'])['num_warps'],
-           "num_stages": lambda args: prefill_heuristics_2d(args['MAX_SEQ_Q'], args['MAX_SEQ_K'])['num_stages'],
-        } 
+@triton_dejavu.autotune(
+    config_space=triton_dejavu.ConfigSpace(
+        {
+            'BLOCK_N': [16, 32, 64, 128, 256, 512],
+            'BLOCK_M': [16, 32, 64, 128, 256, 512]
+        },
+    num_warps=[2, 4, 8],
+    num_stages=[1, 2, 4, 6, 8],
+    ),
+    # this list is longer, since it would be used for multiple models
+    key = ["MAX_SEQ_Q", "MAX_SEQ_K", "AVG_SEQ_Q", "AVG_SEQ_K",
+           "num_query_heads", "num_queries_per_kv", 
+           "BLOCK_SIZE", "HEAD_SIZE", "HEAD_SIZE_PADDED",
+           "SLIDING_WINDOW",
+           "stride_k_cache_3", "stride_v_cache_3"
+           ],
+    custom_data_storage=os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "dejavu_data")),
+    use_cuda_graph=True,
+    use_bo=True,
+    search_max_search_t=360,
+    informed_fallback=informed_fallback_next,
+    prepare_informed_fallback=prepare_informed_fallback,
+    fallback_heuristic=fallback_heuristic_dt2,
+    ignore_dtypes=True,
 )
+# @triton.heuristics(
+#        {
+#            "BLOCK_M": lambda args: prefill_heuristics_2d(args['MAX_SEQ_Q'], args['MAX_SEQ_K'])['BLOCK_M'],
+#            "BLOCK_N": lambda args: prefill_heuristics_2d(args['MAX_SEQ_Q'], args['MAX_SEQ_K'])['BLOCK_N'],
+#            "num_warps": lambda args: prefill_heuristics_2d(args['MAX_SEQ_Q'], args['MAX_SEQ_K'])['num_warps'],
+#            "num_stages": lambda args: prefill_heuristics_2d(args['MAX_SEQ_Q'], args['MAX_SEQ_K'])['num_stages'],
+#         } 
+# )
 @triton.jit
 def kernel_unified_attention_2d(
     output_ptr,  # [num_tokens, num_query_heads, head_size]
