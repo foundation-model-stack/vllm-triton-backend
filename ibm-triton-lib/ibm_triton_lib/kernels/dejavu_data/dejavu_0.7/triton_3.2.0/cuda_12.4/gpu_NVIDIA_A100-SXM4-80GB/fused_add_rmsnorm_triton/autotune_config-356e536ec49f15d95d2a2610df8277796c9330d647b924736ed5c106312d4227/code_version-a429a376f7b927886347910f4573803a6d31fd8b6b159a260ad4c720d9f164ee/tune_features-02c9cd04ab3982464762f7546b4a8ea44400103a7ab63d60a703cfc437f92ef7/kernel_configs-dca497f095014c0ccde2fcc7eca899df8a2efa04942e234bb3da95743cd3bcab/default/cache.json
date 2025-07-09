@@ -1,0 +1,8 @@
+{
+    "signature": "JITFunction(ibm_triton_lib.kernels.rms:fused_add_rmsnorm_triton)",
+    "total_bench_time_s": 0.0,
+    "evaluated_configs": 0,
+    "keys": null,
+    "cache": {},
+    "timings": {}
+}

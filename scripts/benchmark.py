@@ -32,14 +32,14 @@ from enum import Enum
 import itertools
 import triton.profiler as proton
 
-from vllm_utils import (
-    create_kv_caches_with_random,
-    ref_single_query_cached_kv_attention,
-    ref_multi_query_kv_attention,
-    ref_prefix_prefill,
-    ref_reshape_and_cache_flash,
-    ref_reshape_and_cache,
-)
+# from vllm_utils import (
+#     create_kv_caches_with_random,
+#     ref_single_query_cached_kv_attention,
+#     ref_multi_query_kv_attention,
+#     ref_prefix_prefill,
+#     ref_reshape_and_cache_flash,
+#     ref_reshape_and_cache,
+# )
 from torch_utils import get_gpu_label, end2end_bench
 from ibm_triton_lib.utils.triton_utils import get_runtime_label
 from roofline.proton_viewer import parse
@@ -301,13 +301,17 @@ def test_rms_norm(
     tdev = torch.device(device)
     # print(tdev)
 
+    # no GQA for now
+    num_heads = num_heads[0]
     num_tokens = seqlen * batch_size
     hidden_size = num_heads * head_size
     
     # layer = RMSNorm(hidden_size).to(dtype=dtype, device=tdev)
     # layer.weight.data.normal_(mean=1.0, std=0.1)
     # layer.weight.data.to(tdev)
-    weights = torch.ones(hidden_size, dtype=dtype, device=tdev).normal_(mean=1.0, std=0.1)
+    # print(hidden_size)
+    weights = torch.ones(hidden_size, dtype=dtype, device=tdev)
+    weights.normal_(mean=1.0, std=0.1)
     variance_epsilon = 1e-6
     scale = 1 / (2 * hidden_size)
     x = torch.randn(num_tokens, hidden_size, dtype=dtype, device=tdev).uniform_(-1 * max_value, max_value)
