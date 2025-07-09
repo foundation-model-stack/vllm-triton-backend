@@ -228,16 +228,16 @@ def metadata_fn_fused(
         ],
     restore_value = ['residual_ptr', 'x_ptr'],
     use_cuda_graph=True,
-    # fallback_heuristic = fallback_heuristic,
-    # informed_fallback = fused_informed_fallback_next,
-    # prepare_informed_fallback = fused_prepare_informed_fallback,
-    fallback_heuristic = select_fallback_heuristic(),
-    informed_fallback = fused_select_informed_fallback(),
-    prepare_informed_fallback = fused_select_prepare_informed_fallback(),
-    use_bo=use_bo(),
-    use_random_search=use_random(),
-    search_max_search_t=bo_time(),
-    search_max_share=1.0,  # will anyhow timeout...
+    # # fallback_heuristic = fallback_heuristic,
+    # # informed_fallback = fused_informed_fallback_next,
+    # # prepare_informed_fallback = fused_prepare_informed_fallback,
+    # fallback_heuristic = select_fallback_heuristic(),
+    # informed_fallback = fused_select_informed_fallback(),
+    # prepare_informed_fallback = fused_select_prepare_informed_fallback(),
+    # use_bo=use_bo(),
+    # use_random_search=use_random(),
+    # search_max_search_t=bo_time(),
+    # search_max_share=1.0,  # will anyhow timeout...
     metadata_key=_my_autotune_metadata_key_fused,
 )
 @triton.jit(launch_metadata=metadata_fn_fused)
