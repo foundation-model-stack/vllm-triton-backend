@@ -1,8 +1,28 @@
 {
     "signature": "JITFunction(ibm_triton_lib.kernels.rms:fused_add_rmsnorm_triton)",
-    "total_bench_time_s": 0.0,
-    "evaluated_configs": 0,
-    "keys": null,
-    "cache": {},
-    "timings": {}
+    "total_bench_time_s": 455.8888421058655,
+    "evaluated_configs": 252,
+    "keys": [
+        "stride_x_batch",
+        "stride_x_m",
+        "stride_x_k",
+        "stride_rms_w",
+        "N_SIZE"
+    ],
+    "cache": {
+        "('4096', '1', '1', '1', '4096', 'torch.float16', 'torch.float16', 'torch.float16')": "BLOCK_N_SIZE: 4096, num_warps: 4, num_ctas: 1, num_stages: 8, num_buffers_warp_spec: 0, num_consumer_groups: 0, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None"
+    },
+    "timings": {
+        "('4096', '1', '1', '1', '4096', 'torch.float16', 'torch.float16', 'torch.float16')": [
+            3.9808425903320312
+        ]
+    },
+    "timings_data": {
+        "labels": [
+            "ms"
+        ],
+        "rep_t_ms": 100,
+        "warmup_t_ms": 25,
+        "cuda_graphs": true
+    }
 }

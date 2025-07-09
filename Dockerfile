@@ -58,6 +58,9 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=bind,source=vllm/requirements/build.txt,target=requirements-build.txt \
     uv pip install -r requirements-build.txt
 
+# TODO
+RUN uv pip install -U 'torch==2.6' 'torchvision==0.21' 'torchaudio==2.6'
+
 # set env variables for build
 ENV PATH=/usr/local/cuda/bin:$PATH
 ENV TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 8.9 9.0+PTX"
@@ -163,7 +166,8 @@ RUN rm -rf /workspace/vllm
 
 # to avaoid incompatibility with our custom triton build
 #  see also https://github.com/vllm-project/vllm/issues/12219
-RUN uv pip install -U 'torch>=2.6' 'torchvision>=0.21' 'torchaudio>=2.6'
+# RUN uv pip install -U 'torch>=2.6' 'torchvision>=0.21' 'torchaudio>=2.6'
+RUN uv pip install -U 'torch==2.6' 'torchvision==0.21' 'torchaudio==2.6'
 
 # Install Triton (will replace version that vllm/pytorch installed)
 COPY --from=triton-builder /workspace/*.whl .

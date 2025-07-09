@@ -223,7 +223,7 @@ do_benchmarks = True
 quantiles = [0.5, 0.2, 0.8]
 # should maybe also be controlled via env variable
 force_dump_dataframes = False
-enforce_numerical_correctness = True
+# enforce_numerical_correctness = True
 enforce_numerical_correctness = False
 # do_profiling = True
 do_profiling = False
