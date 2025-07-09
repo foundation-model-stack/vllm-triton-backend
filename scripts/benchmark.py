@@ -66,6 +66,8 @@ class Implementation(Enum):
     TRITON_3D = 8
     TRITON_FUSED = 9
     PYTORCH_NATIVE = 10
+    TRITON_ZRL = 11
+    VLLM_CUDA_OPS = 12
 
 
 class BenchmarkMode(Enum):
@@ -125,6 +127,8 @@ NUM_BLOCKS = [4321]  # "arbitrary values for testing..."
 
 # options most likely not used...but keep for now?
 CAUSAL_FLASH = [True]  # vLLM only needs causal=True
+
+ADD_RESIDUAL = [True]
 
 PROMPT_PATTERNS = []
 PROMPT_PATTERNS.append([1.0])
@@ -221,10 +225,232 @@ quantiles = [0.5, 0.2, 0.8]
 force_dump_dataframes = False
 enforce_numerical_correctness = True
 # enforce_numerical_correctness = False
-do_profiling = True
+# do_profiling = True
+do_profiling = False
 store_hatchet = False
 debug_flag = os.getenv("TRITON_BACKEND_DEBUG") == "1"
 add_triton_dejavu_envs = True
+
+
+@pytest.mark.parametrize("seqlen", SEQUENCE_LENGTHS)
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+@pytest.mark.parametrize("num_heads", NUM_HEADS)
+@pytest.mark.parametrize("head_size", HEAD_SIZES)
+@pytest.mark.parametrize("add_residual", ADD_RESIDUAL)
+@pytest.mark.parametrize("dtype", DTYPES)
+@pytest.mark.parametrize("seed", SEEDS)
+@pytest.mark.parametrize("implementation", IMPLEMENTATION_UT)
+@pytest.mark.parametrize("max_value", MAX_VALUES)
+@pytest.mark.parametrize("benchmark_mode", BENCHMARK_MODES)
+@torch.inference_mode()
+def test_rms_norm(
+    capsys, 
+    request,
+    seqlen: int,
+    batch_size: int,
+    num_heads: int,
+    head_size: int,
+    add_residual: bool,
+    dtype: torch.dtype,
+    seed: int,
+    implementation,
+    max_value: float,
+    benchmark_mode,
+) -> None:
+
+    if implementation not in [Implementation.TRITON_ZRL, Implementation.VLLM_CUDA_OPS]:
+        pytest.skip()
+    
+    # ATTENTION: This ATOL=1e-4 / RTOL=2e-3 values were selected after many tests to correspond
+    #            with the observed tolerance of LLAMA-7B.
+    # NOTE(woosuk): LayerNorm operators (including RMS) typically have larger
+    # numerical errors than other operators because they involve reductions.
+    # Therefore, we use a larger tolerance.
+    # ATOL = 1e-2
+    # ATOL = 1e-8
+    ATOL = 1e-4
+    # ATOL = 1e-12
+    # ATOL = 1e-15 * max_value
+    # ATOL = 1e-8 * max_value
+    # ATOL = min(1e-8, 1e-8 * max_value)
+    # RTOL = 0
+    # RTOL = 1e-2
+    # RTOL = 1e-5
+    # RTOL = 1e-3 * 5
+    RTOL = 1e-3 * 2
+    # RTOL = min(1e-2, 1e-4*max_value)
+    
+    if implementation == Implementation.VLLM_CUDA_OPS:
+        from vllm import _custom_ops as ops
+        def layer_function(x, residual, weights, variance_epsilon):
+            assert residual is not None
+            ops.fused_add_rms_norm(
+                x, residual, weights, variance_epsilon)
+            return x, residual
+    elif implementation == Implementation.TRITON_ZRL:
+        from ibm_triton_lib.kernels import fused_add_rmsnorm_triton_wrapper
+        def layer_function(x, residual, weights, variance_epsilon):
+            assert residual is not None
+            x_out, residual_out = fused_add_rmsnorm_triton_wrapper(x, residual, weights, variance_epsilon)
+            return x_out, residual_out
+ 
+    torch.random.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    # https://github.com/openai/triton/issues/2925
+    torch.cuda.set_device(device)
+    tdev = torch.device(device)
+    # print(tdev)
+
+    num_tokens = seqlen * batch_size
+    hidden_size = num_heads * head_size
+    
+    # layer = RMSNorm(hidden_size).to(dtype=dtype, device=tdev)
+    # layer.weight.data.normal_(mean=1.0, std=0.1)
+    # layer.weight.data.to(tdev)
+    weights = torch.ones(hidden_size, dtype=dtype, device=tdev).normal_(mean=1.0, std=0.1)
+    variance_epsilon = 1e-6
+    scale = 1 / (2 * hidden_size)
+    x = torch.randn(num_tokens, hidden_size, dtype=dtype, device=tdev).uniform_(-1 * max_value, max_value)
+    x *= scale
+    residual = torch.randn_like(x) * scale if add_residual else None
+    
+    def forward_native(
+        x: torch.Tensor,
+        residual: torch.Tensor,
+        weights: torch.Tensor,
+        variance_epsilon: float,
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+        """PyTorch-native implementation equivalent to forward()."""
+        orig_dtype = x.dtype
+        xf32 = x.to(torch.float32)
+        # reference implementation -> NOT in place
+        # out = torch.empty_like(xf32)
+        x_tmp = xf32 + residual.to(torch.float32)
+        residual_tmp = x_tmp.to(orig_dtype)
+        variance = x_tmp.pow(2).mean(dim=-1, keepdim=True)
+        x_tmp = x_tmp * torch.rsqrt(variance + variance_epsilon)
+        x_tmp = x_tmp.to(orig_dtype)
+        x_tmp = x_tmp * weights
+        return x_tmp, residual_tmp
+
+
+    # NOTE(woosuk): The reference implementation should be executed first
+    # because the custom kernel is in-place.
+    ref_out = forward_native(x, residual, weights, variance_epsilon)
+    out = layer_function(x, residual, weights, variance_epsilon)
+    
+    captured = ''
+    if capsys is not None:
+        captured_raw = capsys.readouterr()  # returns stdout, stderr
+        for l in captured_raw:
+            if len(l) > 0:
+                # captured += l  # + '|'
+                captured += l  + ' '
+    
+    # compare
+    if enforce_numerical_correctness:
+        if add_residual:
+            triton.testing.assert_close(ref_out[0], out[0], atol=ATOL, rtol=RTOL)
+            triton.testing.assert_close(ref_out[1], out[1], atol=ATOL, rtol=RTOL)
+            allclose_pass = True
+        else:
+            # for better reports
+            triton.testing.assert_close(ref_out, out, atol=ATOL, rtol=RTOL)
+            allclose_pass = True
+    else:
+        if add_residual:
+            pass_t0 = torch.allclose(ref_out[0], out[0], atol=ATOL, rtol=RTOL)
+            pass_t1 = torch.allclose(ref_out[1], out[1], atol=ATOL, rtol=RTOL)
+            allclose_pass = pass_t0 and pass_t1
+        else:
+            allclose_pass = torch.allclose(ref_out, out, atol=ATOL, rtol=RTOL)
+
+
+    if do_benchmarks:
+        # my_name = sys._getframe().f_code.co_name
+        my_id = request.node.nodeid.split("::")[-1]
+        my_name = my_id.split('[')[0]
+        my_instance = my_id.split('[')[1][:-1]
+        # profiling_started = False
+        # if do_profiling and triton_mode == TritonMode.ENABLED:
+        #     import triton.profiler as proton
+        #     hatchet_name = os.path.abspath(f'{pytest.global_pd_file_prefix}/{my_name}_profile_{my_instance}')
+        #     proton.start(hatchet_name, hook="triton")
+        #     profiling_started = True
+
+        func_to_test = lambda: layer_function(x, residual, weights, variance_epsilon)
+
+        if my_name not in pytest.global_pds:
+            pytest.global_pds[my_name] = pd.DataFrame(columns=['batch_size', 'num_heads', 'seqlen', 'head_size', 
+                                                                   'dtype', 'device', 'max_value', 'add_residual', 'triton_mode', 'dejavu_tag', 'fallback_mode',
+                                                                   'ms', 'min_ms', 'max_ms', 'benchmark_mode', 'numerical_correct', 'ATOL', 'RTOL', 'captured'])
+        if benchmark_mode == BenchmarkMode.CUDA_EVENTS:
+            ms, min_ms, max_ms = triton.testing.do_bench(func_to_test, quantiles=quantiles)
+        elif benchmark_mode == BenchmarkMode.END2END:
+            ms, min_ms, max_ms = end2end_bench(func_to_test, quantiles=quantiles)
+        elif benchmark_mode == BenchmarkMode.CUDA_GRAPHS:
+            ms, min_ms, max_ms = triton.testing.do_bench_cudagraph(func_to_test, quantiles=quantiles)
+        else:
+            ms = float('nan')
+            min_ms = float('nan')
+            max_ms = float('nan')
+        # if profiling_started:
+        #     proton.finalize()
+        
+        # nr = [batch_size, num_heads, seqlen, head_size, dtype, device, max_value, add_residual, triton_mode,  dejavu_tag, fallback_mode,
+        #       ms, min_ms, max_ms, benchmark_mode, allclose_pass, ATOL, RTOL, captured]
+        # pytest.global_pds[my_name].loc[len(pytest.global_pds[my_name])] = nr
+        # if pytest.global_pd_file_prefix is not None:
+        #     filename = os.path.abspath(f'{pytest.global_pd_file_prefix}/{my_name}.csv')
+        #     pytest.global_pds[my_name].to_csv(filename, sep='\t', encoding='utf-8')
+        record = {
+            "batch_size": batch_size,
+            "seqlen": seqlen,
+            "head_size": head_size,
+            "add_residual": add_residual,
+            "dtype": dtype,
+            "max_value": max_value,
+            "implementation": implementation,
+            "ms": ms,
+            "min_ms": min_ms,
+            "max_ms": max_ms,
+            "benchmark_mode": benchmark_mode,
+            "allclose_pass": allclose_pass,
+            "ATOL": ATOL,
+            "RTOL": RTOL,
+            # "proton_count": proton_count,
+            # "proton_ns": proton_ns,
+            # "proton_util_compute": proton_util_compute,
+            # "proton_util_bw": proton_util_bw,
+            "captured": captured,
+        }
+
+        if add_triton_dejavu_envs:
+            dejavu_envs = {}
+            _skip_dejavu_envs = [
+                "_TRITON_DEJAVU_DETERMINED_CUDA_VERSION",
+                "DEBUG",
+                "STORAGE",
+            ]
+            for env in os.environ.keys():
+                if "TRITON_DEJAVU_" in env:
+                    if any([skip_s in env for skip_s in _skip_dejavu_envs]):
+                        continue
+                    dejavu_envs[env] = os.environ[env]
+            record.update(dejavu_envs)
+
+        if torch.version.hip and implementation == Implementation.FLASH_ATTN:
+            record["implementation"] = "Implementation.ROCM_FLASH_ATTN"
+
+        pytest.global_pds[my_name] = pd.concat(
+            [pytest.global_pds[my_name], pd.Series(record).to_frame().T]
+        ).reset_index(drop=True)
+
+        if pytest.global_pd_file_prefix is not None:
+            filename = os.path.abspath(
+                f"{pytest.global_pd_file_prefix}/{my_name}.csv"
+            )
+            write_df_and_chmod(pytest.global_pds[my_name], filename)
 
 
 @pytest.mark.parametrize("batch_size", BATCH_SIZES)

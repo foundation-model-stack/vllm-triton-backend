@@ -1,0 +1,54 @@
+{
+    "signature": "JITFunction(ibm_triton_lib.kernels.triton_flash_attention:attn_fwd)",
+    "total_bench_time_s": 13110.52973651886,
+    "evaluated_configs": 450,
+    "keys": [
+        "HQ",
+        "HK",
+        "IS_CAUSAL",
+        "dropout_p",
+        "BLOCK_DMODEL",
+        "stride_qz",
+        "stride_qh",
+        "stride_qm",
+        "stride_qk",
+        "stride_kz",
+        "stride_kh",
+        "stride_kn",
+        "stride_kk",
+        "stride_vz",
+        "stride_vh",
+        "stride_vn",
+        "stride_vk",
+        "stride_oz",
+        "stride_oh",
+        "stride_om",
+        "stride_on",
+        "stride_bz",
+        "stride_bh",
+        "stride_bm",
+        "stride_bn",
+        "stride_az",
+        "stride_ah",
+        "MAX_SEQLENS_Q",
+        "MAX_SEQLENS_K",
+        "VARLEN",
+        "ACTUAL_BLOCK_DMODEL"
+    ],
+    "cache": {
+        "('32', '8', 'True', '0.0', '128', '0', '128', '4096', '1', '0', '128', '1024', '1', '0', '128', '1', '1024', '0', '128', '4096', '1', '0', '0', '0', '0', '0', '0', '2048', '2048', 'True', '128', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.float32', 'torch.float16', 'torch.int32', 'torch.int32', 'torch.int32')": "BLOCK_M: 128, BLOCK_N: 32, PRE_LOAD_V: False, GRID_CU_MULTIP: 2, num_warps: 4, num_ctas: 1, num_stages: 4, num_buffers_warp_spec: 0, num_consumer_groups: 0, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None"
+    },
+    "timings": {
+        "('32', '8', 'True', '0.0', '128', '0', '128', '4096', '1', '0', '128', '1024', '1', '0', '128', '1', '1024', '0', '128', '4096', '1', '0', '0', '0', '0', '0', '0', '2048', '2048', 'True', '128', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.float32', 'torch.float16', 'torch.int32', 'torch.int32', 'torch.int32')": [
+            0.966131865978241
+        ]
+    },
+    "timings_data": {
+        "labels": [
+            "ms"
+        ],
+        "rep_t_ms": 100,
+        "warmup_t_ms": 25,
+        "cuda_graphs": true
+    }
+}

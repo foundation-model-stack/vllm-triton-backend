@@ -78,3 +78,5 @@ from .fused_gqa_paged import (
 from .fused_chunked_prefill_paged_decode import (
     fused_chunked_prefill_paged_decode as fused_chunked_prefill_paged_decode_25d,
 )
+
+from .rms import fused_add_rmsnorm_triton_wrapper
