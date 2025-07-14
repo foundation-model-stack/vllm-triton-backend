@@ -216,9 +216,9 @@ def metadata_fn_fused(
 
 @triton_dejavu.autotune(
     config_space=triton_dejavu.ConfigSpace(
-        {'BLOCK_N_SIZE': [32, 64, 128, 256, 512, 1024, 2048, 4096, 8192]},
-        num_warps=[4, 8, 16, 32],
-        num_stages=[1, 2, 4, 6, 8, 10, 12],
+        {'BLOCK_N_SIZE': [16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192]},
+        num_warps=[2, 4, 8, 16, 32],
+        num_stages=[1, 2, 3, 4, 5, 6, 8, 10, 12],
         num_ctas=[1],
     ),
     # TODO batch size and sequence length is part of grid...
