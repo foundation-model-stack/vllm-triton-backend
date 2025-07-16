@@ -24,16 +24,18 @@ import time
 
 # to use triton_attn backend
 os.environ["VLLM_USE_V1"] = "1"
-os.environ["VLLM_ATTENTION_BACKEND"] = "TRITON_ATTN_VLLM_V1"
+os.environ["VLLM_PLUGINS"] = ""
+# os.environ["VLLM_ATTENTION_BACKEND"] = "TRITON_ATTN_VLLM_V1"
+os.environ["VLLM_ATTENTION_BACKEND"] = "FLASHINFER"
 # os.environ["VLLM_TRITON_ENABLE_JITCACHE"] = "1"
 os.environ["VLLM_TRITON_ENABLE_JITCACHE"] = "0"
 
 # enable torch profiler, can also be set on cmd line
-# enable_profiling = True
-enable_profiling = False
+enable_profiling = True
+# enable_profiling = False
 
 if enable_profiling:
-    os.environ["VLLM_TORCH_PROFILER_DIR"] = "./vllm_torch_profile"
+    os.environ["VLLM_TORCH_PROFILER_DIR"] = "./vllm_torch_profile_mamba"
 
 
 if __name__ == "__main__":
@@ -41,11 +43,14 @@ if __name__ == "__main__":
     from vllm.distributed import cleanup_dist_env_and_memory
 
     llm = LLM(
-        # model="meta-llama/Llama-3.1-8B-Instruct",
         model=f"{os.environ["MY_MODEL_PATH"]}",
-        # max_model_len=2048,
         # enforce_eager=True,
+        enable_chunked_prefill=True,
         enable_prefix_caching=False,
+        tensor_parallel_size=2,
+        max_model_len=31628,
+        max_num_seqs=512,
+        num_scheduler_steps=1,
     )
 
     # batch_size = 32
@@ -56,7 +61,7 @@ if __name__ == "__main__":
 
     prompts = [
         "Zurich is a beautiful city with",
-        "San Francisco is a large city with",
+        # "San Francisco is a large city with",
         # "Provide a list of instructions for preparing chicken soup for a family "
         # "of four.",
         # "Skating and cross country skiing technique differ in",
