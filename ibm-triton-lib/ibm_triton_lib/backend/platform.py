@@ -29,6 +29,7 @@ from vllm.logger import init_logger
 
 
 from vllm.platforms import Platform, PlatformEnum
+
 if not torch.version.hip:
     from vllm.platforms.cuda import CudaPlatform
 else:
@@ -69,7 +70,9 @@ if not torch.version.hip:
             if not envs.VLLM_USE_V1:
                 raise RuntimeError("vllm-triton-backend plugin only supports vLLM V1")
             return "ibm_triton_lib.backend.triton_attn.TritonAttentionBackend"
+
 else:
+
     class TritonPlatform(RocmPlatform):
 
         @classmethod

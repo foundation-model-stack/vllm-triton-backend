@@ -141,7 +141,6 @@ def _get_rocm_version():
     return rocm_version
 
 
-
 def get_runtime_label():
     if torch.version.hip:
         return f"rocm_{_get_rocm_version()}"

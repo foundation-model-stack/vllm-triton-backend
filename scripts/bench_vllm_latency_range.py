@@ -41,12 +41,13 @@ def create_dir_if_not_exist(path, mode=0o777):
         except PermissionError as e:
             print(f"can't set permission of directory {path}: {e}")
 
+
 if len(sys.argv) < 4:
     print(f"Usage: {sys.argv[0]} <model_path> <testcase_name> <result_path>")
 
-selected_batch_sizes        = [1] #[4, 16, 32] #,128]
-selected_input_lengths      = [500] #, 1000, 1500, 2000, 4000, 8000, 16000]
-selected_output_lengths     = [10,100,200,400,800,1600,3200,6400,12800]
+selected_batch_sizes = [1]  # [4, 16, 32] #,128]
+selected_input_lengths = [500]  # , 1000, 1500, 2000, 4000, 8000, 16000]
+selected_output_lengths = [10, 100, 200, 400, 800, 1600, 3200, 6400, 12800]
 
 gpu_name = torch.cuda.get_device_name().replace(" ", "_").replace("/", "_")
 
@@ -62,9 +63,7 @@ max_num_prompts = 1000
 timestamp_f = datetime.now().strftime("%Y-%m-%d_%H%M")
 
 # result_dir = f"/results/{model.replace('/','-')}/{gpu_name}/{testcase_name}"
-result_dir = (
-    f"{result_path}/{model.replace('/','-')}/{gpu_name}/{testcase_name}/exp_{timestamp_f}/"
-)
+result_dir = f"{result_path}/{model.replace('/','-')}/{gpu_name}/{testcase_name}/exp_{timestamp_f}/"
 
 # os.system(f"mkdir -p {result_dir}")
 create_dir_if_not_exist_recursive(result_dir)
@@ -78,14 +77,23 @@ if not os.path.isfile(bench_script):
 
 # Assisted by watsonx Code Assistant
 from itertools import zip_longest
-zipped_lists = list(zip_longest(selected_batch_sizes, selected_input_lengths, selected_output_lengths, fillvalue=None))
+
+zipped_lists = list(
+    zip_longest(
+        selected_batch_sizes,
+        selected_input_lengths,
+        selected_output_lengths,
+        fillvalue=None,
+    )
+)
 
 print(zipped_lists)
 
 
-
-for bs,il,ol in zipped_lists:
-    print(f"====== Measuring batch_size {bs}, input length {il}, output length {ol} =====")
+for bs, il, ol in zipped_lists:
+    print(
+        f"====== Measuring batch_size {bs}, input length {il}, output length {ol} ====="
+    )
     json_file_name = f"{result_dir}/result_bs_{bs}_il_{il}_ol_{ol}.json"
     cmd = (
         f"VLLM_USE_V1=1 python {bench_script} "

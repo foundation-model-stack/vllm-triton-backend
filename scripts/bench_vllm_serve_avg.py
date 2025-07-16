@@ -41,8 +41,11 @@ def create_dir_if_not_exist(path, mode=0o777):
         except PermissionError as e:
             print(f"can't set permission of directory {path}: {e}")
 
+
 if len(sys.argv) < 5:
-    print(f"Usage: {sys.argv[0]} <model_path> <testcase_name> <repitions> <result_path> [<port>]")
+    print(
+        f"Usage: {sys.argv[0]} <model_path> <testcase_name> <repitions> <result_path> [<port>]"
+    )
 
 repitions = int(sys.argv[3])
 gpu_name = torch.cuda.get_device_name().replace(" ", "_").replace("/", "_")
@@ -60,9 +63,7 @@ max_num_prompts = 1000
 timestamp_f = datetime.now().strftime("%Y-%m-%d_%H%M")
 
 # result_dir = f"/results/{model.replace('/','-')}/{gpu_name}/{testcase_name}"
-result_dir = (
-    f"{result_path}/{model.replace('/','-')}/{gpu_name}/{testcase_name}/exp_{timestamp_f}/"
-)
+result_dir = f"{result_path}/{model.replace('/','-')}/{gpu_name}/{testcase_name}/exp_{timestamp_f}/"
 
 # os.system(f"mkdir -p {result_dir}")
 create_dir_if_not_exist_recursive(result_dir)
@@ -97,9 +98,9 @@ avg_dict = {"avg_total_token_throughput": 0, "avg_ttft": 0, "avg_itl": 0}
 
 # Assisted by watsonx Code Assistant
 for filename in os.listdir(result_dir):
-    if filename.endswith('.json'):
+    if filename.endswith(".json"):
         file_path = os.path.join(result_dir, filename)
-        with open(file_path, 'r') as file:
+        with open(file_path, "r") as file:
             try:
                 data = json.load(file)
                 # print(f"Loaded data from {filename}:")
@@ -115,6 +116,8 @@ avg_dict["avg_ttft"] /= repitions
 avg_dict["avg_itl"] /= repitions
 
 print(f"\nSummary of {repitions} repitions:")
-print(f"Average of total token throughputs: {avg_dict['avg_total_token_throughput']:.2f} tokens/sec")
+print(
+    f"Average of total token throughputs: {avg_dict['avg_total_token_throughput']:.2f} tokens/sec"
+)
 print(f"Average of Median TTFTs:            {avg_dict['avg_ttft']:.2f} ms")
 print(f"Average of Median ITLs:             {avg_dict['avg_itl']:.2f} ms")

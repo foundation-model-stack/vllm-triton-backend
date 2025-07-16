@@ -141,8 +141,7 @@ class TritonAttentionMetadataBuilder(AttentionMetadataBuilder[TritonAttentionMet
         block_table_tensor = block_table.get_device_tensor()[:num_reqs]
 
         avg_seq_len = int(self.runner.seq_lens_np[:num_reqs].mean())
-        avg_query_len = int(self.runner.query_start_loc_np[num_reqs]/num_reqs)
-
+        avg_query_len = int(self.runner.query_start_loc_np[num_reqs] / num_reqs)
 
         block_table.slot_mapping[:num_actual_tokens].copy_(
             block_table.slot_mapping_cpu[:num_actual_tokens], non_blocking=True
@@ -251,7 +250,8 @@ class TritonAttentionBackend(AttentionBackend):
                 f"Head size {head_size} is not supported by {attn_type}. "
                 f"Supported head sizes are: {supported_head_sizes}. "
                 "Set VLLM_ATTENTION_BACKEND=FLEX_ATTENTION to use "
-                "FlexAttention backend which supports all head sizes.")
+                "FlexAttention backend which supports all head sizes."
+            )
 
     @staticmethod
     def get_name() -> str:

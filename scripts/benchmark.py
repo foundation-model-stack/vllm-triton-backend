@@ -1526,24 +1526,31 @@ def test_mamba_ssm(
     #     # reduce operations are not supported (?)
     #     pytest.skip()
 
-    # TODO 
+    # TODO
     assert num_heads[0] == num_heads[1]
     nheads = num_heads[0]
     headdim = head_size
-    
+
     def generate_dummy_data(batch_size):
 
-        hidden_states = torch.randn(batch_size, nheads, headdim, dtype=dtype, device=device)
+        hidden_states = torch.randn(
+            batch_size, nheads, headdim, dtype=dtype, device=device
+        )
         A = torch.rand(nheads, dtype=dtype, device=device)
         B = torch.randn(batch_size, dstate, dtype=dtype, device=device)
         C = torch.randn(batch_size, dstate, dtype=dtype, device=device)
         D = torch.randn(nheads, dtype=dtype, device=device)
         dt = torch.randn(batch_size, nheads, dtype=dtype, device=device)
         dt_bias = torch.randn(nheads, dtype=dtype, device=device)
-        state_indices_tensor = torch.arange(batch_size, dtype=torch.int32, device=device)
-        
-        A = A[:, None, ...][:, :, None].expand(
-            -1, headdim, dstate).to(dtype=torch.float32)
+        state_indices_tensor = torch.arange(
+            batch_size, dtype=torch.int32, device=device
+        )
+
+        A = (
+            A[:, None, ...][:, :, None]
+            .expand(-1, headdim, dstate)
+            .to(dtype=torch.float32)
+        )
         dt = dt[:, :, None].expand(-1, -1, headdim)
         dt_bias = dt_bias[:, None, ...].expand(-1, headdim)
         D = D[:, None, ...].expand(-1, headdim)
@@ -1552,43 +1559,56 @@ def test_mamba_ssm(
 
         initial_states = (
             torch.randn(batch_size, nheads, headdim, dstate, dtype=dtype, device=device)
-            if has_initial_state else None
+            if has_initial_state
+            else None
         )
 
         return (
-            hidden_states, initial_states, 
-            A, B, C, D, dt, dt_bias,
+            hidden_states,
+            initial_states,
+            A,
+            B,
+            C,
+            D,
+            dt,
+            dt_bias,
             state_indices_tensor,
         )
 
     captured = ""
     try:
         (
-            hidden_states, initial_states, 
-            A, B, C, D, dt, dt_bias, 
+            hidden_states,
+            initial_states,
+            A,
+            B,
+            C,
+            D,
+            dt,
+            dt_bias,
             state_indices_tensor,
         ) = generate_dummy_data(batch_size)
 
         from ibm_triton_lib.kernels import selective_state_update
-    
+
         # TODO?
         # warm up
         warmup_start = datetime.now()
         for _ in range(3):
-                _ = selective_state_update(
-                    initial_states,
-                    hidden_states,
-                    dt,
-                    A,
-                    B,
-                    C,
-                    D,
-                    z=None,
-                    dt_bias=dt_bias,
-                    dt_softplus=True,
-                    state_batch_indices=state_indices_tensor,
-                )
-        print (f"warmup time {datetime.now()-warmup_start}")
+            _ = selective_state_update(
+                initial_states,
+                hidden_states,
+                dt,
+                A,
+                B,
+                C,
+                D,
+                z=None,
+                dt_bias=dt_bias,
+                dt_softplus=True,
+                state_batch_indices=state_indices_tensor,
+            )
+        print(f"warmup time {datetime.now()-warmup_start}")
 
         if capsys is not None:
             captured_raw = capsys.readouterr()  # returns stdout, stderr
@@ -1603,20 +1623,20 @@ def test_mamba_ssm(
         #     allclose_pass = True
         # else:
         #     allclose_pass = torch.allclose(ref_output, output, atol=ATOL, rtol=RTOL)
-        
-        call_func_under_test = lambda : selective_state_update(
-                initial_states,
-                hidden_states,
-                dt,
-                A,
-                B,
-                C,
-                D,
-                z=None,
-                dt_bias=dt_bias,
-                dt_softplus=True,
-                state_batch_indices=state_indices_tensor,
-            )
+
+        call_func_under_test = lambda: selective_state_update(
+            initial_states,
+            hidden_states,
+            dt,
+            A,
+            B,
+            C,
+            D,
+            z=None,
+            dt_bias=dt_bias,
+            dt_softplus=True,
+            state_batch_indices=state_indices_tensor,
+        )
 
         # benchmark only correct results
         if do_benchmarks:
