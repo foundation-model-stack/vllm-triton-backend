@@ -67,3 +67,5 @@ from .triton_flash_attention import (
 )
 
 from .triton_unified_attention import unified_attention
+
+from .mamba_ssm import selective_state_update

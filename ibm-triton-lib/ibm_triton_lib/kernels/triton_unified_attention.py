@@ -11,7 +11,9 @@ import torch
 import triton
 import triton.language as tl
 
+import os
 import triton_dejavu
+import functools
 
 
 @triton.jit
@@ -50,8 +52,166 @@ def find_seq_idx(
     return left - 1
 
 
+# not as lambda, for python3.9
+def fallback_heuristic_dt2(key):
+    tpa_test_q = key[1]
+    tpa_test_k = key[2]
+    # Model trained on max
+    if tpa_test_q < 1024:
+        BLOCK_M = 16
+    else:
+        BLOCK_M = 64
+
+    if tpa_test_k < 64:
+        if tpa_test_k < 32:
+            BLOCK_N = 16
+        else:
+            BLOCK_N = 32
+    else:
+        if tpa_test_q < 256:
+            BLOCK_N = 128
+        else:
+            BLOCK_N = 64
+    ret = triton.Config(
+        {"BLOCK_M": BLOCK_M, "BLOCK_N": BLOCK_N}, num_stages=2, num_warps=8
+    )
+    # num stages = 2, to be on the safe side for MI300
+    return ret
+
+
+def informed_fallback_next(key, cache):
+    # key[0] = max q
+    # key[2] = avg q
+    ret = cache[min(cache.keys(), key=lambda x: abs(x - key[0]))]
+    return ret
+
+
+def prepare_informed_fallback(cache):
+    ret = {int(k[0]): c for k, c in cache.items()}
+    return ret
+
+
+@functools.lru_cache
+def prefill_heuristics_2d(MAX_SEQ_Q, MAX_SEQ_K, AVG_SEQ_Q, AVG_SEQ_K):
+    gpu_name = torch.cuda.get_device_name()
+    # print(f"MAX_SEQ_Q {MAX_SEQ_Q}, MAX_SEQ_K {MAX_SEQ_K}, AVG_SEQ_Q {AVG_SEQ_Q}, AVG_SEQ_K {AVG_SEQ_K}")
+    if "NVIDIA H100" in gpu_name:
+        # # TPA original heuristic
+        # if MAX_SEQ_Q < 1024:
+        #     BLOCK_M = 16
+        # else:
+        #     BLOCK_M = 64
+        # if MAX_SEQ_K < 64:
+        #     if MAX_SEQ_K < 32:
+        #         BLOCK_N = 16
+        #     else:
+        #         BLOCK_N = 32
+        # else:
+        #     if MAX_SEQ_Q < 256:
+        #         BLOCK_N = 128
+        #     else:
+        #         BLOCK_N = 64
+        # config = {'num_stages': 3, 'num_warps': 4,
+        #           'BLOCK_N': BLOCK_N, 'BLOCK_M': BLOCK_M}
+        # dejavu with microbenchmarks
+        # TODO: update to latest tuning with AVG
+        if MAX_SEQ_K <= 96:
+            config = {"num_stages": 4, "num_warps": 4, "BLOCK_N": 32, "BLOCK_M": 16}
+        else:
+            if MAX_SEQ_Q <= 192:
+                if MAX_SEQ_K <= 1536:
+                    config = {
+                        "num_stages": 2,
+                        "num_warps": 8,
+                        "BLOCK_N": 128,
+                        "BLOCK_M": 16,
+                    }
+                else:
+                    config = {
+                        "num_stages": 8,
+                        "num_warps": 8,
+                        "BLOCK_N": 128,
+                        "BLOCK_M": 16,
+                    }
+            else:
+                config = {
+                    "num_stages": 1,
+                    "num_warps": 8,
+                    "BLOCK_N": 128,
+                    "BLOCK_M": 128,
+                }
+    elif "AMD Instinct MI300" in gpu_name:
+        # dejavu with microbenchmarks
+        # TODO: update to latest tuning with AVG
+        if MAX_SEQ_Q <= 384:
+            if MAX_SEQ_K <= 96:
+                config = {"num_stages": 4, "num_warps": 4, "BLOCK_N": 32, "BLOCK_M": 16}
+            else:
+                if MAX_SEQ_K <= 192:
+                    if MAX_SEQ_Q <= 96:
+                        config = {
+                            "num_stages": 2,
+                            "num_warps": 8,
+                            "BLOCK_N": 128,
+                            "BLOCK_M": 16,
+                        }
+                    else:
+                        config = {
+                            "num_stages": 4,
+                            "num_warps": 4,
+                            "BLOCK_N": 32,
+                            "BLOCK_M": 16,
+                        }
+                else:
+                    if MAX_SEQ_Q <= 128:
+                        config = {
+                            "num_stages": 4,
+                            "num_warps": 4,
+                            "BLOCK_N": 32,
+                            "BLOCK_M": 16,
+                        }
+                    else:
+                        if MAX_SEQ_K <= 384:
+                            config = {
+                                "num_stages": 4,
+                                "num_warps": 4,
+                                "BLOCK_N": 32,
+                                "BLOCK_M": 16,
+                            }
+                        else:
+                            config = {
+                                "num_stages": 1,
+                                "num_warps": 4,
+                                "BLOCK_N": 256,
+                                "BLOCK_M": 32,
+                            }
+        else:
+            if MAX_SEQ_K <= 768:
+                config = {"num_stages": 4, "num_warps": 4, "BLOCK_N": 16, "BLOCK_M": 64}
+            else:
+                config = {"num_stages": 1, "num_warps": 2, "BLOCK_N": 64, "BLOCK_M": 64}
+    else:
+        # default
+        config = {
+            "BLOCK_M": 64 if MAX_SEQ_Q > 1 and AVG_SEQ_Q >= 4096 else 16,
+            "BLOCK_N": 16 if MAX_SEQ_K < 128 and AVG_SEQ_Q <= 4096 else 64,
+            "num_warps": 4,
+            "num_stages": 3,
+        }
+    # print(config)
+    return config
+
+
 @triton_dejavu.jitcache(
-    check_keys=[],
+    # this list is shorter, since it will be called only within one model
+    check_keys=[
+        "MAX_SEQ_Q",
+        "MAX_SEQ_K",
+        "AVG_SEQ_Q",
+        "AVG_SEQ_K",
+        "stride_k_cache_3",
+        "stride_v_cache_3",
+    ],
     check_specialization=["num_seqs"],
     assume_const=[
         "scale",
@@ -67,7 +227,51 @@ def find_seq_idx(
         "stride_v_cache_1",
         "stride_v_cache_2",
     ],
+    autotuner_args=["BLOCK_N", "BLOCK_M"],
 )
+@triton_dejavu.autotune(
+    config_space=triton_dejavu.ConfigSpace(
+        {
+            "BLOCK_N": [16, 32, 64, 128, 256, 512],
+            "BLOCK_M": [16, 32, 64, 128, 256, 512],
+        },
+        num_warps=[2, 4, 8],
+        num_stages=[1, 2, 4, 6, 8],
+    ),
+    # this list is longer, since it would be used for multiple models
+    key=[
+        "MAX_SEQ_Q",
+        "MAX_SEQ_K",
+        "AVG_SEQ_Q",
+        "AVG_SEQ_K",
+        "num_query_heads",
+        "num_queries_per_kv",
+        "BLOCK_SIZE",
+        "HEAD_SIZE",
+        "HEAD_SIZE_PADDED",
+        "SLIDING_WINDOW",
+        "stride_k_cache_3",
+        "stride_v_cache_3",
+    ],
+    custom_data_storage=os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "dejavu_data")
+    ),
+    use_cuda_graph=True,
+    use_bo=True,
+    search_max_search_t=360,
+    informed_fallback=informed_fallback_next,
+    prepare_informed_fallback=prepare_informed_fallback,
+    fallback_heuristic=fallback_heuristic_dt2,
+    ignore_dtypes=True,
+)
+# @triton.heuristics(
+#        {
+#            "BLOCK_M": lambda args: prefill_heuristics_2d(args['MAX_SEQ_Q'], args['MAX_SEQ_K'], args['AVG_SEQ_Q'], args['AVG_SEQ_K'])['BLOCK_M'],
+#            "BLOCK_N": lambda args: prefill_heuristics_2d(args['MAX_SEQ_Q'], args['MAX_SEQ_K'], args['AVG_SEQ_Q'], args['AVG_SEQ_K'])['BLOCK_N'],
+#            "num_warps": lambda args: prefill_heuristics_2d(args['MAX_SEQ_Q'], args['MAX_SEQ_K'], args['AVG_SEQ_Q'], args['AVG_SEQ_K'])['num_warps'],
+#            "num_stages": lambda args: prefill_heuristics_2d(args['MAX_SEQ_Q'], args['MAX_SEQ_K'], args['AVG_SEQ_Q'], args['AVG_SEQ_K'])['num_stages'],
+#         }
+# )
 @triton.jit
 def kernel_unified_attention_2d(
     output_ptr,  # [num_tokens, num_query_heads, head_size]
@@ -103,12 +307,20 @@ def kernel_unified_attention_2d(
     stride_v_cache_2: tl.int64,  # int
     stride_v_cache_3: tl.constexpr,  # int
     query_start_len_ptr,  # [num_seqs+1]
-    BLOCK_Q: tl.constexpr,  # int
     num_seqs: tl.int32,
+    # used as input to the autotuner/heuristics
+    MAX_SEQ_Q: tl.constexpr,
+    MAX_SEQ_K: tl.constexpr,
+    AVG_SEQ_Q: tl.constexpr,
+    AVG_SEQ_K: tl.constexpr,
+    # autotuner args
     BLOCK_M: tl.constexpr,  # int
+    BLOCK_N: tl.constexpr,  # int
 ):
+
     q_block_global_idx = tl.program_id(0)
     kv_head_idx = tl.program_id(1)
+    BLOCK_Q = BLOCK_M // num_queries_per_kv
 
     seq_idx = find_seq_idx(
         query_start_len_ptr, q_block_global_idx, num_seqs, BLOCK_Q, True
@@ -167,31 +379,57 @@ def kernel_unified_attention_2d(
             alibi_slopes_ptr + query_offset_1, mask=query_mask_1, other=0.0
         )
 
-    num_blocks = cdiv_fn(seq_len, BLOCK_SIZE)
+    # compute the length of the longest sequence prefix spanned by any
+    # query token in the current q_block (q_block_local_idx)
+    max_seq_prefix_len = (
+        context_len
+        + q_block_local_idx * BLOCK_Q
+        + (BLOCK_M - 1) // num_queries_per_kv
+        + 1
+    )
 
-    # iterate through tiles
-    for j in range(0, num_blocks):
+    # adjust for potential padding in the last q_block by considering the
+    # actual sequence length
+    max_seq_prefix_len = tl.minimum(max_seq_prefix_len, seq_len)
 
-        physical_block_idx = tl.load(block_tables_ptr + block_table_offset + j)
+    offs_n = tl.arange(0, BLOCK_N)
 
-        offs_n = tl.arange(0, BLOCK_SIZE)
+    # iterate through tiles (below the mask)
+    # The loop iterates only until the longest sequence. Due to causal
+    # masking, blocks beyond this prefix can be skipped.
+    for start_n in range(0, max_seq_prefix_len, BLOCK_N):
+
+        start_n = tl.multiple_of(start_n, BLOCK_N)
+
+        physical_block_idx = tl.load(
+            block_tables_ptr + block_table_offset + (start_n + offs_n) // BLOCK_SIZE,
+            mask=(start_n + offs_n) < seq_len,
+            other=0,
+        )
 
         v_offset = (
-            physical_block_idx * stride_v_cache_0
+            physical_block_idx[:, None] * stride_v_cache_0
             + kv_head_idx * stride_v_cache_2
             + offs_d[None, :] * stride_v_cache_3
-            + offs_n[:, None] * stride_v_cache_1
+            + (offs_n[:, None] % BLOCK_SIZE) * stride_v_cache_1
         )
 
         k_offset = (
-            physical_block_idx * stride_k_cache_0
+            physical_block_idx[None, :] * stride_k_cache_0
             + kv_head_idx * stride_k_cache_2
             + offs_d[:, None] * stride_k_cache_3
-            + offs_n[None, :] * stride_k_cache_1
+            + (offs_n[None, :] % BLOCK_SIZE) * stride_k_cache_1
         )
 
-        # K : (HEAD_SIZE, BLOCK_SIZE)
-        K_load = tl.load(key_cache_ptr + k_offset, mask=dim_mask[:, None], other=0.0)
+        seq_offset_load = start_n + offs_n
+        load_mask = seq_offset_load < max_seq_prefix_len
+
+        # K : (HEAD_SIZE_PADDED, BLOCK_N)
+        K_load = tl.load(
+            key_cache_ptr + k_offset,
+            mask=dim_mask[:, None] & load_mask[None, :],
+            other=0.0,
+        )
 
         if K_load.dtype.is_fp8():
             if Q.dtype.is_fp8():
@@ -201,8 +439,12 @@ def kernel_unified_attention_2d(
         else:
             K = K_load
 
-        # V : (BLOCK_SIZE, HEAD_SIZE)
-        V_load = tl.load(value_cache_ptr + v_offset, mask=dim_mask[None, :], other=0.0)
+        # V : (BLOCK_N, HEAD_SIZE_PADDED)
+        V_load = tl.load(
+            value_cache_ptr + v_offset,
+            mask=dim_mask[None, :] & load_mask[:, None],
+            other=0.0,
+        )
 
         if V_load.dtype.is_fp8():
             if Q.dtype.is_fp8():
@@ -212,12 +454,13 @@ def kernel_unified_attention_2d(
         else:
             V = V_load
 
-        seq_offset = j * BLOCK_SIZE + offs_n
+        seq_offset = start_n + tl.arange(0, BLOCK_N)
 
+        # seq_mask: (BLOCK_M, BLOCK_N)
         seq_mask = seq_offset[None, :] < context_len + query_pos[:, None] + 1
 
-        # S : (BLOCK_M, BLOCK_SIZE)
-        S = tl.zeros(shape=(BLOCK_M, BLOCK_SIZE), dtype=tl.float32)
+        # S : (BLOCK_M, BLOCK_N)
+        S = tl.zeros(shape=(BLOCK_M, BLOCK_N), dtype=tl.float32)
 
         S += scale * tl.dot(Q, K)
 
@@ -245,7 +488,7 @@ def kernel_unified_attention_2d(
         # the entire row. In this case we need to set m_j 0 to avoid NaN
         m_j = tl.where(m_j > float("-inf"), m_j, 0.0)
 
-        # P : (BLOCK_M, BLOCK_SIZE)
+        # P : (BLOCK_M, BLOCK_N)
         P = tl.exp(S - m_j[:, None])
 
         # l_j : (BLOCK_M,)
@@ -602,6 +845,8 @@ def unified_attention(
     max_seqlen_q,
     seqused_k,
     max_seqlen_k,
+    avg_seqlen_q,
+    avg_seqlen_k,
     softmax_scale,
     causal,
     window_size,
@@ -630,32 +875,20 @@ def unified_attention(
     num_queries_per_kv = num_query_heads // num_kv_heads
     head_size = q.shape[2]
 
-    BLOCK_M = 16
-    BLOCK_Q = BLOCK_M // num_queries_per_kv
-
-    # Ideally we would launch with kernel with:
-    # \sum_i[ceil(query_len[i] / BLOCK_Q)] blocks.
-    # However, it is slow to realize the query_lens on cpu.
-    # Instead we use upper-bound:
-    # \sum_i[ceil(query_len[i] / BLOCK_Q)]
-    #   <= \sum_i[floor(query_len[i] / BLOCK_Q) + 1]
-    #    = \sum_i[floor(query_len[i] / BLOCK_Q)] + num_seqs
-    #   <= floor(\sum_i(query_len[i]) / BLOCK_Q) + num_seqs
-    #    = floor(q.shape[0] / BLOCK_Q) + num_seqs
-    total_num_q_blocks = q.shape[0] // BLOCK_Q + num_seqs
+    MAX_SEQ_Q = triton.next_power_of_2(int(max_seqlen_q))
+    MAX_SEQ_K = triton.next_power_of_2(int(max_seqlen_k))
+    AVG_SEQ_Q = triton.next_power_of_2(int(avg_seqlen_q))
+    AVG_SEQ_K = triton.next_power_of_2(int(avg_seqlen_k))
 
     # if batch contains a prefill
-    if (
-        max_seqlen_q > 1
-        or total_num_q_blocks * num_kv_heads > 128
-        or force_selection == 2
-    ) and force_selection != 3:
-        kernel_unified_attention_2d[
-            (
-                total_num_q_blocks,
-                num_kv_heads,
-            )
-        ](
+    if max_seqlen_q > 1 or force_selection == 2 and force_selection != 3:
+
+        grid = lambda META: (
+            q.shape[0] // (META["BLOCK_M"] // num_queries_per_kv) + num_seqs,
+            num_kv_heads,
+        )
+
+        kernel_unified_attention_2d[grid](
             output_ptr=out,
             query_ptr=q,
             key_cache_ptr=k,
@@ -689,11 +922,27 @@ def unified_attention(
             stride_v_cache_2=v.stride(2),
             stride_v_cache_3=v.stride(3),
             query_start_len_ptr=cu_seqlens_q,
-            BLOCK_Q=BLOCK_Q,
             num_seqs=num_seqs,
-            BLOCK_M=BLOCK_M,
+            MAX_SEQ_Q=MAX_SEQ_Q,
+            MAX_SEQ_K=MAX_SEQ_K,
+            AVG_SEQ_Q=AVG_SEQ_Q,
+            AVG_SEQ_K=AVG_SEQ_K,
         )
     else:
+        BLOCK_M = 64 if max_seqlen_q > 1 and avg_seqlen_q >= 4096 else 16
+        BLOCK_Q = BLOCK_M // num_queries_per_kv
+
+        # Ideally we would launch with kernel with:
+        # \sum_i[ceil(query_len[i] / BLOCK_Q)] blocks.
+        # However, it is slow to realize the query_lens on cpu.
+        # Instead we use upper-bound:
+        # \sum_i[ceil(query_len[i] / BLOCK_Q)]
+        #   <= \sum_i[floor(query_len[i] / BLOCK_Q) + 1]
+        #    = \sum_i[floor(query_len[i] / BLOCK_Q)] + num_seqs
+        #   <= floor(\sum_i(query_len[i]) / BLOCK_Q) + num_seqs
+        #    = floor(q.shape[0] / BLOCK_Q) + num_seqs
+        total_num_q_blocks = q.shape[0] // BLOCK_Q + num_seqs
+
         # for initial version, NUM_SEGMENTS = 16 is chosen as a default
         # value that showed good performance in tests
         NUM_SEGMENTS = 16
