@@ -244,8 +244,9 @@ RUN git clone --depth 1 https://github.com/IBM/fmwork.git
 
 ENV STORE_TEST_RESULT_PATH=/results
 
-# copy vllm benchmarks
+# copy vllm benchmarks and tests
 COPY vllm/benchmarks benchmarks
+COPY vllm/tests tests
 COPY ShareGPT_V3_unfiltered_cleaned_split.json ShareGPT_V3_unfiltered_cleaned_split.json
 
 # Copy thid-party kernels and insert into path
