@@ -73,129 +73,27 @@ def fallback_heuristic_dt2(key):
             BLOCK_N = 64
     ret = triton.Config(
         {"BLOCK_M": BLOCK_M, "BLOCK_N": BLOCK_N}, 
-        num_stages=4, num_warps=8)
+        num_stages=2, num_warps=8)
+    # num stages = 2, to be on the safe side for MI300
     return ret
 
 
 def informed_fallback_next(key, cache):
-    # key[27] = MAX_SEQLENS_Q
-    ret = cache[min(cache.keys(), key=lambda x: abs(x - key[2]))]
+    # key[0] = max q
+    # key[2] = avg q
+    ret = cache[min(cache.keys(), key=lambda x: abs(x - key[0]))]
     return ret
 
 
 def prepare_informed_fallback(cache):
-    # key[2] = max k
-    ret = {int(k[2]): c for k, c in cache.items()}
+    ret = {int(k[0]): c for k, c in cache.items()}
     return ret
     
-# gpu_name = torch.cuda.get_device_name()
-# # print(gpu_name)
-# 
-# 
-# # @functools.lru_cache
-# def prefill_heuristics_2d_BLOCK_M(MAX_SEQ_Q, MAX_SEQ_K):
-#     if "NVIDIA H100" in gpu_name:
-#         BLOCK_M = 16 if MAX_SEQ_Q <= 192 else 128
-#     elif "AMD Instinct MI300" in gpu_name:
-#         if MAX_SEQ_Q <= 384:
-#             if MAX_SEQ_K > 384 and MAX_SEQ_Q > 192:
-#                 BLOCK_M = 32
-#             else:
-#                 BLOCK_M = 16
-#         else: 
-#             BLOCK_M = 64
-#     else:
-#         BLOCK_M = 64 if MAX_SEQ_Q > 1 else 16
-#     # print(f"MAX_SEQ_Q {MAX_SEQ_Q}, MAX_SEQ_K {MAX_SEQ_K}")
-#     # print("BLOCK_M: ", BLOCK_M)
-#     return BLOCK_M
-# 
-# 
-# # @functools.lru_cache
-# def prefill_heuristics_2d_BLOCK_N(MAX_SEQ_Q, MAX_SEQ_K):
-#     if "NVIDIA H100" in gpu_name:
-#         BLOCK_N = 32 if MAX_SEQ_K <= 192 else 128
-#     elif "AMD Instinct MI300" in gpu_name:
-#         if MAX_SEQ_Q <= 384:
-#             if 96 < MAX_SEQ_K <= 192 and MAX_SEQ_Q <= 96:
-#                 BLOCK_N = 128
-#             elif MAX_SEQ_K > 384:
-#                 BLOCK_N = 256
-#             else:
-#                 BLOCK_N = 32
-#         else:
-#             if MAX_SEQ_K <= 768:
-#                 BLOCK_N = 16
-#             else:
-#                 BLOCK_N = 64
-#     else:
-#         BLOCK_N = 16 if MAX_SEQ_K < 128 else 64
-#     # print("BLOCK_N: ", BLOCK_N)
-#     return BLOCK_N
-# 
-# 
-# # @functools.lru_cache
-# def prefill_heuristics_2d_WARPS(MAX_SEQ_Q, MAX_SEQ_K):
-#     if "NVIDIA H100" in gpu_name:
-#         num_warps = 4 if MAX_SEQ_K <= 96 else 8
-#     elif "AMD Instinct MI300" in gpu_name:
-#         if MAX_SEQ_Q <= 384:
-#             if 96 < MAX_SEQ_K <= 192 and MAX_SEQ_Q <= 96:
-#                 num_warps = 8
-#             else:
-#                 num_warps = 4
-#         else:
-#             if MAX_SEQ_K <= 768:
-#                 num_warps = 4
-#             else:
-#                 num_warps = 2
-#     else:
-#         num_warps = 4  # default
-#     # print("num_warps: ", num_warps)
-#     return num_warps 
-# 
-# 
-# # @functools.lru_cache
-# def prefill_heuristics_2d_STAGES(MAX_SEQ_Q, MAX_SEQ_K):
-#     if "NVIDIA H100" in gpu_name:
-#         if MAX_SEQ_K <= 96:
-#             num_stages = 4
-#         else:
-#             if MAX_SEQ_Q <= 192:
-#                 if MAX_SEQ_K <= 1536:
-#                     num_stages = 2
-#                 else:
-#                     num_stages = 8
-#             else:
-#                 num_stages = 1
-#     elif "AMD Instinct MI300" in gpu_name:
-#         if MAX_SEQ_Q <= 192:
-#             # if 96 < MAX_SEQ_K <= 192 and MAX_SEQ_Q <= 96:
-#             if 192 < MAX_SEQ_K < 1536:
-#                 num_stages = 2
-#             elif MAX_SEQ_K >= 1536:
-#                 num_stages = 1
-#             else:
-#                 num_stages = 4
-#         else:
-#             if MAX_SEQ_K <= 768:
-#                 if MAX_SEQ_K > 384 and MAX_SEQ_Q <= 384:
-#                     num_stages = 1
-#                 else:
-#                     num_stages = 4
-#             else:
-#                 num_stages = 1
-# 
-#     else:
-#         num_stages = 3  # default
-#     # print("num_stages: ", num_stages)
-#     return num_stages
-
 
 @functools.lru_cache
-def prefill_heuristics_2d(MAX_SEQ_Q, MAX_SEQ_K):
+def prefill_heuristics_2d(MAX_SEQ_Q, MAX_SEQ_K, AVG_SEQ_Q, AVG_SEQ_K):
     gpu_name = torch.cuda.get_device_name()
-    # print(f"MAX_SEQ_Q {MAX_SEQ_Q}, MAX_SEQ_K {MAX_SEQ_K}")
+    # print(f"MAX_SEQ_Q {MAX_SEQ_Q}, MAX_SEQ_K {MAX_SEQ_K}, AVG_SEQ_Q {AVG_SEQ_Q}, AVG_SEQ_K {AVG_SEQ_K}")
     if "NVIDIA H100" in gpu_name:
         # # TPA original heuristic
         # if MAX_SEQ_Q < 1024:
@@ -215,6 +113,7 @@ def prefill_heuristics_2d(MAX_SEQ_Q, MAX_SEQ_K):
         # config = {'num_stages': 3, 'num_warps': 4,
         #           'BLOCK_N': BLOCK_N, 'BLOCK_M': BLOCK_M}
         # dejavu with microbenchmarks
+        # TODO: update to latest tuning with AVG
         if MAX_SEQ_K <= 96:
             config = {'num_stages' : 4, 'num_warps': 4, 
                       'BLOCK_N' : 32, 'BLOCK_M' : 16}
@@ -230,6 +129,8 @@ def prefill_heuristics_2d(MAX_SEQ_Q, MAX_SEQ_K):
                 config = {'num_stages' : 1, 'num_warps': 8, 
                           'BLOCK_N' : 128, 'BLOCK_M' : 128}
     elif "AMD Instinct MI300" in gpu_name:
+        # dejavu with microbenchmarks
+        # TODO: update to latest tuning with AVG
         if MAX_SEQ_Q <= 384:
             if MAX_SEQ_K <= 96:
                 config = {"num_stages": 4, "num_warps": 4, "BLOCK_N": 32, "BLOCK_M": 16}
@@ -255,35 +156,35 @@ def prefill_heuristics_2d(MAX_SEQ_Q, MAX_SEQ_K):
     else:
         # default
         config = {
-            'BLOCK_M': 64 if MAX_SEQ_Q > 1 else 16,
-            'BLOCK_N': 16 if MAX_SEQ_K < 128 else 64,
+            'BLOCK_M': 64 if MAX_SEQ_Q > 1 and AVG_SEQ_Q >= 4096 else 16,
+            'BLOCK_N': 16 if MAX_SEQ_K < 128 and AVG_SEQ_Q <= 4096 else 64,
             'num_warps': 4,
             'num_stages': 3,
         }
     # print(config)
     return config
 
-# @triton_dejavu.jitcache(
-#     # this list is shorter, since it will be called only within one model
-#     check_keys=["MAX_SEQ_Q", "MAX_SEQ_K", "AVG_SEQ_Q", "AVG_SEQ_K", 
-#                 "stride_k_cache_3", "stride_v_cache_3"],
-#     check_specialization=["num_seqs"],
-#     assume_const=[
-#         "scale",
-#         "k_scale",
-#         "v_scale",
-#         "query_stride_1",
-#         "output_stride_1",
-#         "stride_k_cache_0",
-#         "stride_k_cache_1",
-#         "stride_k_cache_2",
-#         "stride_k_cache_4",
-#         "stride_v_cache_0",
-#         "stride_v_cache_1",
-#         "stride_v_cache_2",
-#     ],
-#     autotuner_args=["BLOCK_N", "BLOCK_M"],
-# )
+@triton_dejavu.jitcache(
+    # this list is shorter, since it will be called only within one model
+    check_keys=["MAX_SEQ_Q", "MAX_SEQ_K", "AVG_SEQ_Q", "AVG_SEQ_K", 
+                "stride_k_cache_3", "stride_v_cache_3"],
+    check_specialization=["num_seqs"],
+    assume_const=[
+        "scale",
+        "k_scale",
+        "v_scale",
+        "query_stride_1",
+        "output_stride_1",
+        "stride_k_cache_0",
+        "stride_k_cache_1",
+        "stride_k_cache_2",
+        "stride_k_cache_4",
+        "stride_v_cache_0",
+        "stride_v_cache_1",
+        "stride_v_cache_2",
+    ],
+    autotuner_args=["BLOCK_N", "BLOCK_M"],
+)
 @triton_dejavu.autotune(
     config_space=triton_dejavu.ConfigSpace(
         {
@@ -312,10 +213,10 @@ def prefill_heuristics_2d(MAX_SEQ_Q, MAX_SEQ_K):
 )
 # @triton.heuristics(
 #        {
-#            "BLOCK_M": lambda args: prefill_heuristics_2d(args['MAX_SEQ_Q'], args['MAX_SEQ_K'])['BLOCK_M'],
-#            "BLOCK_N": lambda args: prefill_heuristics_2d(args['MAX_SEQ_Q'], args['MAX_SEQ_K'])['BLOCK_N'],
-#            "num_warps": lambda args: prefill_heuristics_2d(args['MAX_SEQ_Q'], args['MAX_SEQ_K'])['num_warps'],
-#            "num_stages": lambda args: prefill_heuristics_2d(args['MAX_SEQ_Q'], args['MAX_SEQ_K'])['num_stages'],
+#            "BLOCK_M": lambda args: prefill_heuristics_2d(args['MAX_SEQ_Q'], args['MAX_SEQ_K'], args['AVG_SEQ_Q'], args['AVG_SEQ_K'])['BLOCK_M'],
+#            "BLOCK_N": lambda args: prefill_heuristics_2d(args['MAX_SEQ_Q'], args['MAX_SEQ_K'], args['AVG_SEQ_Q'], args['AVG_SEQ_K'])['BLOCK_N'],
+#            "num_warps": lambda args: prefill_heuristics_2d(args['MAX_SEQ_Q'], args['MAX_SEQ_K'], args['AVG_SEQ_Q'], args['AVG_SEQ_K'])['num_warps'],
+#            "num_stages": lambda args: prefill_heuristics_2d(args['MAX_SEQ_Q'], args['MAX_SEQ_K'], args['AVG_SEQ_Q'], args['AVG_SEQ_K'])['num_stages'],
 #         } 
 # )
 @triton.jit
