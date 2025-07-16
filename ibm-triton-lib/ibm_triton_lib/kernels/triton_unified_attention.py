@@ -360,26 +360,17 @@ def kernel_unified_attention_2d(
     AVG_SEQ_Q: tl.constexpr,
     AVG_SEQ_K: tl.constexpr,
     # autotuner args
-    BLOCK_M: tl.constexpr,
-    BLOCK_N: tl.constexpr,
+    BLOCK_M: tl.constexpr,  # int
+    BLOCK_N: tl.constexpr,  # int
 ):
     
     q_block_global_idx = tl.program_id(0)
     kv_head_idx = tl.program_id(1)
+    BLOCK_Q = BLOCK_M // num_queries_per_kv
 
-    BLOCK_Q: tl.constexpr = BLOCK_M // num_queries_per_kv
+    seq_idx = find_seq_idx(query_start_len_ptr, q_block_global_idx, num_seqs,
+                           BLOCK_Q, True)
 
-    left: tl.int32 = 0
-    right = num_seqs
-    while left < right:
-        mid = (left + right) // 2
-        mid_val = tl.load(query_start_len_ptr + mid) // BLOCK_Q + mid
-        if mid_val <= q_block_global_idx:
-            left = mid + 1
-        else:
-            right = mid
-
-    seq_idx = left - 1
     q_block_start_idx = tl.load(query_start_len_ptr +
                                 seq_idx) // BLOCK_Q + seq_idx
 
@@ -394,15 +385,13 @@ def kernel_unified_attention_2d(
     if q_block_local_idx * BLOCK_Q >= cur_batch_query_len:
         return
 
-    offs_m = tl.arange(0, BLOCK_Q * num_queries_per_kv)
+    offs_m = tl.arange(0, BLOCK_M)
     offs_d = tl.arange(0, HEAD_SIZE_PADDED)
-
     query_pos = q_block_local_idx * BLOCK_Q + offs_m // num_queries_per_kv
 
     query_offset_0 = cur_batch_in_all_start_index + query_pos
     query_offset_1 = kv_head_idx * num_queries_per_kv + \
         offs_m % num_queries_per_kv
-
     query_offset = (query_offset_0[:, None] * query_stride_0 +
                     query_offset_1[:, None] * query_stride_1 + offs_d[None, :])
 
@@ -410,7 +399,7 @@ def kernel_unified_attention_2d(
     query_mask_0 = tl.where(query_pos < cur_batch_query_len, 1, 0).to(tl.int1)
     query_mask_1 = tl.where(query_offset_1 < num_query_heads, 1, 0).to(tl.int1)
 
-    # Q : (BLOCK_Q * num_queries_per_kv, HEAD_SIZE,)
+    # Q : (BLOCK_M, HEAD_SIZE_PADDED)
     Q = tl.load(
         query_ptr + query_offset,
         mask=dim_mask[None, :] & query_mask_0[:, None] & query_mask_1[:, None],
@@ -419,12 +408,9 @@ def kernel_unified_attention_2d(
 
     block_table_offset = seq_idx * block_table_stride
 
-    M = tl.full([BLOCK_Q * num_queries_per_kv],
-                float("-inf"),
-                dtype=tl.float32)
-    L = tl.full([BLOCK_Q * num_queries_per_kv], 1.0, dtype=tl.float32)
-    acc = tl.zeros([BLOCK_Q * num_queries_per_kv, HEAD_SIZE_PADDED],
-                   dtype=tl.float32)
+    M = tl.full([BLOCK_M], float("-inf"), dtype=tl.float32)
+    L = tl.full([BLOCK_M], 1.0, dtype=tl.float32)
+    acc = tl.zeros([BLOCK_M, HEAD_SIZE_PADDED], dtype=tl.float32)
 
     # sequence len for this particular sequence
     seq_len = tl.load(seq_lens_ptr + seq_idx)
@@ -450,9 +436,9 @@ def kernel_unified_attention_2d(
     offs_n = tl.arange(0, BLOCK_N)
 
     # iterate through tiles (below the mask)
-    for start_n in range(0,
-                         max_seq_prefix_len,
-                         BLOCK_N):
+    # The loop iterates only until the longest sequence. Due to causal
+    # masking, blocks beyond this prefix can be skipped.
+    for start_n in range(0, max_seq_prefix_len, BLOCK_N):
 
         start_n = tl.multiple_of(start_n, BLOCK_N)
 
@@ -471,9 +457,12 @@ def kernel_unified_attention_2d(
                     offs_d[:, None] * stride_k_cache_3 +
                     (offs_n[None, :] % BLOCK_SIZE) * stride_k_cache_1)
 
-        # K : (HEAD_SIZE, BLOCK_SIZE)
+        seq_offset_load = start_n + offs_n
+        load_mask = seq_offset_load < max_seq_prefix_len
+
+        # K : (HEAD_SIZE_PADDED, BLOCK_N)
         K_load = tl.load(key_cache_ptr + k_offset,
-                         mask=dim_mask[:, None],
+                         mask=dim_mask[:, None] & load_mask[None, :],
                          other=0.0)
 
         if K_load.dtype.is_fp8():
@@ -484,9 +473,9 @@ def kernel_unified_attention_2d(
         else:
             K = K_load
 
-        # V : (BLOCK_SIZE, HEAD_SIZE)
+        # V : (BLOCK_N, HEAD_SIZE_PADDED)
         V_load = tl.load(value_cache_ptr + v_offset,
-                         mask=dim_mask[None, :],
+                         mask=dim_mask[None, :] & load_mask[:, None],
                          other=0.0)
 
         if V_load.dtype.is_fp8():
@@ -499,11 +488,11 @@ def kernel_unified_attention_2d(
 
         seq_offset = start_n + tl.arange(0, BLOCK_N)
 
+        # seq_mask: (BLOCK_M, BLOCK_N)
         seq_mask = seq_offset[None, :] < context_len + query_pos[:, None] + 1
 
-        # S : (BLOCK_Q * num_queries_per_kv, BLOCK_N,)
-        S = tl.zeros(shape=(BLOCK_Q * num_queries_per_kv, BLOCK_N),
-                     dtype=tl.float32)
+        # S : (BLOCK_M, BLOCK_N)
+        S = tl.zeros(shape=(BLOCK_M, BLOCK_N), dtype=tl.float32)
 
         S += scale * tl.dot(Q, K)
 
@@ -521,29 +510,29 @@ def kernel_unified_attention_2d(
             S += alibi_slope[:, None] * (seq_offset - context_len)
 
         # compute running maximum
-        # m_j : (BLOCK_Q * num_queries_per_kv,)
+        # m_j : (BLOCK_M,)
         m_j = tl.maximum(M, tl.max(S, axis=1))
         # For sliding window there's a chance the max is -inf due to masking of
         # the entire row. In this case we need to set m_j 0 to avoid NaN
         m_j = tl.where(m_j > float("-inf"), m_j, 0.0)
 
-        # P : (BLOCK_Q * num_queries_per_kv, BLOCK_N,)
+        # P : (BLOCK_M, BLOCK_N)
         P = tl.exp(S - m_j[:, None])
 
-        # l_j : (BLOCK_Q * num_queries_per_kv,)
+        # l_j : (BLOCK_M,)
         l_j = tl.sum(P, axis=1)
 
-        # alpha : (BLOCK_Q * num_queries_per_kv, )
+        # alpha : (BLOCK_M, )
         alpha = tl.exp(M - m_j)
 
-        # acc : (BLOCK_Q * num_queries_per_kv, BLOCK_N,)
+        # acc : (BLOCK_M, HEAD_SIZE_PADDED)
         acc = acc * alpha[:, None]
 
         # update constants
         L = L * alpha + l_j
         M = m_j
 
-        # acc : (BLOCK_Q * num_queries_per_kv, BLOCK_N,)
+        # acc : (BLOCK_M, HEAD_SIZE_PADDED)
         acc += tl.dot(P.to(V.dtype), V)
 
     # epilogue
@@ -605,9 +594,8 @@ def kernel_unified_attention_3d(
     kv_head_idx = tl.program_id(1)
     segm_idx = tl.program_id(2)
 
-    seq_idx = find_seq_idx(
-        query_start_len_ptr, q_block_global_idx, num_seqs, BLOCK_Q, True
-    )
+    seq_idx = find_seq_idx(query_start_len_ptr, q_block_global_idx, num_seqs,
+                           BLOCK_Q, True)
 
     q_block_start_idx = tl.load(query_start_len_ptr + seq_idx) // BLOCK_Q + seq_idx
 
@@ -616,7 +604,8 @@ def kernel_unified_attention_3d(
     cur_batch_in_all_start_index = tl.load(query_start_len_ptr + seq_idx)
     cur_batch_in_all_stop_index = tl.load(query_start_len_ptr + seq_idx + 1)
 
-    cur_batch_query_len = cur_batch_in_all_stop_index - cur_batch_in_all_start_index
+    cur_batch_query_len = cur_batch_in_all_stop_index \
+        - cur_batch_in_all_start_index
 
     if q_block_local_idx * BLOCK_Q >= cur_batch_query_len:
         return
@@ -637,7 +626,8 @@ def kernel_unified_attention_3d(
     query_pos = q_block_local_idx * BLOCK_Q + offs_m // num_queries_per_kv
 
     query_offset_0 = cur_batch_in_all_start_index + query_pos
-    query_offset_1 = kv_head_idx * num_queries_per_kv + offs_m % num_queries_per_kv
+    query_offset_1 = kv_head_idx * num_queries_per_kv + \
+        offs_m % num_queries_per_kv
 
     query_offset = (
         query_offset_0[:, None] * query_stride_0
@@ -667,16 +657,16 @@ def kernel_unified_attention_3d(
 
     # alibi slope for this head
     if USE_ALIBI_SLOPES:
-        alibi_slope = tl.load(
-            alibi_slopes_ptr + query_offset_1, mask=query_mask_1, other=0.0
-        )
+        alibi_slope = tl.load(alibi_slopes_ptr + query_offset_1,
+                              mask=query_mask_1,
+                              other=0.0)
 
     num_blocks = cdiv_fn(seq_len, BLOCK_SIZE)
 
     # iterate through tiles within current segment
     for j in range(
-        segm_idx * blocks_per_segment,
-        min((segm_idx + 1) * blocks_per_segment, num_blocks),
+            segm_idx * blocks_per_segment,
+            min((segm_idx + 1) * blocks_per_segment, num_blocks),
     ):
         physical_block_idx = tl.load(block_tables_ptr + block_table_offset + j)
 
@@ -882,6 +872,8 @@ def unified_attention(
     max_seqlen_q,
     seqused_k,
     max_seqlen_k,
+    avg_seqlen_q,
+    avg_seqlen_k,
     softmax_scale,
     causal,
     window_size,
@@ -891,8 +883,6 @@ def unified_attention(
     k_descale,
     v_descale,
     alibi_slopes=None,
-    avg_seqlen_q=None,
-    avg_seqlen_k=None,
     force_selection=None,  # None, 2, 3 to select kernel
 ):
     assert causal, "Only causal attention is supported"
@@ -912,95 +902,16 @@ def unified_attention(
     num_queries_per_kv = num_query_heads // num_kv_heads
     head_size = q.shape[2]
 
-    BLOCK_M = 16
-    BLOCK_Q = BLOCK_M // num_queries_per_kv
-
-    # Ideally we would launch with kernel with:
-    # \sum_i[ceil(query_len[i] / BLOCK_Q)] blocks.
-    # However, it is slow to realize the query_lens on cpu.
-    # Instead we use upper-bound:
-    # \sum_i[ceil(query_len[i] / BLOCK_Q)]
-    #   <= \sum_i[floor(query_len[i] / BLOCK_Q) + 1]
-    #    = \sum_i[floor(query_len[i] / BLOCK_Q)] + num_seqs
-    #   <= floor(\sum_i(query_len[i]) / BLOCK_Q) + num_seqs
-    #    = floor(q.shape[0] / BLOCK_Q) + num_seqs
-    total_num_q_blocks = q.shape[0] // BLOCK_Q + num_seqs
+    MAX_SEQ_Q = triton.next_power_of_2(int(max_seqlen_q))
+    MAX_SEQ_K = triton.next_power_of_2(int(max_seqlen_k))
+    AVG_SEQ_Q = triton.next_power_of_2(int(avg_seqlen_q))
+    AVG_SEQ_K = triton.next_power_of_2(int(avg_seqlen_k))
 
     # if batch contains a prefill
-    if (
-        max_seqlen_q > 1
-        or total_num_q_blocks * num_kv_heads > 128
-        or force_selection == 2
-    ) and force_selection != 3:
+    if max_seqlen_q > 1 or force_selection == 2 and force_selection != 3:
 
-        # '''
-        # BLOCK_M = 16 if avg_seqlen_q < 8 else (16 if avg_seqlen_k < 128 else 64)
-
-        # if avg_seqlen_q < 8:
-        #     if avg_seqlen_k < 64:
-        #         BLOCK_N = 16
-        #     else:
-        #         BLOCK_N = 128
-        # else:
-        #     if avg_seqlen_k < 32:
-        #         BLOCK_N = 16
-        #     else:
-        #         BLOCK_N = 32
-        # '''
-
-        # tpa_test_q = triton.next_power_of_2(int(max_seqlen_q))
-        # tpa_test_k = triton.next_power_of_2(int(max_seqlen_k))
-
-        # '''
-        # # Model trained on avg
-        # BLOCK_M = 16 if tpa_test_q < 8 else (16 if tpa_test_k < 128 else 64)
-
-        # if tpa_test_q < 8:
-        #     if tpa_test_k < 64:
-        #         BLOCK_N = 16
-        #     else:
-        #         BLOCK_N = 128
-        # else:
-        #     if tpa_test_k < 32:
-        #         BLOCK_N = 16
-        #     else:
-        #         BLOCK_N = 32
-        # '''
-
-        # # Model trained on max
-        # if tpa_test_q < 1024:
-        #     BLOCK_M = 16
-        # else:
-        #     BLOCK_M = 64
-
-        # if tpa_test_k < 64:
-        #     if tpa_test_k < 32:
-        #         BLOCK_N = 16
-        #     else:
-        #         BLOCK_N = 32
-        # else:
-        #     if tpa_test_q < 256:
-        #         BLOCK_N = 128
-        #     else:
-        #         BLOCK_N = 64
-
-        # '''
-        # m_factor = 1 if tpa_test_q < 1024 else 4
-
-        # BLOCK_M : tl.constexpr = 16 * m_factor
-        # BLOCK_N : tl.constexpr = max(16, min(tpa_test_k, 128) // m_factor)
-        # '''
-        # # grid = (q.shape[0] // (BLOCK_M // num_queries_per_kv)
-        # #     + num_seqs, num_kv_heads)
-        
-        MAX_SEQ_Q = triton.next_power_of_2(int(max_seqlen_q))
-        MAX_SEQ_K = triton.next_power_of_2(int(max_seqlen_k))
-        AVG_SEQ_Q = triton.next_power_of_2(int(avg_seqlen_q))
-        AVG_SEQ_K = triton.next_power_of_2(int(avg_seqlen_k))
-
-        grid = lambda META : (q.shape[0] // (META['BLOCK_M'] // num_queries_per_kv)
-                                + num_seqs, num_kv_heads)
-
+        grid = lambda META: (q.shape[0] // (META[
+            'BLOCK_M'] // num_queries_per_kv) + num_seqs, num_kv_heads)
 
         kernel_unified_attention_2d[grid](
             output_ptr=out,
@@ -1041,12 +952,22 @@ def unified_attention(
             MAX_SEQ_K=MAX_SEQ_K,
             AVG_SEQ_Q=AVG_SEQ_Q,
             AVG_SEQ_K=AVG_SEQ_K,
-            # tpa_test_q=tpa_test_q,
-            # tpa_test_k=tpa_test_k,
-            # BLOCK_M=BLOCK_M,
-            # BLOCK_N=BLOCK_N,
         )
     else:
+        BLOCK_M = 64 if max_seqlen_q > 1 and avg_seqlen_q >= 4096 else 16
+        BLOCK_Q = BLOCK_M // num_queries_per_kv
+
+        # Ideally we would launch with kernel with:
+        # \sum_i[ceil(query_len[i] / BLOCK_Q)] blocks.
+        # However, it is slow to realize the query_lens on cpu.
+        # Instead we use upper-bound:
+        # \sum_i[ceil(query_len[i] / BLOCK_Q)]
+        #   <= \sum_i[floor(query_len[i] / BLOCK_Q) + 1]
+        #    = \sum_i[floor(query_len[i] / BLOCK_Q)] + num_seqs
+        #   <= floor(\sum_i(query_len[i]) / BLOCK_Q) + num_seqs
+        #    = floor(q.shape[0] / BLOCK_Q) + num_seqs
+        total_num_q_blocks = q.shape[0] // BLOCK_Q + num_seqs
+
         # for initial version, NUM_SEGMENTS = 16 is chosen as a default
         # value that showed good performance in tests
         NUM_SEGMENTS = 16
