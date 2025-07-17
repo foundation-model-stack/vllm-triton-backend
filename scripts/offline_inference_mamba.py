@@ -44,7 +44,7 @@ if __name__ == "__main__":
 
     llm = LLM(
         model=f"{os.environ["MY_MODEL_PATH"]}",
-        # enforce_eager=True,
+        enforce_eager=True,
         enable_chunked_prefill=True,
         enable_prefix_caching=False,
         tensor_parallel_size=2,
@@ -61,7 +61,7 @@ if __name__ == "__main__":
 
     prompts = [
         "Zurich is a beautiful city with",
-        # "San Francisco is a large city with",
+        "San Francisco is a large city with",
         # "Provide a list of instructions for preparing chicken soup for a family "
         # "of four.",
         # "Skating and cross country skiing technique differ in",
