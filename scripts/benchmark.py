@@ -118,6 +118,13 @@ STATE_DIM = [128]
 STATE_N_GROUPS = [1]
 HAS_INITIAL_STATE = [True]
 
+MOE_NUM_EXPERTS = [8]
+MOE_N = [14336]  # intermediate size of mixtral-8x7b
+MOE_K = [4096]  # for mixtral-8x7b
+TP_FACTOR = [1, 2]
+MOE_TOP_K = [2]  # for mixtral-8x7b, mixtral-8x22b
+
+
 IMPLEMENTATION_UT = [
     Implementation.TRITON_2D,
     Implementation.TRITON_3D,
@@ -167,6 +174,12 @@ test_setup_vars = [
     "MAX_VALUES",
     "STATE_DIM",
     "STATE_N_GROUPS",
+    "HAS_INITIAL_STATE",
+    "MOE_NUM_EXPERTS",
+    "MOE_N",
+    "MOE_K",
+    "TP_FACTOR",
+    "MOE_TOP_K",
 ]
 # "BENCHMARK_MODES", "IMPLEMENTATION_UT" ]
 debug_env_vars = [
@@ -187,8 +200,12 @@ if len(sys.argv) >= 1:
         import json
 
         envfile_path = os.path.abspath(envfile_name)
-        print(f"\nApplied test config: {envfile_path}")
+        if not os.path.isfile(envfile_path):
+            raise RuntimeError(f"Test config file {envfile_path} does not exist.")
         env_setting = dotenv_values(envfile_path)
+        if len(env_setting) == 0:
+            raise RuntimeError(f"Test config file {envfile_path} does not contain valid configs.")
+        print(f"\nApplied test config: {envfile_path}")
         # filter allowed, convert all to lists
         env_setting_filtered = {
             k: json.loads(env_setting[k]) for k in test_setup_vars if k in env_setting
@@ -1703,6 +1720,218 @@ def test_mamba_ssm(
         print("\nexception:")
         print(e)
         raise e
+
+
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+@pytest.mark.parametrize("seqlen", SEQUENCE_LENGTHS)
+@pytest.mark.parametrize("n", MOE_N)
+@pytest.mark.parametrize("k", MOE_K)
+@pytest.mark.parametrize("e", MOE_NUM_EXPERTS)
+@pytest.mark.parametrize("tp", TP_FACTOR)
+@pytest.mark.parametrize("topk", MOE_TOP_K)
+@pytest.mark.parametrize("dtype", DTYPES)
+@pytest.mark.parametrize("seed", SEEDS)
+@pytest.mark.parametrize("max_value", MAX_VALUES)
+# @pytest.mark.parametrize("implementation", IMPLEMENTATION_UT)
+@pytest.mark.parametrize("benchmark_mode", BENCHMARK_MODES)
+def test_fused_moe(
+    capsys,
+    request,
+    batch_size,
+    seqlen,
+    n: int,
+    k: int,
+    e: int,
+    tp: int,
+    topk: int,
+    dtype: torch.dtype,
+    seed,
+    max_value,
+    # implementation,
+    benchmark_mode,
+):
+    # based on: https://github.com/vllm-project/vllm/blob/main/tests/kernels/test_moe.py
+    from vllm.model_executor.layers.activation import SiluAndMul
+
+    my_id = request.node.nodeid.split("::")[-1]
+    my_name = my_id.split("[")[0]
+    my_instance = my_id.split("[")[1][:-1]
+   
+    def torch_moe(a, w1, w2, score, topk):
+        B, D = a.shape
+        a = a.view(B, -1, D).repeat(1, topk, 1).reshape(-1, D)
+        out = torch.zeros(B * topk, w2.shape[1], dtype=a.dtype, device=a.device)
+        score = torch.softmax(score, dim=-1, dtype=torch.float32)
+        topk_weight, topk_ids = torch.topk(score, topk)
+        topk_weight = topk_weight.view(-1)
+        topk_ids = topk_ids.view(-1)
+        for i in range(w1.shape[0]):
+            mask = topk_ids == i
+            if mask.sum():
+                out[mask] = SiluAndMul()(
+                    a[mask] @ w1[i].transpose(0, 1)) @ w2[i].transpose(0, 1)
+        return (out.view(B, -1, w2.shape[1]) *
+                topk_weight.view(B, -1, 1).to(out.dtype)).sum(dim=1)
+
+    from ibm_triton_lib.kernels import fused_moe
+    # my_experts = TritonExperts()
+    # fused_moe = my_experts.apply
+
+    torch.manual_seed(seed)
+    tdev = torch.device(device)
+    torch.cuda.set_device(tdev)
+    # m = batch_size * seqlen
+    num_tokens = batch_size * seqlen
+    m = num_tokens
+    n  = int(n//tp)
+    
+    # ATOL = 1e-2
+    # TODO
+    ATOL = max(1e-2, 2 * max_value)
+    RTOL = 0
+
+    a = None
+    w1 = None
+    w2 = None
+    score = None
+    torch_output = None
+    triton_output = None
+
+    inner_exception = None 
+    try: 
+
+        a = torch.randn((m, k), device=tdev, dtype=dtype).normal_(mean=0.0, std=0.5 * max_value)
+        # w1 = torch.randn((e, n, k), device=tdev, dtype=dtype).normal_(mean=0.0, std=0.5 * max_value)
+        # w2 = torch.randn((e, k, n//2), device=tdev, dtype=dtype).normal_(mean=0.0, std=0.5 * max_value)
+        w1 = torch.randn((e, 2 * n, k), device=tdev, dtype=dtype).normal_(mean=0.0, std=0.5 * max_value)
+        w2 = torch.randn((e, k, n), device=tdev, dtype=dtype).normal_(mean=0.0, std=0.5 * max_value)
+        score = torch.randn((m, e), device=tdev, dtype=dtype)
+    
+        input_gating = torch.empty(num_tokens, e, dtype=torch.float32, device=tdev)
+
+        if enforce_numerical_correctness:
+            torch_output = torch_moe(a, w1, w2, score, topk)
+            assert torch_output is not None
+        """
+        from fused_moe.py
+         Key Parameters:
+            - A: The input tensor representing tokens with shape (*, K), where '*' can
+                be any shape representing batches and K is the feature dimension of
+                each token.
+            - B: The stacked MOE weight tensor with shape (E, N, K), where E is
+                the number of experts, K is the input feature dimension, and N is
+                the output feature dimension.
+            - C: The output cache tensor with shape (M, topk, N), where M is the
+                total number of tokens post padding, topk is the number of times
+                each token is repeated, and N is the output feature dimension.
+        """
+
+        # TODO: renormalize? 
+        triton_output = fused_moe(a, w1, w2, input_gating, topk,
+                                  renormalize=True) #inplace=True ? 
+        assert triton_output is not None
+        
+        captured = ''
+        if capsys is not None:
+            captured_raw = capsys.readouterr()  # returns stdout, stderr
+            for l in captured_raw:
+                if len(l) > 0:
+                    # captured += l  # + '|'
+                    captured += l  + ' '
+        
+        # compare
+        allclose_pass = float('nan')
+        if enforce_numerical_correctness:
+            triton.testing.assert_close(torch_output, triton_output, atol=ATOL, rtol=RTOL)
+            allclose_pass = True
+
+        call_func_under_test = lambda: fused_moe(a, w1, w2, input_gating, topk, 
+                                                 renormalize=True, inplace=True)
+
+        # benchmark only correct results
+        if do_benchmarks:
+            if my_name not in pytest.global_pds:
+                pytest.global_pds[my_name] = pd.DataFrame()
+
+            # equals to defaults
+            warmup_rep = 25
+            bench_rep = 100
+            ms, min_ms, max_ms = measure_benchmarks(
+                benchmark_mode, call_func_under_test, warmup_rep, bench_rep
+            )
+
+            record = {
+                "batch_size": batch_size,
+                "seqlen": seqlen,
+                "num_tokens": num_tokens, # redundant?
+                "N": n,
+                "K": k,
+                "E": e,
+                "TP": tp,
+                "topk": topk,
+                "max_value": max_value,
+                "dtype": dtype,
+                # "implementation": implementation,
+                "ms": ms,
+                "min_ms": min_ms,
+                "max_ms": max_ms,
+                "benchmark_mode": benchmark_mode,
+                "allclose_pass": allclose_pass,
+                "ATOL": ATOL,
+                "RTOL": RTOL,
+                # "proton_count": proton_count,
+                # "proton_ns": proton_ns,
+                # "proton_util_compute": proton_util_compute,
+                # "proton_util_bw": proton_util_bw,
+                "captured": captured,
+            }
+
+            if add_triton_dejavu_envs:
+                dejavu_envs = {}
+                _skip_dejavu_envs = [
+                    "_TRITON_DEJAVU_DETERMINED_CUDA_VERSION",
+                    "DEBUG",
+                    "STORAGE",
+                ]
+                for env in os.environ.keys():
+                    if "TRITON_DEJAVU_" in env:
+                        if any([skip_s in env for skip_s in _skip_dejavu_envs]):
+                            continue
+                        dejavu_envs[env] = os.environ[env]
+                record.update(dejavu_envs)
+
+            pytest.global_pds[my_name] = pd.concat(
+                [pytest.global_pds[my_name], pd.Series(record).to_frame().T]
+            ).reset_index(drop=True)
+
+            if pytest.global_pd_file_prefix is not None:
+                filename = os.path.abspath(
+                    f"{pytest.global_pd_file_prefix}/{my_name}.csv"
+                )
+                write_df_and_chmod(pytest.global_pds[my_name], filename)
+
+    except Exception as e:
+        print(e)
+        inner_exception = e
+    finally:
+        # cleanup memory
+        try:
+            del a
+            del w1
+            del w2
+            del score
+            del triton_output
+            del torch_output
+            torch.cuda.empty_cache()
+            torch.cuda.ipc_collect()
+        except Exception as e:
+            print(e)
+            # pass
+        finally:
+            if inner_exception is not None:
+                raise inner_exception
+
+
 
 
 def measure_benchmarks(
