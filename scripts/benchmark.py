@@ -68,6 +68,8 @@ class Implementation(Enum):
     UNF_TRITON_2D = 11
     UNF_TRITON_AUTO = 12
     PYTORCH_NATIVE = 13
+    TRITON_TUNED = 14
+    TRITON_VLLM = 15
 
 
 class BenchmarkMode(Enum):
@@ -1732,7 +1734,7 @@ def test_mamba_ssm(
 @pytest.mark.parametrize("dtype", DTYPES)
 @pytest.mark.parametrize("seed", SEEDS)
 @pytest.mark.parametrize("max_value", MAX_VALUES)
-# @pytest.mark.parametrize("implementation", IMPLEMENTATION_UT)
+@pytest.mark.parametrize("implementation", IMPLEMENTATION_UT)
 @pytest.mark.parametrize("benchmark_mode", BENCHMARK_MODES)
 def test_fused_moe(
     capsys,
@@ -1747,7 +1749,7 @@ def test_fused_moe(
     dtype: torch.dtype,
     seed,
     max_value,
-    # implementation,
+    implementation,
     benchmark_mode,
 ):
     # based on: https://github.com/vllm-project/vllm/blob/main/tests/kernels/test_moe.py
@@ -1756,6 +1758,9 @@ def test_fused_moe(
     my_id = request.node.nodeid.split("::")[-1]
     my_name = my_id.split("[")[0]
     my_instance = my_id.split("[")[1][:-1]
+
+    if implementation not in [Implementation.TRITON_TUNED, Implementation.TRITON_VLLM]:
+        pytest.skip()
    
     def torch_moe(a, w1, w2, score, topk):
         B, D = a.shape
@@ -1826,9 +1831,10 @@ def test_fused_moe(
                 each token is repeated, and N is the output feature dimension.
         """
 
-        # TODO: renormalize? 
+        
+        use_vllm_config = True if implementation == Implementation.TRITON_VLLM else False
         triton_output = fused_moe(a, w1, w2, input_gating, topk,
-                                  renormalize=True) #inplace=True ? 
+                                  renormalize=True, use_vllm_config=use_vllm_config) #inplace=True ? 
         assert triton_output is not None
         
         captured = ''

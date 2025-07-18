@@ -685,7 +685,7 @@ def get_moe_configs(
         os.path.dirname(os.path.realpath(__file__)), "configs", json_file_name)
     if os.path.exists(config_file_path):
         with open(config_file_path) as f:
-            logger.info("Using configuration from %s for MoE layer.",
+            print("Using configuration from %s for MoE layer.",
                         config_file_path)
             # If a configuration has been found, return it
             return {int(key): val for key, val in json.load(f).items()}
@@ -713,7 +713,7 @@ def get_moe_configs(
             os.path.dirname(os.path.realpath(__file__)), "configs", fallback_json_file_name)
         if os.path.exists(fallback_config_file_path):
             with open(fallback_config_file_path) as f:
-                logger.warning(("Config file not found at %s. Trying to use next" \
+                print(("Config file not found at %s. Trying to use next" \
                                " best config at %s for MoE layer. Performance"
                                " might still be sub-optimal."), 
                                config_file_path, fallback_config_file_path)
@@ -721,7 +721,7 @@ def get_moe_configs(
         
     # If no optimized configuration is available (and heuristics is disabled),
     # we will use the default configuration
-    logger.warning(
+    print(
         ("Using default MoE config. Performance might be sub-optimal! "
          "Config file not found at %s"), config_file_path)
     return None
@@ -1286,6 +1286,7 @@ def fused_experts_impl(
     a1_scale: Optional[torch.Tensor] = None,
     a2_scale: Optional[torch.Tensor] = None,
     block_shape: Optional[list[int]] = None,
+    use_vllm_config=True,
 ) -> torch.Tensor:
     # Check constraints.
     if use_int4_w4a16:
@@ -1499,6 +1500,7 @@ def fused_moe(
     a1_scale: Optional[torch.Tensor] = None,
     a2_scale: Optional[torch.Tensor] = None,
     block_shape: Optional[list[int]] = None,
+    use_vllm_config=True,
 ) -> torch.Tensor:
     """
     This function computes a Mixture of Experts (MoE) layer using two sets of
@@ -1586,7 +1588,9 @@ def fused_moe(
                          w2_zp=w2_zp,
                          a1_scale=a1_scale,
                          a2_scale=a2_scale,
-                         block_shape=block_shape)
+                         block_shape=block_shape,
+                         use_vllm_config=use_vllm_config,
+                         )
 
 
 # class TritonExperts(mk.FusedMoEPermuteExpertsUnpermute):
