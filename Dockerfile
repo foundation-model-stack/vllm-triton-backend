@@ -300,7 +300,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 # RUN git clone --depth 1 https://github.com/IBM/fmwork.git
 # RUN git clone --depth 1 https://github.com/IBM/fmwork.git
-COPY fmwork fmwork
+COPY third_party/fmwork fmwork
 
 ENV STORE_TEST_RESULT_PATH=/results
 
@@ -310,7 +310,7 @@ COPY vllm/tests tests
 COPY ShareGPT_V3_unfiltered_cleaned_split.json ShareGPT_V3_unfiltered_cleaned_split.json
 
 # Copy thid-party kernels and insert into path
-COPY third_party third_party
+COPY third_party/kernels third_party
 ENV PYTHONPATH /workspace
 
 # see https://github.com/IBM/triton-dejavu?tab=readme-ov-file#environment-variables
