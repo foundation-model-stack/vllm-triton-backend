@@ -859,6 +859,7 @@ def try_get_optimal_moe_config(
     M: int,
     is_marlin: bool = False,
     block_shape: Optional[list[int]] = None,
+    force_default=False,
 ) -> dict[str, int]:
     from vllm.model_executor.layers.fused_moe import get_config
     override_config = get_config()
@@ -873,7 +874,7 @@ def try_get_optimal_moe_config(
         block_k = block_shape[1] if block_shape else 0
         configs = get_moe_configs(E, N, dtype, block_n, block_k)
 
-        if configs:
+        if configs and not force_default:
             # If an optimal configuration map has been found, look up the
             # optimal config
             config = configs[min(configs.keys(), key=lambda x: abs(x - M))]
@@ -1286,7 +1287,7 @@ def fused_experts_impl(
     a1_scale: Optional[torch.Tensor] = None,
     a2_scale: Optional[torch.Tensor] = None,
     block_shape: Optional[list[int]] = None,
-    use_vllm_config=True,
+    use_default_config = False,
 ) -> torch.Tensor:
     # Check constraints.
     if use_int4_w4a16:
@@ -1336,6 +1337,7 @@ def fused_experts_impl(
         top_k_num,
         config_dtype,
         block_shape=block_shape,
+        force_default=use_default_config,
     )
 
     config = get_config_func(M)
@@ -1500,7 +1502,7 @@ def fused_moe(
     a1_scale: Optional[torch.Tensor] = None,
     a2_scale: Optional[torch.Tensor] = None,
     block_shape: Optional[list[int]] = None,
-    use_vllm_config=True,
+    use_default_config=True,
 ) -> torch.Tensor:
     """
     This function computes a Mixture of Experts (MoE) layer using two sets of
@@ -1589,7 +1591,7 @@ def fused_moe(
                          a1_scale=a1_scale,
                          a2_scale=a2_scale,
                          block_shape=block_shape,
-                         use_vllm_config=use_vllm_config,
+                         use_default_config=use_default_config,
                          )
 
 

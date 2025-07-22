@@ -69,7 +69,7 @@ class Implementation(Enum):
     UNF_TRITON_AUTO = 12
     PYTORCH_NATIVE = 13
     TRITON_TUNED = 14
-    TRITON_VLLM = 15
+    TRITON_FALLBACK = 15
 
 
 class BenchmarkMode(Enum):
@@ -1759,7 +1759,7 @@ def test_fused_moe(
     my_name = my_id.split("[")[0]
     my_instance = my_id.split("[")[1][:-1]
 
-    if implementation not in [Implementation.TRITON_TUNED, Implementation.TRITON_VLLM]:
+    if implementation not in [Implementation.TRITON_TUNED, Implementation.TRITON_FALLBACK]:
         pytest.skip()
    
     def torch_moe(a, w1, w2, score, topk):
@@ -1832,9 +1832,9 @@ def test_fused_moe(
         """
 
         
-        use_vllm_config = True if implementation == Implementation.TRITON_VLLM else False
+        use_default_config = True if implementation == Implementation.TRITON_FALLBACK else False
         triton_output = fused_moe(a, w1, w2, input_gating, topk,
-                                  renormalize=True, use_vllm_config=use_vllm_config) #inplace=True ? 
+                                  renormalize=True, use_default_config=use_default_config) #inplace=True ? 
         assert triton_output is not None
         
         captured = ''
@@ -1852,7 +1852,8 @@ def test_fused_moe(
             allclose_pass = True
 
         call_func_under_test = lambda: fused_moe(a, w1, w2, input_gating, topk, 
-                                                 renormalize=True, inplace=True)
+                                                 renormalize=True, inplace=True,
+                                                 use_default_config=use_default_config)
 
         # benchmark only correct results
         if do_benchmarks:
@@ -1877,7 +1878,7 @@ def test_fused_moe(
                 "topk": topk,
                 "max_value": max_value,
                 "dtype": dtype,
-                # "implementation": implementation,
+                "implementation": implementation,
                 "ms": ms,
                 "min_ms": min_ms,
                 "max_ms": max_ms,
