@@ -1,0 +1,31 @@
+{
+    "signature": "JITFunction(vllm.model_executor.layers.mamba.ops.ssd_chunk_scan:_chunk_scan_fwd_kernel)",
+    "total_bench_time_s": 22.759257316589355,
+    "evaluated_configs": 11,
+    "keys": [
+        "chunk_size",
+        "hdim",
+        "dstate",
+        "IS_CAUSAL"
+    ],
+    "cache": {
+        "('256', '64', '128', 'True', 'torch.float32', 'torch.bfloat16', 'torch.bfloat16', 'torch.float32', 'torch.float32', 'torch.int32', 'torch.bfloat16', 'torch.bfloat16', 'torch.bfloat16')": "BLOCK_SIZE_M: 128, BLOCK_SIZE_N: 64, BLOCK_SIZE_K: 32, num_warps: 4, num_ctas: 1, num_stages: 4, num_buffers_warp_spec: 0, num_consumer_groups: 0, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('256', '64', '128', 'True', 'torch.float32', 'torch.bfloat16', 'torch.bfloat16', 'torch.float32', 'torch.float32', 'torch.int32', 'torch.bfloat16', 'torch.bfloat16', 'torch.bfloat16', 'torch.int32', 'torch.int32')": "BLOCK_SIZE_M: 32, BLOCK_SIZE_N: 64, BLOCK_SIZE_K: 32, num_warps: 2, num_ctas: 1, num_stages: 5, num_buffers_warp_spec: 0, num_consumer_groups: 0, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None"
+    },
+    "timings": {
+        "('256', '64', '128', 'True', 'torch.float32', 'torch.bfloat16', 'torch.bfloat16', 'torch.float32', 'torch.float32', 'torch.int32', 'torch.bfloat16', 'torch.bfloat16', 'torch.bfloat16')": [
+            0.014240000396966934
+        ],
+        "('256', '64', '128', 'True', 'torch.float32', 'torch.bfloat16', 'torch.bfloat16', 'torch.float32', 'torch.float32', 'torch.int32', 'torch.bfloat16', 'torch.bfloat16', 'torch.bfloat16', 'torch.int32', 'torch.int32')": [
+            0.8048959970474243
+        ]
+    },
+    "timings_data": {
+        "labels": [
+            "ms"
+        ],
+        "rep_t_ms": 100,
+        "warmup_t_ms": 25,
+        "cuda_graphs": false
+    }
+}
