@@ -50,7 +50,8 @@ if len(sys.argv) < 5:
 selected_batch_sizes = [1]  # [4, 16, 32] #,128]
 # selected_input_lengths = [500]  # , 1000, 1500, 2000, 4000, 8000, 16000]
 # selected_output_lengths = [10, 100, 200, 400, 800, 1600, 3200, 6400, 12800]
-selected_input_lengths = [64, 128, 512, 1024, 2048, 4096]
+# selected_input_lengths = [64, 128, 512, 1024, 2048, 4096]
+selected_input_lengths = [64, 128, 512, 1024, 2048, 4096, 8192, 31500]
 selected_output_lengths = [1]
 
 gpu_name = torch.cuda.get_device_name().replace(" ", "_").replace("/", "_")
@@ -66,7 +67,7 @@ max_rounds = 64
 max_num_prompts = 1000
 
 warmup_iterations = 3
-iterations = 3 
+iterations = 5 
 
 timestamp_f = datetime.now().strftime("%Y-%m-%d_%H%M")
 

@@ -1,16 +1,20 @@
 {
     "signature": "JITFunction(vllm.model_executor.layers.mamba.ops.ssd_state_passing:_state_passing_fwd_kernel)",
-    "total_bench_time_s": 275.2601103782654,
+    "total_bench_time_s": 607.0304324626923,
     "evaluated_configs": 168,
     "keys": [
         "dim"
     ],
     "cache": {
-        "('8192', 'torch.float32', 'torch.bfloat16', 'torch.float32', 'torch.float32', 'torch.int32')": "BLOCK_SIZE: 512, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 0, num_consumer_groups: 0, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None"
+        "('8192', 'torch.float32', 'torch.bfloat16', 'torch.float32', 'torch.float32', 'torch.int32')": "BLOCK_SIZE: 512, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 0, num_consumer_groups: 0, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('8192', 'torch.float32', 'torch.bfloat16', 'torch.float32', 'torch.float32', 'torch.bfloat16', 'torch.int32')": "BLOCK_SIZE: 512, num_warps: 2, num_ctas: 1, num_stages: 2, num_buffers_warp_spec: 0, num_consumer_groups: 0, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None"
     },
     "timings": {
         "('8192', 'torch.float32', 'torch.bfloat16', 'torch.float32', 'torch.float32', 'torch.int32')": [
             0.0030820679385215044
+        ],
+        "('8192', 'torch.float32', 'torch.bfloat16', 'torch.float32', 'torch.float32', 'torch.bfloat16', 'torch.int32')": [
+            0.13190822303295135
         ]
     },
     "timings_data": {
