@@ -1,0 +1,26 @@
+{
+    "signature": "JITFunction(vllm.model_executor.layers.mamba.ops.ssd_chunk_state:_chunk_state_varlen_kernel)",
+    "total_bench_time_s": 19485.390374183655,
+    "evaluated_configs": 2625,
+    "keys": [
+        "hdim",
+        "dstate",
+        "chunk_size"
+    ],
+    "cache": {
+        "('64', '128', '256', 'torch.bfloat16', 'torch.bfloat16', 'torch.float32', 'torch.float32', 'torch.bfloat16', 'torch.int32', 'torch.bfloat16')": "BLOCK_SIZE_M: 16, BLOCK_SIZE_N: 16, BLOCK_SIZE_K: 16, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 0, num_consumer_groups: 0, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None"
+    },
+    "timings": {
+        "('64', '128', '256', 'torch.bfloat16', 'torch.bfloat16', 'torch.float32', 'torch.float32', 'torch.bfloat16', 'torch.int32', 'torch.bfloat16')": [
+            NaN
+        ]
+    },
+    "timings_data": {
+        "labels": [
+            "ms"
+        ],
+        "rep_t_ms": 100,
+        "warmup_t_ms": 25,
+        "cuda_graphs": true
+    }
+}

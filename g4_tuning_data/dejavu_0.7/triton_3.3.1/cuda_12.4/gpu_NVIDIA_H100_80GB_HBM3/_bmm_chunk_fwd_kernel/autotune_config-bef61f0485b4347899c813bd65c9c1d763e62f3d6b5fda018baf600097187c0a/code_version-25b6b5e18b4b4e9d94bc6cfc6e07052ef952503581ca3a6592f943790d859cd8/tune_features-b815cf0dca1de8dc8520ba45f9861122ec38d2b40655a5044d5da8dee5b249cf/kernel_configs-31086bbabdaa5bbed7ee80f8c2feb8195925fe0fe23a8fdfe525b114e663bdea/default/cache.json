@@ -1,0 +1,26 @@
+{
+    "signature": "JITFunction(vllm.model_executor.layers.mamba.ops.ssd_bmm:_bmm_chunk_fwd_kernel)",
+    "total_bench_time_s": 10756.567904472351,
+    "evaluated_configs": 2625,
+    "keys": [
+        "chunk_size",
+        "K",
+        "IS_CAUSAL"
+    ],
+    "cache": {
+        "('256', '128', 'False', 'torch.bfloat16', 'torch.bfloat16', 'torch.float32', 'torch.int32')": "BLOCK_SIZE_M: 16, BLOCK_SIZE_N: 32, BLOCK_SIZE_K: 64, num_warps: 4, num_ctas: 1, num_stages: 4, num_buffers_warp_spec: 0, num_consumer_groups: 0, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None"
+    },
+    "timings": {
+        "('256', '128', 'False', 'torch.bfloat16', 'torch.bfloat16', 'torch.float32', 'torch.int32')": [
+            0.002230335958302021
+        ]
+    },
+    "timings_data": {
+        "labels": [
+            "ms"
+        ],
+        "rep_t_ms": 100,
+        "warmup_t_ms": 25,
+        "cuda_graphs": true
+    }
+}

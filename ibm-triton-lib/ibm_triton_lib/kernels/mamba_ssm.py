@@ -85,7 +85,7 @@ def fallback_heuristic_simple(key):
     config_space=triton_dejavu.ConfigSpace(
         {"BLOCK_SIZE_M": [4, 8, 16, 32, 64]},
         num_warps=[2, 4, 8],
-        num_stages=[1, 2, 4, 6, 8],
+        num_stages=[1, 2, 3, 4, 5, 6, 8],
     ),
     key=[
         "dstate",
