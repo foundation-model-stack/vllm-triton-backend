@@ -47,12 +47,15 @@ if len(sys.argv) < 5:
     print(f"Usage: {sys.argv[0]} <model_path> <tp-factor> <testcase_name> <result_path>")
     exit(-1)
 
-selected_batch_sizes = [1]  # [4, 16, 32] #,128]
+# selected_batch_sizes = [1]  # [4, 16, 32] #,128]
 # selected_input_lengths = [500]  # , 1000, 1500, 2000, 4000, 8000, 16000]
 # selected_output_lengths = [10, 100, 200, 400, 800, 1600, 3200, 6400, 12800]
 # selected_input_lengths = [64, 128, 512, 1024, 2048, 4096]
-selected_input_lengths = [64, 128, 512, 1024, 2048, 4096, 8192, 31500]
-selected_output_lengths = [1]
+# selected_input_lengths = [64, 128, 512, 1024, 2048, 4096, 8192, 31500]
+# selected_output_lengths = [1]
+selected_batch_sizes = [1, 2, 4, 8, 16, 32, 64]
+selected_input_lengths = [128]
+selected_output_lengths = [32, 128, 256]
 
 gpu_name = torch.cuda.get_device_name().replace(" ", "_").replace("/", "_")
 
@@ -61,10 +64,6 @@ model = sys.argv[1]
 tp = int(sys.argv[2])
 testcase_name = sys.argv[3]
 result_path = os.path.abspath(sys.argv[4])
-
-# max_rounds = 128
-max_rounds = 64
-max_num_prompts = 1000
 
 warmup_iterations = 3
 iterations = 5 
@@ -115,7 +114,7 @@ for bs, il, ol in zipped_lists:
         f"--tensor-parallel {tp} "
         f"--enable-chunked-prefill "
         f"--max-num-batched-tokens 16384 "
-        f"-O.full_cuda_graph=true"
+        # f"-O.full_cuda_graph=true"
     )
     print(cmd)
     rv = os.system(cmd)
