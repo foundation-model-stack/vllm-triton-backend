@@ -1,0 +1,8 @@
+{
+    "signature": "JITFunction(vllm.model_executor.layers.mamba.ops.ssd_chunk_scan:_chunk_scan_fwd_kernel)",
+    "total_bench_time_s": 0.0,
+    "evaluated_configs": 0,
+    "keys": null,
+    "cache": {},
+    "timings": {}
+}

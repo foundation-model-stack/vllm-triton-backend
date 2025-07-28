@@ -113,6 +113,9 @@ for bs, il, ol in zipped_lists:
         f"--num-iters-warmup {warmup_iterations} "
         f"--num-iters {iterations} "
         f"--tensor-parallel {tp} "
+        f"--enable-chunked-prefill "
+        f"--max-num-batched-tokens 16384 "
+        f"-O.full_cuda_graph=true"
     )
     print(cmd)
     rv = os.system(cmd)
