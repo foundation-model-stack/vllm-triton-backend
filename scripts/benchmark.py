@@ -71,6 +71,9 @@ class Implementation(Enum):
     TRITON_TUNED = 14
     TRITON_FALLBACK = 15
     UNF_TRITON_2D_SIMPLE = 16
+    NT_UNF_TRITON_3D = 17
+    NT_UNF_TRITON_2D = 18
+    NT_UNF_TRITON_AUTO = 19
 
 
 class BenchmarkMode(Enum):
@@ -1044,6 +1047,9 @@ def test_prefix_vllm_v1_attention(
         Implementation.UNF_TRITON_2D,
         Implementation.UNF_TRITON_2D_SIMPLE,
         Implementation.UNF_TRITON_AUTO,
+        Implementation.NT_UNF_TRITON_3D,
+        Implementation.NT_UNF_TRITON_2D,
+        Implementation.NT_UNF_TRITON_AUTO,
     ]:
         pytest.skip()
 
@@ -1299,6 +1305,12 @@ def test_prefix_vllm_v1_attention(
             from callers import SimpleUnifiedTriton2dAttentionCaller as Caller
         elif implementation == Implementation.UNF_TRITON_AUTO:
             from callers import UnifiedTritonAutoAttentionCaller as Caller
+        elif implementation == Implementation.NT_UNF_TRITON_3D:
+            from callers import NewTilesUnifiedTriton3dAttentionCaller as Caller
+        elif implementation == Implementation.NT_UNF_TRITON_2D:
+            from callers import NewTilesUnifiedTriton2dAttentionCaller as Caller
+        elif implementation == Implementation.NT_UNF_TRITON_AUTO:
+            from callers import NewTilesUnifiedTritonAutoAttentionCaller as Caller
 
         if Caller.requires_allocated_output:
             output = torch.empty_like(query)
