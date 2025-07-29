@@ -110,7 +110,7 @@ else:
     )
 print(zipped_lists)
 
-
+start_time = datetime.now()
 for bs, il, ol in zipped_lists:
     print(
         f"====== Measuring batch_size {bs}, input length {il}, output length {ol} ====="
@@ -134,5 +134,7 @@ for bs, il, ol in zipped_lists:
         print(f"benchmark command returned {rv}, stopping...")
         exit(rv)
 
+end_time = datetime.now()
 print(f"results stored in: {result_dir}")
 os.system(f"ls -alh {result_dir}")
+print(f"Benchmark time: {end_time-start_time}")

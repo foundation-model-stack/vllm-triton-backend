@@ -70,6 +70,7 @@ class Implementation(Enum):
     PYTORCH_NATIVE = 13
     TRITON_TUNED = 14
     TRITON_FALLBACK = 15
+    UNF_TRITON_2D_SIMPLE = 16
 
 
 class BenchmarkMode(Enum):
@@ -1041,14 +1042,15 @@ def test_prefix_vllm_v1_attention(
         Implementation.TRITON_2D,
         Implementation.UNF_TRITON_3D,
         Implementation.UNF_TRITON_2D,
+        Implementation.UNF_TRITON_2D_SIMPLE,
         Implementation.UNF_TRITON_AUTO,
     ]:
         pytest.skip()
 
     # TODO: Error: "Offset increment outside graph capture"
     #  for triton and flash_attn
-    if benchmark_mode == BenchmarkMode.CUDA_GRAPHS:
-        pytest.skip("not supported")
+    # if benchmark_mode == BenchmarkMode.CUDA_GRAPHS:
+    #     pytest.skip("not supported")
 
     # TODO
     # RTOL = 0
@@ -1293,6 +1295,8 @@ def test_prefix_vllm_v1_attention(
             from callers import UnifiedTriton3dAttentionCaller as Caller
         elif implementation == Implementation.UNF_TRITON_2D:
             from callers import UnifiedTriton2dAttentionCaller as Caller
+        elif implementation == Implementation.UNF_TRITON_2D_SIMPLE:
+            from callers import SimpleUnifiedTriton2dAttentionCaller as Caller
         elif implementation == Implementation.UNF_TRITON_AUTO:
             from callers import UnifiedTritonAutoAttentionCaller as Caller
 

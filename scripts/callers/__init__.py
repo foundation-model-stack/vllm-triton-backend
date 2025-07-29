@@ -56,4 +56,5 @@ from .unified_triton import (
     UnifiedTriton2dAttentionCaller,
     UnifiedTriton3dAttentionCaller,
     UnifiedTritonAutoAttentionCaller,
+    SimpleUnifiedTriton2dAttentionCaller,
 )
