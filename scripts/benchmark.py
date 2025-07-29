@@ -2041,7 +2041,7 @@ if __name__ == "__main__":
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
     if STORE_TEST_RESULT_PATH is not None:
-        gpu_path = os.path.join(STORE_TEST_RESULT_PATH, gpu_name)
+        gpu_path = os.path.join(os.path.abspath(STORE_TEST_RESULT_PATH), gpu_name)
         gloabl_pd_file_prefix = os.path.join(gpu_path, timestamp)
         create_dir_if_not_exist_recursive(gloabl_pd_file_prefix)
     else:
