@@ -640,7 +640,8 @@ def unified_attention(
     TILE_SIZE_DECODE = 32
 
     # if batch contains a prefill
-    if (max_seqlen_q > 1 or total_num_q_blocks * num_kv_heads > 128) or force_selection == 2 and force_selection != 3:
+    # if (max_seqlen_q > 1 or total_num_q_blocks * num_kv_heads > 128) or force_selection == 2 and force_selection != 3:
+    if force_selection == 2:
         kernel_unified_attention_2d[(
             total_num_q_blocks,
             num_kv_heads,
@@ -683,7 +684,7 @@ def unified_attention(
             num_seqs=num_seqs,
             BLOCK_M=BLOCK_M,
         )
-    else:
+    elif force_selection == 3:
         # for initial version, NUM_SEGMENTS = 16 is chosen as a default
         # value that showed good performance in tests
         NUM_SEGMENTS = 16
@@ -770,3 +771,5 @@ def unified_attention(
             BLOCK_Q=BLOCK_Q,
             NUM_SEGMENTS_PER_SEQ=NUM_SEGMENTS,
         )
+    else:
+        raise RuntimeError("currently, we need to force a kernel selection")

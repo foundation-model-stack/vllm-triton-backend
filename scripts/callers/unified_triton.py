@@ -76,8 +76,8 @@ class UnifiedTriton3dAttentionCaller(PrefixPrefillCaller):
                 k_descale=None,  # TODO?
                 v_descale=None,  # TODO?
                 alibi_slopes=None,
-                avg_seqlen_q=avg_seqlen_q,
-                avg_seqlen_k=avg_seqlen_k,
+                # avg_seqlen_q=avg_seqlen_q,
+                # avg_seqlen_k=avg_seqlen_k,
                 force_selection=force_selection,
             )
 

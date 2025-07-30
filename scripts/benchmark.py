@@ -1046,10 +1046,10 @@ def test_prefix_vllm_v1_attention(
         Implementation.UNF_TRITON_3D,
         Implementation.UNF_TRITON_2D,
         Implementation.UNF_TRITON_2D_SIMPLE,
-        Implementation.UNF_TRITON_AUTO,
+        # Implementation.UNF_TRITON_AUTO,
         Implementation.NT_UNF_TRITON_3D,
         Implementation.NT_UNF_TRITON_2D,
-        Implementation.NT_UNF_TRITON_AUTO,
+        # Implementation.NT_UNF_TRITON_AUTO,
     ]:
         pytest.skip()
 
