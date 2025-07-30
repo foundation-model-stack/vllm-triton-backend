@@ -1454,6 +1454,7 @@ def test_prefix_vllm_v1_attention(
                 "dtype": dtype,
                 "max_value": max_value,
                 "realistic_prompt_mode": realistic_prompt_mode,
+                "batch_composition": batch_composition,
                 "gqa_mode": gqa_mode,
                 "prompt_pattern": prompt_pattern,
                 "implementation": implementation,

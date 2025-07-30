@@ -61,7 +61,10 @@ timestamp_f = datetime.now().strftime("%Y-%m-%d_%H%M")
 # result_dir = (
 #     f"/results/{model.replace('/','-')}/{gpu_name}/{testcase_name}/exp_{timestamp_f}/"
 # )
-result_dir = f"{result_path}/{model.replace('/','-')}/{gpu_name}/{testcase_name}/exp_{timestamp_f}/"
+model_print_path = model.replace('/','-')
+if model_print_path[0:2] == './':
+    model_print_path = model_print_path[2:]
+result_dir = f"{result_path}/{model_print_path}/{gpu_name}/{testcase_name}/exp_{timestamp_f}/"
 
 bench_script = "/workspace/benchmarks/benchmark_serving.py"
 if not os.path.isfile(bench_script):
