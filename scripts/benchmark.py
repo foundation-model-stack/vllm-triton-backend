@@ -1053,6 +1053,9 @@ def test_prefix_vllm_v1_attention(
     ]:
         pytest.skip()
 
+    if batch_composition == BatchComposition.ALTERNATING and implementation == Implementation.FLASH_ATTN:
+        pytest.skip("not supported")
+
     # TODO: Error: "Offset increment outside graph capture"
     #  for triton and flash_attn
     # if benchmark_mode == BenchmarkMode.CUDA_GRAPHS:
