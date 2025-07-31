@@ -56,6 +56,8 @@ result_path = os.path.abspath(sys.argv[3])
 max_rounds = 64
 max_num_prompts = 1000
 
+bench_repetitions = 3
+
 timestamp_f = datetime.now().strftime("%Y-%m-%d_%H%M")
 
 # result_dir = (
@@ -92,10 +94,16 @@ for max_concurrency in num_users_to_test:
         f"--num-prompts {num_prompts} "
         f"--port 8803"
     )
-    print(cmd)
-    rv = os.system(cmd)
+    for i in range(bench_repetitions):
+        print(
+            f"====== Measuring max concurrency {max_concurrency} with {num_prompts} prompts; repetition {i}  ====="
+        )
+        print(cmd)
+        rv = os.system(cmd)
+        if rv != 0:
+            print(f"benchmark command returned {rv}, stopping...")
+            break
     if rv != 0:
-        print(f"benchmark command returned {rv}, stopping...")
         break
 
 end_time = datetime.now()
