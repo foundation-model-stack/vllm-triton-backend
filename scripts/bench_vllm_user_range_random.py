@@ -44,7 +44,8 @@ if len(sys.argv) < 6:
     print(f"Usage: {sys.argv[0]} <model_path> <input-len> <output-len> <testcase_name> <result_path>")
     exit(-1)
 
-num_users_to_test = [1, 2, 4, 8, 16, 32, 64, 128]
+# num_users_to_test = [1, 2, 4, 8, 16, 32, 64, 128]
+num_users_to_test = [1, 2, 4, 8, 16, 32, 64]
 gpu_name = torch.cuda.get_device_name().replace(" ", "_").replace("/", "_")
 
 # model = "/model/llama3.1-8b/instruct/"
@@ -55,8 +56,10 @@ testcase_name = sys.argv[4]
 result_path = os.path.abspath(sys.argv[5])
 
 # max_rounds = 128
-max_rounds = 64
-max_num_prompts = 1000
+# max_rounds = 64
+# max_rounds = 16
+# max_num_prompts = 1000
+min_num_prompts = 16
 
 bench_repetitions = 3
 
@@ -82,11 +85,12 @@ create_dir_if_not_exist_recursive(result_dir)
 
 start_time = datetime.now()
 for max_concurrency in num_users_to_test:
-    num_prompts = (
-        max_num_prompts
-        if max_num_prompts // max_concurrency < max_rounds
-        else int(max_rounds * max_concurrency)
-    )
+    # num_prompts = (
+    #     max_num_prompts
+    #     if max_num_prompts // max_concurrency < max_rounds
+    #     else int(max_rounds * max_concurrency)
+    # )
+    num_prompts = int(max(min_num_prompts, 2*max_concurrency))
     cmd = (
         f"VLLM_USE_V1=1 python {bench_script} "
         f"--model {model} "
