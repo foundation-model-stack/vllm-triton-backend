@@ -2,6 +2,7 @@ import sys
 import os
 
 from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import GraniteMoeHybridForCausalLM
 from llmcompressor import oneshot
 from llmcompressor.modifiers.quantization import QuantizationModifier
 
@@ -13,6 +14,10 @@ print(f"Quantizing {model_path} using FP8_DYNAMIC...")
 model = AutoModelForCausalLM.from_pretrained(
     model_path, device_map="auto", torch_dtype="auto",
 )
+# model = GraniteMoeHybridForCausalLM.from_pretrained(
+#     model_path, device_map="auto", torch_dtype="auto",
+# )
+# print(model)
 tokenizer = AutoTokenizer.from_pretrained(model_path)
 
 # Configure the simple PTQ quantization
@@ -20,20 +25,21 @@ recipe = QuantizationModifier(
   targets="Linear", scheme="FP8_DYNAMIC", 
   ignore=[
         "re:.*lm_head",
-        "re:.*self_attn",
-        "re:.*router",
+        # "re:.*self_attn",
+        # "re:.*router",
         # "re:.*block_sparse_moe.gate",
-        "re:.*moe*",
+        # "re:.*moe*",
+        "re:.*block_sparse_moe",
   ]
   )
 
 # Apply the quantization algorithm.
 oneshot(model=model, recipe=recipe)
+#, output_dir=store_path)
 
 print(f"...done. Saving to {store_path}...")
-# Save the model: granite-4.0-tiny-preview-FP8-Dynamic
-# SAVE_DIR = MODEL_ID.split("/")[1] + "-FP8-Dynamic"
-model.save_pretrained(store_path)
+# # SAVE_DIR = MODEL_ID.split("/")[1] + "-FP8-Dynamic"
+model.save_pretrained(store_path, save_compressed=True)
 tokenizer.save_pretrained(store_path)
 
 print("...done.")
