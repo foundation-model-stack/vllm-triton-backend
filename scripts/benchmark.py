@@ -104,6 +104,7 @@ SEQUENCE_LENGTHS = [16, 32, 64, 128, 512, 1024, 2048, 4096]
 PREFIX_PREFILL_SHARE_OF_DECODE = [0.0, 0.5, 1.0]
 PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL = [0.0, 0.5]
 PREFIX_PREFILL_BATCH_COMPOSITION = [BatchComposition.ALTERNATING]
+RESERVE_INPUT_TOKEN_LENGTH = [None]
 
 HEAD_SIZES = [128]  # only powers of 2! for llama2 & 3
 # head_size * head_numbers = hidden_size
@@ -186,6 +187,7 @@ test_setup_vars = [
     "MOE_K",
     "TP_FACTOR",
     "MOE_TOP_K",
+    "RESERVE_INPUT_TOKEN_LENGTH",
 ]
 # "BENCHMARK_MODES", "IMPLEMENTATION_UT" ]
 debug_env_vars = [
@@ -1005,6 +1007,7 @@ def test_prefill_vllm_v0_attention(
 @pytest.mark.parametrize("seed", SEEDS)
 @pytest.mark.parametrize("implementation", IMPLEMENTATION_UT)
 @pytest.mark.parametrize("max_value", MAX_VALUES)
+@pytest.mark.parametrize("reserved_query_length", RESERVE_INPUT_TOKEN_LENGTH)
 @pytest.mark.parametrize("benchmark_mode", BENCHMARK_MODES)
 @torch.inference_mode()
 def test_prefix_vllm_v1_attention(
@@ -1026,6 +1029,7 @@ def test_prefix_vllm_v1_attention(
     seed,
     implementation,
     max_value,
+    reserved_query_length,
     benchmark_mode,
 ):
     my_id = request.node.nodeid.split("::")[-1]
@@ -1033,6 +1037,9 @@ def test_prefix_vllm_v1_attention(
     my_instance = my_id.split("[")[1][:-1]
     realistic_prompt_mode = len(prompt_pattern) > 1
     gqa_mode = num_heads[0] != num_heads[1]
+
+    reserved_query_length = None if reserved_query_length in [None, 'none', -1, 0] else int(reserved_query_length)
+    skip_ref_impl = True if reserved_query_length is not None else False
 
     if torch.cuda.get_device_capability()[0] < 8:
         # reduce operations are not supported (?)
@@ -1195,7 +1202,10 @@ def test_prefix_vllm_v1_attention(
 
     inner_exception = None
     try:
-        query = torch.empty(total_query_tokens, num_query_heads, head_size, dtype=dtype)
+        query_tensor_num_tokens_reserved = total_query_tokens
+        if reserved_query_length is not None:
+            query_tensor_num_tokens_reserved = reserved_query_length
+        query = torch.empty(query_tensor_num_tokens_reserved, num_query_heads, head_size, dtype=dtype)
         query.uniform_(-max_value, max_value)
 
         key = torch.empty(total_token_num, num_kv_heads, head_size, dtype=dtype)
@@ -1254,41 +1264,42 @@ def test_prefix_vllm_v1_attention(
             slot_mapping_lst.extend(slot_mapping_i)
         slot_mapping_t = torch.tensor(slot_mapping_lst, dtype=torch.int)
 
-        ref_reshape_and_cache_flash(
-            key,
-            value,
-            key_cache,
-            value_cache,
-            slot_mapping_t,
-            block_size,
-            total_token_num,
-        )
+        if not skip_ref_impl:
+            ref_reshape_and_cache_flash(
+                key,
+                value,
+                key_cache,
+                value_cache,
+                slot_mapping_t,
+                block_size,
+                total_token_num,
+            )
 
-        ref_output = ref_prefix_prefill(
-            query,
-            num_queries_per_kv,
-            key_cache,
-            value_cache,
-            key,
-            value,
-            block_table_t,
-            b_seq_lens,
-            b_ctx_lens,
-            b_query_lens,
-            b_start_loc,
-            batch_size,
-            scale,
-            dtype,
-        )
-        # ref_output = ref_paged_attn(
-        #     query,
-        #     key_cache,
-        #     value_cache,
-        #     b_query_lens,
-        #     b_ctx_lens,
-        #     block_table_t,
-        #     scale,
-        # )
+            ref_output = ref_prefix_prefill(
+                query,
+                num_queries_per_kv,
+                key_cache,
+                value_cache,
+                key,
+                value,
+                block_table_t,
+                b_seq_lens,
+                b_ctx_lens,
+                b_query_lens,
+                b_start_loc,
+                batch_size,
+                scale,
+                dtype,
+            )
+            # ref_output = ref_paged_attn(
+            #     query,
+            #     key_cache,
+            #     value_cache,
+            #     b_query_lens,
+            #     b_ctx_lens,
+            #     block_table_t,
+            #     scale,
+            # )
 
         if implementation == Implementation.FLASH_ATTN:
             from callers import FlashAttnPrefixPrefillCaller as Caller
@@ -1377,10 +1388,12 @@ def test_prefix_vllm_v1_attention(
                     # captured += l  # + '|'
                     captured += l + " "
         # compare
-        if enforce_numerical_correctness:
+        if enforce_numerical_correctness and not skip_ref_impl:
             # for better reports
             triton.testing.assert_close(ref_output, output, atol=ATOL, rtol=RTOL)
             allclose_pass = True
+        elif skip_ref_impl:
+            allclose_pass = 'skipped'
         else:
             allclose_pass = torch.allclose(ref_output, output, atol=ATOL, rtol=RTOL)
 
@@ -1456,6 +1469,7 @@ def test_prefix_vllm_v1_attention(
                 "num_blocks": num_blocks,
                 "dtype": dtype,
                 "max_value": max_value,
+                "query_tensor_num_tokens_reserved": query_tensor_num_tokens_reserved,
                 "realistic_prompt_mode": realistic_prompt_mode,
                 "batch_composition": batch_composition,
                 "gqa_mode": gqa_mode,
