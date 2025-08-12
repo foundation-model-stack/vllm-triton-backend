@@ -25,11 +25,8 @@ recipe = QuantizationModifier(
   targets="Linear", scheme="FP8_DYNAMIC", 
   ignore=[
         "re:.*lm_head",
-        # "re:.*self_attn",
-        # "re:.*router",
-        # "re:.*block_sparse_moe.gate",
-        # "re:.*moe*",
-        "re:.*block_sparse_moe",
+        # "re:.*block_sparse_moe",
+        "re:.*block_sparse_moe.router",
   ]
   )
 
