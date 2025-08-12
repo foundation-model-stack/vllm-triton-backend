@@ -237,6 +237,11 @@ def prefill_heuristics_2d(MAX_SEQ_Q, MAX_SEQ_K, AVG_SEQ_Q, AVG_SEQ_K):
         },
         num_warps=[2, 4, 8],
         num_stages=[1, 2, 4, 6, 8],
+        num_consumer_groups=[0, 2, 4],
+        num_buffers_warp_spec=[0, 3, 6],
+        conditions=[
+            lambda c: c.num_consumer_groups !=0 and c.num_buffers_warp_spec != 0,
+        ]
     ),
     # this list is longer, since it would be used for multiple models
     key=[
@@ -860,6 +865,8 @@ def unified_attention(
 ):
     assert causal, "Only causal attention is supported"
     assert q_descale is None, "Q scales not supported"
+
+    assert force_selection == 2  # only 2d is tuned for now
 
     block_size = v.shape[1]
     assert (

@@ -57,6 +57,7 @@ from .unified_triton import (
     UnifiedTriton3dAttentionCaller,
     UnifiedTritonAutoAttentionCaller,
     SimpleUnifiedTriton2dAttentionCaller,
+    TunedUnifiedTriton2dAttentionCaller,
 )
 from .unified_triton_newtiles import (
     NewTilesUnifiedTriton2dAttentionCaller,
