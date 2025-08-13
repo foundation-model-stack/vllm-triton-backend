@@ -1,6 +1,6 @@
 {
     "signature": "JITFunction(ibm_triton_lib.kernels.triton_unified_attention_tuned:kernel_unified_attention_2d)",
-    "total_bench_time_s": 21377.796743392944,
+    "total_bench_time_s": 21743.59187436104,
     "evaluated_configs": 2160,
     "keys": [
         "MAX_SEQ_Q",
@@ -17,7 +17,6 @@
         "stride_v_cache_3"
     ],
     "cache": {
-        "('16', '16', '16', '16', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 0, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
         "('32', '32', '32', '32', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 32, BLOCK_M: 16, num_warps: 4, num_ctas: 1, num_stages: 4, num_buffers_warp_spec: 6, num_consumer_groups: 4, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
         "('64', '64', '64', '64', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
         "('128', '128', '128', '128', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
@@ -74,12 +73,10 @@
         "('1024', '2048', '512', '1024', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
         "('2048', '2048', '512', '1024', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
         "('2048', '4096', '1024', '2048', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
-        "('4096', '4096', '1024', '2048', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None"
+        "('4096', '4096', '1024', '2048', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('16', '16', '16', '16', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 32, BLOCK_M: 16, num_warps: 8, num_ctas: 1, num_stages: 4, num_buffers_warp_spec: 3, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None"
     },
     "timings": {
-        "('16', '16', '16', '16', '32', '4', '16', '128', '128', '0', '1', '1')": [
-            0.006423796992748976
-        ],
         "('32', '32', '32', '32', '32', '4', '16', '128', '128', '0', '1', '1')": [
             0.006897487211972475
         ],
@@ -250,6 +247,9 @@
         ],
         "('4096', '4096', '1024', '2048', '32', '4', '16', '128', '128', '0', '1', '1')": [
             12.103424072265625
+        ],
+        "('16', '16', '16', '16', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.0063226004131138325
         ]
     },
     "timings_data": {
