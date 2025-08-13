@@ -1,8 +1,263 @@
 {
     "signature": "JITFunction(ibm_triton_lib.kernels.triton_unified_attention_tuned:kernel_unified_attention_2d)",
-    "total_bench_time_s": 0.0,
-    "evaluated_configs": 0,
-    "keys": null,
-    "cache": {},
-    "timings": {}
+    "total_bench_time_s": 21377.796743392944,
+    "evaluated_configs": 2160,
+    "keys": [
+        "MAX_SEQ_Q",
+        "MAX_SEQ_K",
+        "AVG_SEQ_Q",
+        "AVG_SEQ_K",
+        "num_query_heads",
+        "num_queries_per_kv",
+        "BLOCK_SIZE",
+        "HEAD_SIZE",
+        "HEAD_SIZE_PADDED",
+        "SLIDING_WINDOW",
+        "stride_k_cache_3",
+        "stride_v_cache_3"
+    ],
+    "cache": {
+        "('16', '16', '16', '16', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 0, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('32', '32', '32', '32', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 32, BLOCK_M: 16, num_warps: 4, num_ctas: 1, num_stages: 4, num_buffers_warp_spec: 6, num_consumer_groups: 4, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('64', '64', '64', '64', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('128', '128', '128', '128', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('512', '512', '512', '512', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('1024', '1024', '1024', '1024', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('2048', '2048', '2048', '2048', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('4096', '4096', '4096', '4096', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('1', '16', '1', '16', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 32, BLOCK_M: 16, num_warps: 4, num_ctas: 1, num_stages: 4, num_buffers_warp_spec: 6, num_consumer_groups: 4, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('16', '16', '8', '16', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 32, BLOCK_M: 16, num_warps: 4, num_ctas: 1, num_stages: 4, num_buffers_warp_spec: 6, num_consumer_groups: 4, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('1', '32', '1', '32', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 32, BLOCK_M: 16, num_warps: 4, num_ctas: 1, num_stages: 4, num_buffers_warp_spec: 6, num_consumer_groups: 4, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('32', '32', '16', '32', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 32, BLOCK_M: 16, num_warps: 4, num_ctas: 1, num_stages: 4, num_buffers_warp_spec: 6, num_consumer_groups: 4, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('1', '64', '1', '64', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('64', '64', '32', '64', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('1', '128', '1', '128', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('128', '128', '64', '128', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('1', '512', '1', '512', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 128, BLOCK_M: 16, num_warps: 8, num_ctas: 1, num_stages: 8, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('512', '512', '256', '512', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('1', '1024', '1', '1024', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 128, BLOCK_M: 16, num_warps: 8, num_ctas: 1, num_stages: 8, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('1024', '1024', '512', '1024', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('1', '2048', '1', '2048', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 128, BLOCK_M: 16, num_warps: 8, num_ctas: 1, num_stages: 8, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('2048', '2048', '1024', '2048', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('1', '4096', '1', '4096', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 128, BLOCK_M: 16, num_warps: 8, num_ctas: 1, num_stages: 8, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('4096', '4096', '2048', '4096', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('2', '2', '2', '2', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 32, BLOCK_M: 16, num_warps: 4, num_ctas: 1, num_stages: 4, num_buffers_warp_spec: 6, num_consumer_groups: 4, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('8', '8', '4', '4', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 32, BLOCK_M: 16, num_warps: 4, num_ctas: 1, num_stages: 4, num_buffers_warp_spec: 6, num_consumer_groups: 4, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('16', '16', '8', '8', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 32, BLOCK_M: 16, num_warps: 4, num_ctas: 1, num_stages: 4, num_buffers_warp_spec: 6, num_consumer_groups: 4, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('4', '4', '4', '4', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 32, BLOCK_M: 16, num_warps: 4, num_ctas: 1, num_stages: 4, num_buffers_warp_spec: 6, num_consumer_groups: 4, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('32', '32', '16', '16', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('8', '8', '8', '8', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 32, BLOCK_M: 16, num_warps: 4, num_ctas: 1, num_stages: 4, num_buffers_warp_spec: 6, num_consumer_groups: 4, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('64', '64', '32', '32', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('128', '128', '64', '64', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('256', '256', '128', '128', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('512', '512', '256', '256', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('1024', '1024', '512', '512', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('256', '256', '256', '256', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('2048', '2048', '1024', '1024', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('4096', '4096', '2048', '2048', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('1', '2', '1', '2', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 32, BLOCK_M: 16, num_warps: 4, num_ctas: 1, num_stages: 4, num_buffers_warp_spec: 6, num_consumer_groups: 4, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('8', '16', '4', '8', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 32, BLOCK_M: 16, num_warps: 4, num_ctas: 1, num_stages: 4, num_buffers_warp_spec: 6, num_consumer_groups: 4, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('16', '16', '4', '8', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 32, BLOCK_M: 16, num_warps: 4, num_ctas: 1, num_stages: 4, num_buffers_warp_spec: 6, num_consumer_groups: 4, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('1', '4', '1', '4', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 32, BLOCK_M: 16, num_warps: 4, num_ctas: 1, num_stages: 4, num_buffers_warp_spec: 6, num_consumer_groups: 4, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('16', '32', '8', '16', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 32, BLOCK_M: 16, num_warps: 4, num_ctas: 1, num_stages: 4, num_buffers_warp_spec: 6, num_consumer_groups: 4, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('32', '32', '8', '16', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('1', '8', '1', '8', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 32, BLOCK_M: 16, num_warps: 4, num_ctas: 1, num_stages: 4, num_buffers_warp_spec: 6, num_consumer_groups: 4, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('32', '64', '16', '32', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('64', '64', '16', '32', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('64', '128', '32', '64', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('128', '128', '32', '64', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('256', '512', '128', '256', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('512', '512', '128', '256', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('512', '1024', '256', '512', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('1024', '1024', '256', '512', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('1', '256', '1', '256', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('1024', '2048', '512', '1024', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('2048', '2048', '512', '1024', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('2048', '4096', '1024', '2048', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('4096', '4096', '1024', '2048', '32', '4', '16', '128', '128', '0', '1', '1')": "BLOCK_N: 64, BLOCK_M: 32, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 6, num_consumer_groups: 2, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None"
+    },
+    "timings": {
+        "('16', '16', '16', '16', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.006423796992748976
+        ],
+        "('32', '32', '32', '32', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.006897487211972475
+        ],
+        "('64', '64', '64', '64', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.007865289226174355
+        ],
+        "('128', '128', '128', '128', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.012806367129087448
+        ],
+        "('512', '512', '512', '512', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.11409414559602737
+        ],
+        "('1024', '1024', '1024', '1024', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.36400967836380005
+        ],
+        "('2048', '2048', '2048', '2048', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            1.291664481163025
+        ],
+        "('4096', '4096', '4096', '4096', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            4.830662727355957
+        ],
+        "('1', '16', '1', '16', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.0067154536955058575
+        ],
+        "('16', '16', '8', '16', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.007009030785411596
+        ],
+        "('1', '32', '1', '32', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.006567405071109533
+        ],
+        "('32', '32', '16', '32', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.006921715103089809
+        ],
+        "('1', '64', '1', '64', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.007554848212748766
+        ],
+        "('64', '64', '32', '64', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.007870307192206383
+        ],
+        "('1', '128', '1', '128', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.012347826734185219
+        ],
+        "('128', '128', '64', '128', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.018965136259794235
+        ],
+        "('1', '512', '1', '512', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.03259870782494545
+        ],
+        "('512', '512', '256', '512', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.11627256125211716
+        ],
+        "('1', '1024', '1', '1024', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.0549253448843956
+        ],
+        "('1024', '1024', '512', '1024', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.37127885222435
+        ],
+        "('1', '2048', '1', '2048', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.09950052946805954
+        ],
+        "('2048', '2048', '1024', '2048', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            1.3021571636199951
+        ],
+        "('1', '4096', '1', '4096', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.1874120533466339
+        ],
+        "('4096', '4096', '2048', '4096', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            4.851548671722412
+        ],
+        "('2', '2', '2', '2', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.006778071168810129
+        ],
+        "('8', '8', '4', '4', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.006958519574254751
+        ],
+        "('16', '16', '8', '8', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.006996186450123787
+        ],
+        "('4', '4', '4', '4', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.006850973702967167
+        ],
+        "('32', '32', '16', '16', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.00791214406490326
+        ],
+        "('8', '8', '8', '8', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.006878295913338661
+        ],
+        "('64', '64', '32', '32', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.013943970203399658
+        ],
+        "('128', '128', '64', '64', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.02429494820535183
+        ],
+        "('256', '256', '128', '128', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.03789611533284187
+        ],
+        "('512', '512', '256', '256', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.15952551364898682
+        ],
+        "('1024', '1024', '512', '512', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.5120749473571777
+        ],
+        "('256', '256', '256', '256', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.03336550295352936
+        ],
+        "('2048', '2048', '1024', '1024', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            1.803341269493103
+        ],
+        "('4096', '4096', '2048', '2048', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            6.802962303161621
+        ],
+        "('1', '2', '1', '2', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.0067731114104390144
+        ],
+        "('8', '16', '4', '8', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.007123402785509825
+        ],
+        "('16', '16', '4', '8', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.013310004025697708
+        ],
+        "('1', '4', '1', '4', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.006687874905765057
+        ],
+        "('16', '32', '8', '16', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.00769382668659091
+        ],
+        "('32', '32', '8', '16', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.014694097451865673
+        ],
+        "('1', '8', '1', '8', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.006742445286363363
+        ],
+        "('32', '64', '16', '32', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.00831019226461649
+        ],
+        "('64', '64', '16', '32', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.02136719599366188
+        ],
+        "('64', '128', '32', '64', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.0192007627338171
+        ],
+        "('128', '128', '32', '64', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.04041781276464462
+        ],
+        "('256', '512', '128', '256', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.09291289746761322
+        ],
+        "('512', '512', '128', '256', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.28874820470809937
+        ],
+        "('512', '1024', '256', '512', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.2564668357372284
+        ],
+        "('1024', '1024', '256', '512', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.918175995349884
+        ],
+        "('1', '256', '1', '256', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.02123316191136837
+        ],
+        "('1024', '2048', '512', '1024', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            0.7775593996047974
+        ],
+        "('2048', '2048', '512', '1024', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            3.24080228805542
+        ],
+        "('2048', '4096', '1024', '2048', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            2.575653076171875
+        ],
+        "('4096', '4096', '1024', '2048', '32', '4', '16', '128', '128', '0', '1', '1')": [
+            12.103424072265625
+        ]
+    },
+    "timings_data": {
+        "labels": [
+            "ms"
+        ],
+        "rep_t_ms": 100,
+        "warmup_t_ms": 25,
+        "cuda_graphs": true
+    }
 }
