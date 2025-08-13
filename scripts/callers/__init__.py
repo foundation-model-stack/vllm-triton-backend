@@ -64,3 +64,7 @@ from .unified_triton_newtiles import (
     NewTilesUnifiedTriton3dAttentionCaller,
     NewTilesUnifiedTritonAutoAttentionCaller,
 )
+from .grid_triton import (
+    GridTriton2dAttentionCaller,
+    GridTriton3dAttentionCaller,
+)

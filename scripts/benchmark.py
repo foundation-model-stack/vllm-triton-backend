@@ -75,6 +75,8 @@ class Implementation(Enum):
     NT_UNF_TRITON_2D = 18
     NT_UNF_TRITON_AUTO = 19
     UNF_TRITON_2D_TUNED = 20
+    GRID_TRITON_3D = 21
+    GRID_TRITON_2D = 22
 
 
 class BenchmarkMode(Enum):
@@ -1059,8 +1061,14 @@ def test_prefix_vllm_v1_attention(
         Implementation.NT_UNF_TRITON_2D,
         # Implementation.NT_UNF_TRITON_AUTO,
         Implementation.UNF_TRITON_2D_TUNED,
+        Implementation.GRID_TRITON_2D,
+        Implementation.GRID_TRITON_3D,
     ]:
         pytest.skip()
+
+    if implementation == Implementation.GRID_TRITON_3D and decode_share != 1.0:
+        pytest.skip("not supported")
+
 
     if batch_composition == BatchComposition.ALTERNATING and implementation == Implementation.FLASH_ATTN:
         pytest.skip("not supported")
@@ -1329,6 +1337,10 @@ def test_prefix_vllm_v1_attention(
             from callers import NewTilesUnifiedTritonAutoAttentionCaller as Caller
         elif implementation == Implementation.UNF_TRITON_2D_TUNED:
             from callers import TunedUnifiedTriton2dAttentionCaller as Caller
+        elif implementation == Implementation.GRID_TRITON_3D:
+            from callers import GridTriton3dAttentionCaller as Caller
+        elif implementation == Implementation.GRID_TRITON_2D:
+            from callers import GridTriton2dAttentionCaller as Caller
 
         if Caller.requires_allocated_output:
             output = torch.empty_like(query)
