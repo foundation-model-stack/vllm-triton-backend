@@ -16,6 +16,7 @@
 #
 
 import torch
+import triton
 
 from ibm_triton_lib.kernels import unified_attention, unified_attention_simple, unified_attention_tuned
 from .base import PrefixPrefillCaller
@@ -266,6 +267,11 @@ class TunedUnifiedTriton2dAttentionCaller(PrefixPrefillCaller):
 
         avg_seqlen_q = query_lens.to(torch.float).mean()
         avg_seqlen_k = seq_lens.to(torch.float).mean()
+    
+        MAX_SEQ_Q = triton.next_power_of_2(int(max_query_len))
+        MAX_SEQ_K = triton.next_power_of_2(int(max_seqlen))
+        AVG_SEQ_Q = triton.next_power_of_2(int(avg_seqlen_q))
+        AVG_SEQ_K = triton.next_power_of_2(int(avg_seqlen_k))
 
         def call_and_process_output():
             # k must have shape (num_blocks, page_block_size, num_heads_k, head_size)
@@ -289,6 +295,10 @@ class TunedUnifiedTriton2dAttentionCaller(PrefixPrefillCaller):
                 alibi_slopes=None,
                 avg_seqlen_q=avg_seqlen_q,
                 avg_seqlen_k=avg_seqlen_k,
+                MAX_SEQ_Q=MAX_SEQ_Q,
+                MAX_SEQ_K=MAX_SEQ_K,
+                AVG_SEQ_Q=AVG_SEQ_Q,
+                AVG_SEQ_K=AVG_SEQ_K,
                 force_selection=2,
             )
 
