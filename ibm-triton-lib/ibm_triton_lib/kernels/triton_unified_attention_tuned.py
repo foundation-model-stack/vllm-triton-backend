@@ -239,8 +239,6 @@ def prefill_heuristics_2d(MAX_SEQ_Q, MAX_SEQ_K, AVG_SEQ_Q, AVG_SEQ_K):
         num_stages=[1, 2, 4, 6, 8],
         # num_consumer_groups=[0, 2, 4],
         # num_buffers_warp_spec=[0, 3, 6],
-        # num_consumer_groups=[2],
-        # num_buffers_warp_spec=[3],
         num_consumer_groups=[2, 4],
         num_buffers_warp_spec=[3, 6],
         conditions=[

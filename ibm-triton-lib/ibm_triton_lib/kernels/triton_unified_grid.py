@@ -12,6 +12,9 @@ import torch
 from vllm.logger import init_logger
 from vllm.triton_utils import tl, triton
 
+import triton_dejavu
+import os
+
 logger = init_logger(__name__)
 
 
@@ -42,6 +45,50 @@ def find_seq_idx(boundary_ptr, target_idx, num_seqs):
     return left - 1
 
 
+@triton_dejavu.autotune(
+    config_space=triton_dejavu.ConfigSpace(
+        {
+            "BLOCK_M": [16, 32, 64, 128, 256, 512],
+            "TILE_SIZE": [16, 32, 64, 128, 256, 512],
+        },
+        num_warps=[2, 4, 8],
+        num_stages=[1, 2, 4, 6, 8],
+        # num_consumer_groups=[0, 2, 4],
+        # num_buffers_warp_spec=[0, 3, 6],
+        # num_consumer_groups=[2, 4],
+        # num_buffers_warp_spec=[3, 6],
+        conditions=[
+            # ensure consistency for ws
+            lambda c: (c.num_consumer_groups !=0 and c.num_buffers_warp_spec != 0) \
+                or (c.num_consumer_groups == 0 and c.num_buffers_warp_spec == 0),
+        ]
+    ),
+    # this list is longer, since it would be used for multiple models
+    key=[
+        "num_query_heads",
+        "num_queries_per_kv",
+        "BLOCK_SIZE",
+        "HEAD_SIZE",
+        "HEAD_SIZE_PADDED",
+        "SLIDING_WINDOW",
+        "stride_k_cache_3",
+        "stride_v_cache_3",
+        "is_prefill",
+    ],
+    custom_data_storage=os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "dejavu_data")
+    ),
+    use_cuda_graph=True,
+    use_bo=True,
+    search_max_search_t=360,
+    # informed_fallback=informed_fallback_next,
+    # prepare_informed_fallback=prepare_informed_fallback,
+    # fallback_heuristic=fallback_heuristic_dt2,
+    ignore_dtypes=True,
+)
+@triton.heuristics(
+       {"BLOCK_Q": lambda args: args['BLOCK_M'] // args['num_queries_per_kv']},
+)
 @triton.jit
 def kernel_unified_attention_2d(
         output_ptr,  # [num_tokens, num_query_heads, head_size]
@@ -65,7 +112,6 @@ def kernel_unified_attention_2d(
         output_stride_1: tl.int64,  # int, should be equal to head_size
         qq_bias_stride_0: tl.int64,  # int
         BLOCK_SIZE: tl.constexpr,  # int
-        TILE_SIZE: tl.constexpr,  # int must be power of 2
         HEAD_SIZE: tl.constexpr,  # int
         HEAD_SIZE_PADDED: tl.constexpr,  # int, must be power of 2
         USE_ALIBI_SLOPES: tl.constexpr,  # bool
@@ -81,14 +127,15 @@ def kernel_unified_attention_2d(
         stride_v_cache_2: tl.int64,  # int
         stride_v_cache_3: tl.constexpr,  # int
         query_start_len_ptr,  # [num_seqs+1]
-        BLOCK_Q: tl.constexpr,  # int
         num_seqs: tl.int32,
         seq_idx_offset,  # int
-        BLOCK_M: tl.constexpr,  # int
         block_q_seq_boundaries_ptr, # [num_prefills] or None
         is_prefill: tl.constexpr,
         max_q_block_idx: tl.int32,  # int
         q_block_iterations: tl.int32,  # int
+        TILE_SIZE: tl.constexpr,  # int must be power of 2
+        BLOCK_Q: tl.constexpr,  # int
+        BLOCK_M: tl.constexpr,  # int
 ):
     if tl.program_id(0) * q_block_iterations > max_q_block_idx:
         return
@@ -291,6 +338,50 @@ def kernel_unified_attention_2d(
         )
 
 
+@triton_dejavu.autotune(
+    config_space=triton_dejavu.ConfigSpace(
+        {
+            "BLOCK_M": [16, 32, 64, 128, 256, 512],
+            "TILE_SIZE": [16, 32, 64, 128, 256, 512],
+        },
+        num_warps=[2, 4, 8],
+        num_stages=[1, 2, 4, 6, 8],
+        # num_consumer_groups=[0, 2, 4],
+        # num_buffers_warp_spec=[0, 3, 6],
+        # num_consumer_groups=[2, 4],
+        # num_buffers_warp_spec=[3, 6],
+        conditions=[
+            # ensure consistency for ws
+            lambda c: (c.num_consumer_groups !=0 and c.num_buffers_warp_spec != 0) \
+                or (c.num_consumer_groups == 0 and c.num_buffers_warp_spec == 0),
+        ]
+    ),
+    # this list is longer, since it would be used for multiple models
+    key=[
+        "num_query_heads",
+        "num_queries_per_kv",
+        "BLOCK_SIZE",
+        "HEAD_SIZE",
+        "HEAD_SIZE_PADDED",
+        "SLIDING_WINDOW",
+        "stride_k_cache_3",
+        "stride_v_cache_3",
+        "NUM_SEGMENTS_PER_SEQ",
+    ],
+    custom_data_storage=os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "dejavu_data")
+    ),
+    use_cuda_graph=True,
+    use_bo=True,
+    search_max_search_t=360,
+    # informed_fallback=informed_fallback_next,
+    # prepare_informed_fallback=prepare_informed_fallback,
+    # fallback_heuristic=fallback_heuristic_dt2,
+    ignore_dtypes=True,
+)
+@triton.heuristics(
+       {"BLOCK_Q": lambda args: args['BLOCK_M'] // args['num_queries_per_kv']},
+)
 @triton.jit
 def kernel_unified_attention_3d(
         segm_output_ptr,
@@ -315,7 +406,6 @@ def kernel_unified_attention_3d(
         query_stride_1: tl.int64,  # int, should be equal to head_size
         qq_bias_stride_0: tl.int64,  # int
         BLOCK_SIZE: tl.constexpr,  # int
-        TILE_SIZE: tl.constexpr,  # int, must be power of 2
         HEAD_SIZE: tl.constexpr,  # int
         HEAD_SIZE_PADDED: tl.constexpr,  # int, must be power of 2
         USE_ALIBI_SLOPES: tl.constexpr,  # bool
@@ -331,11 +421,12 @@ def kernel_unified_attention_3d(
         stride_v_cache_2: tl.int64,  # int
         stride_v_cache_3: tl.constexpr,  # int
         query_start_len_ptr,  # [num_seqs+1]
-        BLOCK_Q: tl.constexpr,  # int
         num_seqs: tl.int32,
-        BLOCK_M: tl.constexpr,  # int
         NUM_SEGMENTS_PER_SEQ: tl.constexpr,  # int
         seq_idx_iterations: tl.int32,  # int
+        BLOCK_Q: tl.constexpr,  # int
+        TILE_SIZE: tl.constexpr,  # int, must be power of 2
+        BLOCK_M: tl.constexpr,  # int
 ):
     if tl.program_id(0) * seq_idx_iterations >= num_seqs:
         return
@@ -522,6 +613,41 @@ def kernel_unified_attention_3d(
                  mask=query_mask_0 & query_mask_1)
 
 
+@triton_dejavu.autotune(
+    config_space=triton_dejavu.ConfigSpace(
+        {
+            "TILE_SIZE": [16, 32, 64, 128, 256, 512],
+        },
+        num_warps=[2, 4, 8],
+        num_stages=[1, 2, 4, 6, 8],
+        # num_consumer_groups=[0, 2, 4],
+        # num_buffers_warp_spec=[0, 3, 6],
+        # num_consumer_groups=[2, 4],
+        # num_buffers_warp_spec=[3, 6],
+        conditions=[
+            # ensure consistency for ws
+            lambda c: (c.num_consumer_groups !=0 and c.num_buffers_warp_spec != 0) \
+                or (c.num_consumer_groups == 0 and c.num_buffers_warp_spec == 0),
+        ]
+    ),
+    # this list is longer, since it would be used for multiple models
+    key=[
+        "num_query_heads",
+        "HEAD_SIZE",
+        "HEAD_SIZE_PADDED",
+        "NUM_SEGMENTS_PER_SEQ",
+    ],
+    custom_data_storage=os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "dejavu_data")
+    ),
+    use_cuda_graph=True,
+    use_bo=True,
+    search_max_search_t=360,
+    # informed_fallback=informed_fallback_next,
+    # prepare_informed_fallback=prepare_informed_fallback,
+    # fallback_heuristic=fallback_heuristic_dt2,
+    ignore_dtypes=True,
+)
 @triton.jit
 def reduce_segments(
         output_ptr,  # [num_tokens, num_query_heads, head_size]
@@ -535,12 +661,12 @@ def reduce_segments(
         output_stride_0: tl.int64,  # int
         output_stride_1: tl.int64,  # int, should be equal to head_size
         block_table_stride: tl.int64,  # int
-        TILE_SIZE: tl.constexpr,  # int
         HEAD_SIZE: tl.constexpr,  # int, must be power of 2
         HEAD_SIZE_PADDED: tl.constexpr,  # int, must be power of 2
         query_start_len_ptr,  # [num_seqs+1]
         NUM_SEGMENTS_PER_SEQ: tl.constexpr,  # int
         seq_idx_iterations: tl.int32,  # int
+        TILE_SIZE: tl.constexpr,  # int
 ):
     if tl.program_id(0) * seq_idx_iterations >= num_seqs:
         return
@@ -686,7 +812,6 @@ def unified_attention(
             output_stride_1=out.stride(1),
             qq_bias_stride_0=qq_bias.stride(0) if use_qq_bias else 0,
             BLOCK_SIZE=block_size,
-            TILE_SIZE=TILE_SIZE_PREFILL,
             HEAD_SIZE=head_size,
             HEAD_SIZE_PADDED=triton.next_power_of_2(head_size),
             USE_ALIBI_SLOPES=use_alibi_slopes,
@@ -702,14 +827,16 @@ def unified_attention(
             stride_v_cache_2=v.stride(2),
             stride_v_cache_3=v.stride(3),
             query_start_len_ptr=cu_seqlens_q,
-            BLOCK_Q=BLOCK_Q_PREFILL,
             num_seqs=num_seqs - num_decodes,
             seq_idx_offset=num_decodes,
-            BLOCK_M=BLOCK_M_PREFILL,
             block_q_seq_boundaries_ptr=block_q_seq_boundaries,
             is_prefill=True,
             max_q_block_idx=num_q_blocks-1,
             q_block_iterations=(num_q_blocks + LAUNCH_GRID_DIM0_2D_PREFILL - 1) // LAUNCH_GRID_DIM0_2D_PREFILL
+            # tunable parameters
+            # BLOCK_M=BLOCK_M_PREFILL,
+            # BLOCK_Q=BLOCK_Q_PREFILL,
+            # TILE_SIZE=TILE_SIZE_PREFILL,
         )
 
     # decode
@@ -741,7 +868,6 @@ def unified_attention(
                 output_stride_1=out.stride(1),
                 qq_bias_stride_0=qq_bias.stride(0) if use_qq_bias else 0,
                 BLOCK_SIZE=block_size,
-                TILE_SIZE=TILE_SIZE_DECODE,
                 HEAD_SIZE=head_size,
                 HEAD_SIZE_PADDED=triton.next_power_of_2(head_size),
                 USE_ALIBI_SLOPES=use_alibi_slopes,
@@ -757,14 +883,16 @@ def unified_attention(
                 stride_v_cache_2=v.stride(2),
                 stride_v_cache_3=v.stride(3),
                 query_start_len_ptr=cu_seqlens_q,
-                BLOCK_Q=BLOCK_Q_DECODE,
                 num_seqs=num_decodes,
                 seq_idx_offset=0,
-                BLOCK_M=BLOCK_M_DECODE,
                 block_q_seq_boundaries_ptr=None,
                 is_prefill=False,
                 max_q_block_idx=num_decodes-1,
                 q_block_iterations=(num_decodes + LAUNCH_GRID_DIM0_2D_DECODE - 1) // LAUNCH_GRID_DIM0_2D_DECODE
+                # tunable parameters
+                # BLOCK_M=BLOCK_M_DECODE,
+                # BLOCK_Q=BLOCK_Q_DECODE,
+                # TILE_SIZE=TILE_SIZE_DECODE,
             )
         else:
             # for initial version, NUM_SEGMENTS = 16 is chosen as a default
@@ -820,7 +948,6 @@ def unified_attention(
                 query_stride_1=q.stride(1),
                 qq_bias_stride_0=qq_bias.stride(0) if use_qq_bias else 0,
                 BLOCK_SIZE=block_size,
-                TILE_SIZE=TILE_SIZE_DECODE,
                 HEAD_SIZE=head_size,
                 HEAD_SIZE_PADDED=triton.next_power_of_2(head_size),
                 USE_ALIBI_SLOPES=use_alibi_slopes,
@@ -836,11 +963,13 @@ def unified_attention(
                 stride_v_cache_2=v.stride(2),
                 stride_v_cache_3=v.stride(3),
                 query_start_len_ptr=cu_seqlens_q,
-                BLOCK_Q=BLOCK_Q_DECODE,
                 num_seqs=num_decodes,
-                BLOCK_M=BLOCK_M_DECODE,
                 NUM_SEGMENTS_PER_SEQ=NUM_SEGMENTS,
                 seq_idx_iterations=(num_decodes + LAUNCH_GRID_DIM0_3D_DECODE - 1) // LAUNCH_GRID_DIM0_3D_DECODE
+                # tunable parameters
+                # BLOCK_Q=BLOCK_Q_DECODE,
+                # BLOCK_M=BLOCK_M_DECODE,
+                # TILE_SIZE=TILE_SIZE_DECODE,
             )
             reduce_segments[(
                 LAUNCH_GRID_DIM0_3D_REDUCE, #num_decodes,
@@ -856,10 +985,11 @@ def unified_attention(
                 output_stride_0=out.stride(0),
                 output_stride_1=out.stride(1),
                 block_table_stride=block_table.stride(0),
-                TILE_SIZE=TILE_SIZE_DECODE,
                 HEAD_SIZE=head_size,
                 HEAD_SIZE_PADDED=triton.next_power_of_2(head_size),
                 query_start_len_ptr=cu_seqlens_q,
                 NUM_SEGMENTS_PER_SEQ=NUM_SEGMENTS,
                 seq_idx_iterations=(num_decodes + LAUNCH_GRID_DIM0_3D_REDUCE - 1) // LAUNCH_GRID_DIM0_3D_REDUCE
+                # tunable parameters
+                # TILE_SIZE=TILE_SIZE_DECODE,
             )
