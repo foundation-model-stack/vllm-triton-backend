@@ -55,8 +55,8 @@ def find_seq_idx(boundary_ptr, target_idx, num_seqs):
         num_stages=[1, 2, 4, 6, 8],
         # num_consumer_groups=[0, 2, 4],
         # num_buffers_warp_spec=[0, 3, 6],
-        # num_consumer_groups=[2, 4],
-        # num_buffers_warp_spec=[3, 6],
+        num_consumer_groups=[2, 4],
+        num_buffers_warp_spec=[3, 6],
         conditions=[
             # ensure consistency for ws
             lambda c: (c.num_consumer_groups !=0 and c.num_buffers_warp_spec != 0) \
@@ -348,8 +348,8 @@ def kernel_unified_attention_2d(
         num_stages=[1, 2, 4, 6, 8],
         # num_consumer_groups=[0, 2, 4],
         # num_buffers_warp_spec=[0, 3, 6],
-        # num_consumer_groups=[2, 4],
-        # num_buffers_warp_spec=[3, 6],
+        num_consumer_groups=[2, 4],
+        num_buffers_warp_spec=[3, 6],
         conditions=[
             # ensure consistency for ws
             lambda c: (c.num_consumer_groups !=0 and c.num_buffers_warp_spec != 0) \
@@ -622,8 +622,8 @@ def kernel_unified_attention_3d(
         num_stages=[1, 2, 4, 6, 8],
         # num_consumer_groups=[0, 2, 4],
         # num_buffers_warp_spec=[0, 3, 6],
-        # num_consumer_groups=[2, 4],
-        # num_buffers_warp_spec=[3, 6],
+        num_consumer_groups=[2, 4],
+        num_buffers_warp_spec=[3, 6],
         conditions=[
             # ensure consistency for ws
             lambda c: (c.num_consumer_groups !=0 and c.num_buffers_warp_spec != 0) \
