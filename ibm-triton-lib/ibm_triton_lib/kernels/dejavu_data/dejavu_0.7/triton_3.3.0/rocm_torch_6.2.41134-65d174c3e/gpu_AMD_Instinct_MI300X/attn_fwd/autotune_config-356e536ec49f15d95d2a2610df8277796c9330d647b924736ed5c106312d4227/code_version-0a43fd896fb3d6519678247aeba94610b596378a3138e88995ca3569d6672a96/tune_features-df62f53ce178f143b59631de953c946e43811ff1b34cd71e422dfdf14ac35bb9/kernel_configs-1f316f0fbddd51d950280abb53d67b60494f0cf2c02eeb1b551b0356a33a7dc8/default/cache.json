@@ -1,0 +1,8 @@
+{
+    "signature": "JITFunction(ibm_triton_lib.kernels.triton_flash_attention:attn_fwd)",
+    "total_bench_time_s": 0.0,
+    "evaluated_configs": 0,
+    "keys": null,
+    "cache": {},
+    "timings": {}
+}
