@@ -1,0 +1,36 @@
+{
+    "signature": "JITFunction(ibm_triton_lib.kernels.triton_unified_grid:kernel_unified_attention_2d)",
+    "total_bench_time_s": 3830.64182972908,
+    "evaluated_configs": 540,
+    "keys": [
+        "num_query_heads",
+        "num_queries_per_kv",
+        "BLOCK_SIZE",
+        "HEAD_SIZE",
+        "HEAD_SIZE_PADDED",
+        "SLIDING_WINDOW",
+        "stride_k_cache_3",
+        "stride_v_cache_3",
+        "is_prefill"
+    ],
+    "cache": {
+        "('32', '4', '16', '128', '128', '0', '1', '1', 'True')": "BLOCK_M: 32, TILE_SIZE: 16, num_warps: 8, num_ctas: 1, num_stages: 6, num_buffers_warp_spec: 0, num_consumer_groups: 0, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None",
+        "('32', '4', '16', '128', '128', '0', '1', '1', 'False')": "BLOCK_M: 32, TILE_SIZE: 16, num_warps: 8, num_ctas: 1, num_stages: 6, num_buffers_warp_spec: 0, num_consumer_groups: 0, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None"
+    },
+    "timings": {
+        "('32', '4', '16', '128', '128', '0', '1', '1', 'True')": [
+            0.00517149455845356
+        ],
+        "('32', '4', '16', '128', '128', '0', '1', '1', 'False')": [
+            0.00435659708455205
+        ]
+    },
+    "timings_data": {
+        "labels": [
+            "ms"
+        ],
+        "rep_t_ms": 100,
+        "warmup_t_ms": 25,
+        "cuda_graphs": true
+    }
+}
