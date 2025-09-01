@@ -9,4 +9,4 @@
 	url = https://github.com/vllm-project/vllm.git
 [submodule "third_party/fmwork"]
 	path = third_party/fmwork
-	url = https://github.com/IBM/fmwork.git
+	url = git@github.com:bringlein/fmwork.git
