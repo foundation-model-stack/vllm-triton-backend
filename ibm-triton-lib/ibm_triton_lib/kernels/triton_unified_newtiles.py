@@ -665,7 +665,6 @@ def unified_attention(
             output_stride_0=out.stride(0),
             output_stride_1=out.stride(1),
             BLOCK_SIZE=block_size,
-            TILE_SIZE=TILE_SIZE_PREFILL,
             HEAD_SIZE=head_size,
             HEAD_SIZE_PADDED=triton.next_power_of_2(head_size),
             USE_ALIBI_SLOPES=use_alibi_slopes,
@@ -680,9 +679,11 @@ def unified_attention(
             stride_v_cache_2=v.stride(2),
             stride_v_cache_3=v.stride(3),
             query_start_len_ptr=cu_seqlens_q,
-            BLOCK_Q=BLOCK_Q,
             num_seqs=num_seqs,
-            BLOCK_M=BLOCK_M,
+            # tunable parameters
+            # BLOCK_M=BLOCK_M,
+            # BLOCK_Q=BLOCK_Q,
+            # TILE_SIZE=TILE_SIZE_DECODE,
         )
     elif force_selection == 3:
         # for initial version, NUM_SEGMENTS = 16 is chosen as a default
