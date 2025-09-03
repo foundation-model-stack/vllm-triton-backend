@@ -1,8 +1,0 @@
-{
-    "signature": "JITFunction(ibm_triton_lib.kernels.triton_unified_attention_tuned:kernel_unified_attention_2d)",
-    "total_bench_time_s": 0.0,
-    "evaluated_configs": 0,
-    "keys": null,
-    "cache": {},
-    "timings": {}
-}
