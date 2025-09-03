@@ -20,11 +20,6 @@ def prepare_informed_fallback(cache):
     ret = {int(k[5]): c for k, c in cache.items()}
     return ret
 
-# lazy functions for paper evals
-use_bo = lambda: os.getenv('NGL_EXP_USE_BO', '0') == '1'
-use_random = lambda: os.getenv('NGL_EXP_USE_RANDOM_SEARCH', '0') == '1'
-bo_time = lambda: int(os.getenv('NGL_EXP_BO_TIME', '360'))
-
 
 def _select_informed_fallback():
     fallback_mode = os.getenv('NGL_EXP_FALLBACK', 'none')
@@ -53,17 +48,15 @@ select_prepare_informed_fallback = lambda: _select_informed_fallback()[1]
     # warmup=5,
     # key=['key_stride', 'value_stride', 'head_size', 'num_heads', 'block_size'], 
     key=['key_stride', 'value_stride', 'head_size', 'num_heads', 'block_size', 'num_tokens', 'x'], 
+    custom_data_storage=os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "dejavu_data")
+    ),
     use_cuda_graph=True,
-    # fallback_heuristic = fallback_heuristic,
-    # informed_fallback = informed_fallback_next,
-    # prepare_informed_fallback = prepare_informed_fallback,
-    fallback_heuristic = select_fallback_heuristic(),
-    informed_fallback = select_informed_fallback(),
-    prepare_informed_fallback = select_prepare_informed_fallback(),
-    use_bo=use_bo(),
-    use_random_search=use_random(),
-    search_max_search_t=bo_time(),
-    search_max_share=1.0,  # will anyhow timeout...
+    # fallback_heuristic = select_fallback_heuristic(),
+    # informed_fallback = select_informed_fallback(),
+    # prepare_informed_fallback = select_prepare_informed_fallback(),
+    use_bo=True,
+    search_max_search_t=360,
 )
 @triton.jit
 def reshape_and_cache_kernel(
