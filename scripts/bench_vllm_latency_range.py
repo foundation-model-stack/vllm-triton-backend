@@ -20,6 +20,28 @@ import json
 import sys
 import torch
 from datetime import datetime
+from itertools import zip_longest, repeat, chain, product
+
+
+# ================= SETUP
+
+# selected_batch_sizes = [1]  # [4, 16, 32] #,128]
+# selected_input_lengths = [500]  # , 1000, 1500, 2000, 4000, 8000, 16000]
+# selected_output_lengths = [10, 100, 200, 400, 800, 1600, 3200, 6400, 12800]
+# selected_input_lengths = [64, 128, 512, 1024, 2048, 4096]
+# selected_input_lengths = [64, 128, 512, 1024, 2048, 4096, 8192, 31500]
+# selected_output_lengths = [1]
+selected_batch_sizes = [1, 2, 4, 8, 16, 32, 64]
+selected_input_lengths = [128]
+selected_output_lengths = [32, 128, 256]
+
+# use_cross_product = False
+use_cross_product = True
+
+warmup_iterations = 3
+iterations = 5 
+
+# =================
 
 
 def create_dir_if_not_exist_recursive(path, mode=0o777):
@@ -42,23 +64,19 @@ def create_dir_if_not_exist(path, mode=0o777):
             print(f"can't set permission of directory {path}: {e}")
 
 
-if len(sys.argv) < 4:
-    print(f"Usage: {sys.argv[0]} <model_path> <testcase_name> <result_path>")
+if len(sys.argv) < 5:
+    print(f"Usage: {sys.argv[0]} <model_path> <tp-factor> <testcase_name> <result_path>")
+    exit(-1)
 
-selected_batch_sizes = [1]  # [4, 16, 32] #,128]
-selected_input_lengths = [500]  # , 1000, 1500, 2000, 4000, 8000, 16000]
-selected_output_lengths = [10, 100, 200, 400, 800, 1600, 3200, 6400, 12800]
 
 gpu_name = torch.cuda.get_device_name().replace(" ", "_").replace("/", "_")
 
 # model = "/model/llama3.1-8b/instruct/"
 model = sys.argv[1]
-testcase_name = sys.argv[2]
-result_path = os.path.abspath(sys.argv[3])
+tp = int(sys.argv[2])
+testcase_name = sys.argv[3]
+result_path = os.path.abspath(sys.argv[4])
 
-# max_rounds = 128
-max_rounds = 64
-max_num_prompts = 1000
 
 timestamp_f = datetime.now().strftime("%Y-%m-%d_%H%M")
 
@@ -75,21 +93,24 @@ if not os.path.isfile(bench_script):
         print(f"can't find benchmark script benchmark_latency.py")
         exit(-1)
 
-# Assisted by watsonx Code Assistant
-from itertools import zip_longest
-
-zipped_lists = list(
-    zip_longest(
-        selected_batch_sizes,
-        selected_input_lengths,
-        selected_output_lengths,
-        fillvalue=None,
+if use_cross_product:
+    zipped_lists = list(product(selected_batch_sizes, selected_input_lengths, selected_output_lengths))
+else:
+    max_length = max(len(selected_batch_sizes), len(selected_input_lengths), len(selected_output_lengths))
+    zipped_lists = list(
+        zip_longest(
+            chain(selected_batch_sizes, 
+                  repeat(selected_batch_sizes[-1], times=max_length-len(selected_batch_sizes))),
+            chain(selected_input_lengths, 
+                  repeat(selected_input_lengths[-1], times=max_length-len(selected_input_lengths))),
+            chain(selected_output_lengths, 
+                  repeat(selected_output_lengths[-1], times=max_length-len(selected_output_lengths))),
+            fillvalue=None,
+        )
     )
-)
-
 print(zipped_lists)
 
-
+start_time = datetime.now()
 for bs, il, ol in zipped_lists:
     print(
         f"====== Measuring batch_size {bs}, input length {il}, output length {ol} ====="
@@ -99,7 +120,13 @@ for bs, il, ol in zipped_lists:
         f"VLLM_USE_V1=1 python {bench_script} "
         f"--model {model} "
         f"--input-len {il} --output-len {ol} --batch-size {bs} "
-        f"--output-json {json_file_name}"
+        f"--output-json {json_file_name} "
+        f"--num-iters-warmup {warmup_iterations} "
+        f"--num-iters {iterations} "
+        f"--tensor-parallel {tp} "
+        f"--enable-chunked-prefill "
+        f"--max-num-batched-tokens 16384 "
+        # f"-O.full_cuda_graph=true"
     )
     print(cmd)
     rv = os.system(cmd)
@@ -107,5 +134,7 @@ for bs, il, ol in zipped_lists:
         print(f"benchmark command returned {rv}, stopping...")
         exit(rv)
 
+end_time = datetime.now()
 print(f"results stored in: {result_dir}")
 os.system(f"ls -alh {result_dir}")
+print(f"Benchmark time: {end_time-start_time}")

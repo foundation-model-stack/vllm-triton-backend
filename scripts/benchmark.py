@@ -68,6 +68,15 @@ class Implementation(Enum):
     UNF_TRITON_2D = 11
     UNF_TRITON_AUTO = 12
     PYTORCH_NATIVE = 13
+    TRITON_TUNED = 14
+    TRITON_FALLBACK = 15
+    UNF_TRITON_2D_SIMPLE = 16
+    NT_UNF_TRITON_3D = 17
+    NT_UNF_TRITON_2D = 18
+    NT_UNF_TRITON_AUTO = 19
+    UNF_TRITON_2D_TUNED = 20
+    GRID_TRITON_3D = 21
+    GRID_TRITON_2D = 22
 
 
 class BenchmarkMode(Enum):
@@ -97,7 +106,8 @@ NUM_HEADS = [(32, 32), (32, 8)]
 SEQUENCE_LENGTHS = [16, 32, 64, 128, 512, 1024, 2048, 4096]
 PREFIX_PREFILL_SHARE_OF_DECODE = [0.0, 0.5, 1.0]
 PREFIX_PREFILL_SHARE_OF_PARTIAL_PREFILL = [0.0, 0.5]
-PREFIX_PREFILL_BATCH_COMPOSITION = [BatchComposition.ALTERNATING]
+PREFIX_PREFILL_BATCH_COMPOSITION = [BatchComposition.DEC_PRE]
+RESERVE_INPUT_TOKEN_LENGTH = [None]
 
 HEAD_SIZES = [128]  # only powers of 2! for llama2 & 3
 # head_size * head_numbers = hidden_size
@@ -117,6 +127,13 @@ PROMPT_PATTERNS.append([0.1, 0.4, 0.5, 1.0, 0.2])
 STATE_DIM = [128]
 STATE_N_GROUPS = [1]
 HAS_INITIAL_STATE = [True]
+
+MOE_NUM_EXPERTS = [8]
+MOE_N = [14336]  # intermediate size of mixtral-8x7b
+MOE_K = [4096]  # for mixtral-8x7b
+TP_FACTOR = [1, 2]
+MOE_TOP_K = [2]  # for mixtral-8x7b, mixtral-8x22b
+
 
 IMPLEMENTATION_UT = [
     Implementation.TRITON_2D,
@@ -167,6 +184,13 @@ test_setup_vars = [
     "MAX_VALUES",
     "STATE_DIM",
     "STATE_N_GROUPS",
+    "HAS_INITIAL_STATE",
+    "MOE_NUM_EXPERTS",
+    "MOE_N",
+    "MOE_K",
+    "TP_FACTOR",
+    "MOE_TOP_K",
+    "RESERVE_INPUT_TOKEN_LENGTH",
 ]
 # "BENCHMARK_MODES", "IMPLEMENTATION_UT" ]
 debug_env_vars = [
@@ -187,8 +211,12 @@ if len(sys.argv) >= 1:
         import json
 
         envfile_path = os.path.abspath(envfile_name)
-        print(f"\nApplied test config: {envfile_path}")
+        if not os.path.isfile(envfile_path):
+            raise RuntimeError(f"Test config file {envfile_path} does not exist.")
         env_setting = dotenv_values(envfile_path)
+        if len(env_setting) == 0:
+            raise RuntimeError(f"Test config file {envfile_path} does not contain valid configs.")
+        print(f"\nApplied test config: {envfile_path}")
         # filter allowed, convert all to lists
         env_setting_filtered = {
             k: json.loads(env_setting[k]) for k in test_setup_vars if k in env_setting
@@ -982,6 +1010,7 @@ def test_prefill_vllm_v0_attention(
 @pytest.mark.parametrize("seed", SEEDS)
 @pytest.mark.parametrize("implementation", IMPLEMENTATION_UT)
 @pytest.mark.parametrize("max_value", MAX_VALUES)
+@pytest.mark.parametrize("reserved_query_length", RESERVE_INPUT_TOKEN_LENGTH)
 @pytest.mark.parametrize("benchmark_mode", BENCHMARK_MODES)
 @torch.inference_mode()
 def test_prefix_vllm_v1_attention(
@@ -1003,6 +1032,7 @@ def test_prefix_vllm_v1_attention(
     seed,
     implementation,
     max_value,
+    reserved_query_length,
     benchmark_mode,
 ):
     my_id = request.node.nodeid.split("::")[-1]
@@ -1010,6 +1040,9 @@ def test_prefix_vllm_v1_attention(
     my_instance = my_id.split("[")[1][:-1]
     realistic_prompt_mode = len(prompt_pattern) > 1
     gqa_mode = num_heads[0] != num_heads[1]
+
+    reserved_query_length = None if reserved_query_length in [None, 'none', -1, 0] else int(reserved_query_length)
+    skip_ref_impl = True if reserved_query_length is not None else False
 
     if torch.cuda.get_device_capability()[0] < 8:
         # reduce operations are not supported (?)
@@ -1022,14 +1055,28 @@ def test_prefix_vllm_v1_attention(
         Implementation.TRITON_2D,
         Implementation.UNF_TRITON_3D,
         Implementation.UNF_TRITON_2D,
-        Implementation.UNF_TRITON_AUTO,
+        Implementation.UNF_TRITON_2D_SIMPLE,
+        # Implementation.UNF_TRITON_AUTO,
+        Implementation.NT_UNF_TRITON_3D,
+        Implementation.NT_UNF_TRITON_2D,
+        # Implementation.NT_UNF_TRITON_AUTO,
+        Implementation.UNF_TRITON_2D_TUNED,
+        Implementation.GRID_TRITON_2D,
+        Implementation.GRID_TRITON_3D,
     ]:
         pytest.skip()
 
+    if implementation == Implementation.GRID_TRITON_3D and decode_share != 1.0:
+        pytest.skip("not supported")
+
+
+    if batch_composition == BatchComposition.ALTERNATING and implementation == Implementation.FLASH_ATTN:
+        pytest.skip("not supported")
+
     # TODO: Error: "Offset increment outside graph capture"
     #  for triton and flash_attn
-    if benchmark_mode == BenchmarkMode.CUDA_GRAPHS:
-        pytest.skip("not supported")
+    # if benchmark_mode == BenchmarkMode.CUDA_GRAPHS:
+    #     pytest.skip("not supported")
 
     # TODO
     # RTOL = 0
@@ -1165,7 +1212,10 @@ def test_prefix_vllm_v1_attention(
 
     inner_exception = None
     try:
-        query = torch.empty(total_query_tokens, num_query_heads, head_size, dtype=dtype)
+        query_tensor_num_tokens_reserved = total_query_tokens
+        if reserved_query_length is not None:
+            query_tensor_num_tokens_reserved = reserved_query_length
+        query = torch.empty(query_tensor_num_tokens_reserved, num_query_heads, head_size, dtype=dtype)
         query.uniform_(-max_value, max_value)
 
         key = torch.empty(total_token_num, num_kv_heads, head_size, dtype=dtype)
@@ -1224,41 +1274,42 @@ def test_prefix_vllm_v1_attention(
             slot_mapping_lst.extend(slot_mapping_i)
         slot_mapping_t = torch.tensor(slot_mapping_lst, dtype=torch.int)
 
-        ref_reshape_and_cache_flash(
-            key,
-            value,
-            key_cache,
-            value_cache,
-            slot_mapping_t,
-            block_size,
-            total_token_num,
-        )
+        if not skip_ref_impl:
+            ref_reshape_and_cache_flash(
+                key,
+                value,
+                key_cache,
+                value_cache,
+                slot_mapping_t,
+                block_size,
+                total_token_num,
+            )
 
-        ref_output = ref_prefix_prefill(
-            query,
-            num_queries_per_kv,
-            key_cache,
-            value_cache,
-            key,
-            value,
-            block_table_t,
-            b_seq_lens,
-            b_ctx_lens,
-            b_query_lens,
-            b_start_loc,
-            batch_size,
-            scale,
-            dtype,
-        )
-        # ref_output = ref_paged_attn(
-        #     query,
-        #     key_cache,
-        #     value_cache,
-        #     b_query_lens,
-        #     b_ctx_lens,
-        #     block_table_t,
-        #     scale,
-        # )
+            ref_output = ref_prefix_prefill(
+                query,
+                num_queries_per_kv,
+                key_cache,
+                value_cache,
+                key,
+                value,
+                block_table_t,
+                b_seq_lens,
+                b_ctx_lens,
+                b_query_lens,
+                b_start_loc,
+                batch_size,
+                scale,
+                dtype,
+            )
+            # ref_output = ref_paged_attn(
+            #     query,
+            #     key_cache,
+            #     value_cache,
+            #     b_query_lens,
+            #     b_ctx_lens,
+            #     block_table_t,
+            #     scale,
+            # )
 
         if implementation == Implementation.FLASH_ATTN:
             from callers import FlashAttnPrefixPrefillCaller as Caller
@@ -1274,8 +1325,22 @@ def test_prefix_vllm_v1_attention(
             from callers import UnifiedTriton3dAttentionCaller as Caller
         elif implementation == Implementation.UNF_TRITON_2D:
             from callers import UnifiedTriton2dAttentionCaller as Caller
+        elif implementation == Implementation.UNF_TRITON_2D_SIMPLE:
+            from callers import SimpleUnifiedTriton2dAttentionCaller as Caller
         elif implementation == Implementation.UNF_TRITON_AUTO:
             from callers import UnifiedTritonAutoAttentionCaller as Caller
+        elif implementation == Implementation.NT_UNF_TRITON_3D:
+            from callers import NewTilesUnifiedTriton3dAttentionCaller as Caller
+        elif implementation == Implementation.NT_UNF_TRITON_2D:
+            from callers import NewTilesUnifiedTriton2dAttentionCaller as Caller
+        elif implementation == Implementation.NT_UNF_TRITON_AUTO:
+            from callers import NewTilesUnifiedTritonAutoAttentionCaller as Caller
+        elif implementation == Implementation.UNF_TRITON_2D_TUNED:
+            from callers import TunedUnifiedTriton2dAttentionCaller as Caller
+        elif implementation == Implementation.GRID_TRITON_3D:
+            from callers import GridTriton3dAttentionCaller as Caller
+        elif implementation == Implementation.GRID_TRITON_2D:
+            from callers import GridTriton2dAttentionCaller as Caller
 
         if Caller.requires_allocated_output:
             output = torch.empty_like(query)
@@ -1339,10 +1404,12 @@ def test_prefix_vllm_v1_attention(
                     # captured += l  # + '|'
                     captured += l + " "
         # compare
-        if enforce_numerical_correctness:
+        if enforce_numerical_correctness and not skip_ref_impl:
             # for better reports
             triton.testing.assert_close(ref_output, output, atol=ATOL, rtol=RTOL)
             allclose_pass = True
+        elif skip_ref_impl:
+            allclose_pass = 'skipped'
         else:
             allclose_pass = torch.allclose(ref_output, output, atol=ATOL, rtol=RTOL)
 
@@ -1418,7 +1485,9 @@ def test_prefix_vllm_v1_attention(
                 "num_blocks": num_blocks,
                 "dtype": dtype,
                 "max_value": max_value,
+                "query_tensor_num_tokens_reserved": query_tensor_num_tokens_reserved,
                 "realistic_prompt_mode": realistic_prompt_mode,
+                "batch_composition": batch_composition,
                 "gqa_mode": gqa_mode,
                 "prompt_pattern": prompt_pattern,
                 "implementation": implementation,
@@ -1705,6 +1774,223 @@ def test_mamba_ssm(
         raise e
 
 
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+@pytest.mark.parametrize("seqlen", SEQUENCE_LENGTHS)
+@pytest.mark.parametrize("n", MOE_N)
+@pytest.mark.parametrize("k", MOE_K)
+@pytest.mark.parametrize("e", MOE_NUM_EXPERTS)
+@pytest.mark.parametrize("tp", TP_FACTOR)
+@pytest.mark.parametrize("topk", MOE_TOP_K)
+@pytest.mark.parametrize("dtype", DTYPES)
+@pytest.mark.parametrize("seed", SEEDS)
+@pytest.mark.parametrize("max_value", MAX_VALUES)
+@pytest.mark.parametrize("implementation", IMPLEMENTATION_UT)
+@pytest.mark.parametrize("benchmark_mode", BENCHMARK_MODES)
+def test_fused_moe(
+    capsys,
+    request,
+    batch_size,
+    seqlen,
+    n: int,
+    k: int,
+    e: int,
+    tp: int,
+    topk: int,
+    dtype: torch.dtype,
+    seed,
+    max_value,
+    implementation,
+    benchmark_mode,
+):
+    # based on: https://github.com/vllm-project/vllm/blob/main/tests/kernels/test_moe.py
+    from vllm.model_executor.layers.activation import SiluAndMul
+
+    my_id = request.node.nodeid.split("::")[-1]
+    my_name = my_id.split("[")[0]
+    my_instance = my_id.split("[")[1][:-1]
+
+    if implementation not in [Implementation.TRITON_TUNED, Implementation.TRITON_FALLBACK]:
+        pytest.skip()
+   
+    def torch_moe(a, w1, w2, score, topk):
+        B, D = a.shape
+        a = a.view(B, -1, D).repeat(1, topk, 1).reshape(-1, D)
+        out = torch.zeros(B * topk, w2.shape[1], dtype=a.dtype, device=a.device)
+        score = torch.softmax(score, dim=-1, dtype=torch.float32)
+        topk_weight, topk_ids = torch.topk(score, topk)
+        topk_weight = topk_weight.view(-1)
+        topk_ids = topk_ids.view(-1)
+        for i in range(w1.shape[0]):
+            mask = topk_ids == i
+            if mask.sum():
+                out[mask] = SiluAndMul()(
+                    a[mask] @ w1[i].transpose(0, 1)) @ w2[i].transpose(0, 1)
+        return (out.view(B, -1, w2.shape[1]) *
+                topk_weight.view(B, -1, 1).to(out.dtype)).sum(dim=1)
+
+    from ibm_triton_lib.kernels import fused_moe
+    # my_experts = TritonExperts()
+    # fused_moe = my_experts.apply
+
+    torch.manual_seed(seed)
+    tdev = torch.device(device)
+    torch.cuda.set_device(tdev)
+    # m = batch_size * seqlen
+    num_tokens = batch_size * seqlen
+    m = num_tokens
+    n  = int(n//tp)
+    
+    # ATOL = 1e-2
+    # TODO
+    ATOL = max(1e-2, 2 * max_value)
+    RTOL = 0
+
+    a = None
+    w1 = None
+    w2 = None
+    score = None
+    torch_output = None
+    triton_output = None
+
+    inner_exception = None 
+    try: 
+
+        a = torch.randn((m, k), device=tdev, dtype=dtype).normal_(mean=0.0, std=0.5 * max_value)
+        # w1 = torch.randn((e, n, k), device=tdev, dtype=dtype).normal_(mean=0.0, std=0.5 * max_value)
+        # w2 = torch.randn((e, k, n//2), device=tdev, dtype=dtype).normal_(mean=0.0, std=0.5 * max_value)
+        w1 = torch.randn((e, 2 * n, k), device=tdev, dtype=dtype).normal_(mean=0.0, std=0.5 * max_value)
+        w2 = torch.randn((e, k, n), device=tdev, dtype=dtype).normal_(mean=0.0, std=0.5 * max_value)
+        score = torch.randn((m, e), device=tdev, dtype=dtype)
+    
+        input_gating = torch.empty(num_tokens, e, dtype=torch.float32, device=tdev)
+
+        if enforce_numerical_correctness:
+            torch_output = torch_moe(a, w1, w2, score, topk)
+            assert torch_output is not None
+        """
+        from fused_moe.py
+         Key Parameters:
+            - A: The input tensor representing tokens with shape (*, K), where '*' can
+                be any shape representing batches and K is the feature dimension of
+                each token.
+            - B: The stacked MOE weight tensor with shape (E, N, K), where E is
+                the number of experts, K is the input feature dimension, and N is
+                the output feature dimension.
+            - C: The output cache tensor with shape (M, topk, N), where M is the
+                total number of tokens post padding, topk is the number of times
+                each token is repeated, and N is the output feature dimension.
+        """
+
+        
+        use_default_config = True if implementation == Implementation.TRITON_FALLBACK else False
+        triton_output = fused_moe(a, w1, w2, input_gating, topk,
+                                  renormalize=True, use_default_config=use_default_config) #inplace=True ? 
+        assert triton_output is not None
+        
+        captured = ''
+        if capsys is not None:
+            captured_raw = capsys.readouterr()  # returns stdout, stderr
+            for l in captured_raw:
+                if len(l) > 0:
+                    # captured += l  # + '|'
+                    captured += l  + ' '
+        
+        # compare
+        allclose_pass = float('nan')
+        if enforce_numerical_correctness:
+            triton.testing.assert_close(torch_output, triton_output, atol=ATOL, rtol=RTOL)
+            allclose_pass = True
+
+        call_func_under_test = lambda: fused_moe(a, w1, w2, input_gating, topk, 
+                                                 renormalize=True, inplace=True,
+                                                 use_default_config=use_default_config)
+
+        # benchmark only correct results
+        if do_benchmarks:
+            if my_name not in pytest.global_pds:
+                pytest.global_pds[my_name] = pd.DataFrame()
+
+            # equals to defaults
+            warmup_rep = 25
+            bench_rep = 100
+            ms, min_ms, max_ms = measure_benchmarks(
+                benchmark_mode, call_func_under_test, warmup_rep, bench_rep
+            )
+
+            record = {
+                "batch_size": batch_size,
+                "seqlen": seqlen,
+                "num_tokens": num_tokens, # redundant?
+                "N": n,
+                "K": k,
+                "E": e,
+                "TP": tp,
+                "topk": topk,
+                "max_value": max_value,
+                "dtype": dtype,
+                "implementation": implementation,
+                "ms": ms,
+                "min_ms": min_ms,
+                "max_ms": max_ms,
+                "benchmark_mode": benchmark_mode,
+                "allclose_pass": allclose_pass,
+                "ATOL": ATOL,
+                "RTOL": RTOL,
+                # "proton_count": proton_count,
+                # "proton_ns": proton_ns,
+                # "proton_util_compute": proton_util_compute,
+                # "proton_util_bw": proton_util_bw,
+                "captured": captured,
+            }
+
+            if add_triton_dejavu_envs:
+                dejavu_envs = {}
+                _skip_dejavu_envs = [
+                    "_TRITON_DEJAVU_DETERMINED_CUDA_VERSION",
+                    "DEBUG",
+                    "STORAGE",
+                ]
+                for env in os.environ.keys():
+                    if "TRITON_DEJAVU_" in env:
+                        if any([skip_s in env for skip_s in _skip_dejavu_envs]):
+                            continue
+                        dejavu_envs[env] = os.environ[env]
+                record.update(dejavu_envs)
+
+            pytest.global_pds[my_name] = pd.concat(
+                [pytest.global_pds[my_name], pd.Series(record).to_frame().T]
+            ).reset_index(drop=True)
+
+            if pytest.global_pd_file_prefix is not None:
+                filename = os.path.abspath(
+                    f"{pytest.global_pd_file_prefix}/{my_name}.csv"
+                )
+                write_df_and_chmod(pytest.global_pds[my_name], filename)
+
+    except Exception as e:
+        print(e)
+        inner_exception = e
+    finally:
+        # cleanup memory
+        try:
+            del a
+            del w1
+            del w2
+            del score
+            del triton_output
+            del torch_output
+            torch.cuda.empty_cache()
+            torch.cuda.ipc_collect()
+        except Exception as e:
+            print(e)
+            # pass
+        finally:
+            if inner_exception is not None:
+                raise inner_exception
+
+
+
+
 def measure_benchmarks(
     benchmark_mode, call_func_under_test, warmup_rep=25, bench_rep=100
 ):
@@ -1801,7 +2087,7 @@ if __name__ == "__main__":
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
     if STORE_TEST_RESULT_PATH is not None:
-        gpu_path = os.path.join(STORE_TEST_RESULT_PATH, gpu_name)
+        gpu_path = os.path.join(os.path.abspath(STORE_TEST_RESULT_PATH), gpu_name)
         gloabl_pd_file_prefix = os.path.join(gpu_path, timestamp)
         create_dir_if_not_exist_recursive(gloabl_pd_file_prefix)
     else:
