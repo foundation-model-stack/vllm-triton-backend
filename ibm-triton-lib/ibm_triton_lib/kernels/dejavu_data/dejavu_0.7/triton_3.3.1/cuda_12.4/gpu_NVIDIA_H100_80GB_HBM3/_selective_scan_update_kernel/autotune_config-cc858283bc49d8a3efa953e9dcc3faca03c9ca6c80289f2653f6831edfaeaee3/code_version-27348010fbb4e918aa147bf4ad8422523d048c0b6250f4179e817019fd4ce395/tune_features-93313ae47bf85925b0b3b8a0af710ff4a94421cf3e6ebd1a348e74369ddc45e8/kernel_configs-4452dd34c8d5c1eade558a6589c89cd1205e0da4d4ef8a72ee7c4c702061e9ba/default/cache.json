@@ -1,8 +1,0 @@
-{
-    "signature": "JITFunction(ibm_triton_lib.kernels.mamba_ssm:_selective_scan_update_kernel)",
-    "total_bench_time_s": 0.0,
-    "evaluated_configs": 0,
-    "keys": null,
-    "cache": {},
-    "timings": {}
-}
