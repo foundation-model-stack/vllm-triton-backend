@@ -75,3 +75,6 @@ from .triton_unified_grid import unified_attention as unified_attention_grid
 from .mamba_ssm import selective_state_update
 
 # from .fused_moe import fused_moe
+
+from .reshape_and_cache import reshape_and_cache as triton_reshape_and_cache
+

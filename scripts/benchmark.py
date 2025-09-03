@@ -77,6 +77,8 @@ class Implementation(Enum):
     UNF_TRITON_2D_TUNED = 20
     GRID_TRITON_3D = 21
     GRID_TRITON_2D = 22
+    TRITON_RESHAPE_AND_CACHE = 23
+    VLLM_CUDA_RESHAPE_AND_CACHE = 24
 
 
 class BenchmarkMode(Enum):
@@ -1988,6 +1990,226 @@ def test_fused_moe(
             if inner_exception is not None:
                 raise inner_exception
 
+
+@pytest.mark.parametrize("seqlen", SEQUENCE_LENGTHS)
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+@pytest.mark.parametrize("num_heads", NUM_HEADS)
+@pytest.mark.parametrize("head_size", HEAD_SIZES)
+@pytest.mark.parametrize("block_size", BLOCK_SIZES)
+@pytest.mark.parametrize("num_blocks", NUM_BLOCKS)
+@pytest.mark.parametrize("dtype", DTYPES)
+@pytest.mark.parametrize("seed", SEEDS)
+@pytest.mark.parametrize("implementation", IMPLEMENTATION_UT)
+@pytest.mark.parametrize("max_value", MAX_VALUES)
+@pytest.mark.parametrize("benchmark_mode", BENCHMARK_MODES)
+@torch.inference_mode()
+def test_reshape_and_cache(
+    capsys,
+    request,
+    seqlen,
+    batch_size,
+    num_heads,
+    head_size,
+    block_size,
+    num_blocks,
+    dtype,
+    seed,
+    implementation,
+    max_value,
+    benchmark_mode,
+) -> None:
+    # ATOL = 1e-2
+    ATOL = 1e-8
+    RTOL = 0
+    # RTOL = 1e-2
+    
+    my_id = request.node.nodeid.split("::")[-1]
+    my_name = my_id.split("[")[0]
+    my_instance = my_id.split("[")[1][:-1]
+    num_kv_heads, num_query_heads = num_heads
+
+    if implementation not in [Implementation.TRITON_RESHAPE_AND_CACHE, Implementation.VLLM_CUDA_RESHAPE_AND_CACHE]:
+        pytest.skip()
+
+    random.seed(seed)
+    torch.random.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    tdev = torch.device(device)
+    # https://github.com/openai/triton/issues/2925
+    torch.cuda.set_device(tdev)
+
+    num_tokens = seqlen * batch_size
+    # to avoid 'local variable referenced before assignment' when trying to del them
+    key = None
+    value = None
+    key_cache = None
+    value_cache = None
+    cloned_key_cache = None
+    cloned_value_cache = None
+    key_caches = None
+    value_caches = None
+
+    inner_exception = None 
+    try:
+        # Create a random slot mapping.
+        num_slots = block_size * num_blocks
+        # TODO: num_tokens <= num_slots!
+        if num_tokens > num_slots:
+            # impossible configuration
+            # return as success?
+            return
+        slot_mapping_sample = random.sample(range(num_slots), num_tokens)
+        # slot_mapping_sample = [0, 1, 2]
+        slot_mapping = torch.tensor(slot_mapping_sample, dtype=torch.long, device=tdev)
+
+        qkv = torch.randn(num_tokens, 3, num_kv_heads, head_size, dtype=dtype, device=tdev).uniform_(-1 * max_value, max_value)
+        _, key, value = qkv.unbind(dim=1)
+
+        # Create the KV caches.
+        kv_cache_dtype = "auto"
+        key_caches, value_caches = create_kv_caches_with_random(
+            num_blocks,
+            block_size,
+            1,
+            num_kv_heads,
+            head_size,
+            max_value,
+            kv_cache_dtype,
+            dtype,
+            seed,
+            device,
+            alignment_optimization=False,
+        )
+
+        key_cache, value_cache = key_caches[0], value_caches[0]
+
+        # Clone the KV caches.
+        cloned_key_cache = key_cache.clone()
+        cloned_value_cache = value_cache.clone()
+
+        if implementation == Implementation.TRITON_RESHAPE_AND_CACHE:
+            from ibm_triton_lib.kernels import triton_reshape_and_cache
+
+            call_func_under_test = lambda: triton_reshape_and_cache(key, value, key_cache, value_cache,
+                                     slot_mapping)
+
+        elif implementation == Implementation.VLLM_CUDA_RESHAPE_AND_CACHE:
+            from vllm import _custom_ops as ops
+            k_scale = 1.0
+            v_scale = 1.0
+            call_func_under_test = lambda: torch.ops._C_cache_ops.reshape_and_cache_flash(
+                        key,
+                        value,
+                        key_cache,
+                        value_cache,
+                        slot_mapping,
+                        kv_cache_dtype,
+                        k_scale,
+                        v_scale
+                    )
+        
+        call_func_under_test()
+
+        # Run the reference implementation.
+        reshaped_key = key.reshape(num_tokens, *key_cache[0, :, :, 0, :].shape)
+        block_indicies = torch.div(slot_mapping, block_size, rounding_mode="floor")
+        block_indicies = block_indicies.cpu().tolist()
+        block_offsets = slot_mapping % block_size
+        block_offsets = block_offsets.cpu().tolist()
+        for i in range(num_tokens):
+            block_idx = block_indicies[i]
+            block_offset = block_offsets[i]
+            cloned_key_cache[block_idx, :, :, block_offset, :] = reshaped_key[i]
+            cloned_value_cache[block_idx, :, :, block_offset] = value[i]
+    
+        captured = ''
+        if capsys is not None:
+            captured_raw = capsys.readouterr()  # returns stdout, stderr
+            for l in captured_raw:
+                if len(l) > 0:
+                    # captured += l  # + '|'
+                    captured += l  + ' '
+        
+        # compare
+        if enforce_numerical_correctness:
+            # assert torch.allclose(ref_out, tri_out, atol=1e-2, rtol=0)
+            # for better reports
+            triton.testing.assert_close(key_cache, cloned_key_cache, atol=ATOL, rtol=RTOL)
+            triton.testing.assert_close(value_cache, cloned_value_cache, atol=ATOL, rtol=RTOL)
+            allclose_pass = True
+        else:
+            pass_t0 = torch.allclose(key_cache, cloned_key_cache, atol=ATOL, rtol=RTOL)
+            pass_t1 = torch.allclose(value_cache, cloned_value_cache, atol=ATOL, rtol=RTOL)
+            allclose_pass = pass_t0 and pass_t1
+    
+        # benchmark only correct results   
+        if do_benchmarks:
+
+            if my_name not in pytest.global_pds:
+                pytest.global_pds[my_name] = pd.DataFrame()
+
+            # equals to defaults
+            warmup_rep = 25
+            bench_rep = 100
+            ms, min_ms, max_ms = measure_benchmarks(
+                benchmark_mode, call_func_under_test, warmup_rep, bench_rep
+            )
+
+            record = {
+                "batch_size": batch_size,
+                "seqlen": seqlen,
+                "num_tokens": num_tokens,
+                'head_size': head_size,
+                'num_kv_heads': num_kv_heads,
+                'block_size': block_size,
+                'num_blocks': num_blocks,
+                "max_value": max_value,
+                "dtype": dtype,
+                "implementation": implementation,
+                "ms": ms,
+                "min_ms": min_ms,
+                "max_ms": max_ms,
+                "benchmark_mode": benchmark_mode,
+                "allclose_pass": allclose_pass,
+                "ATOL": ATOL,
+                "RTOL": RTOL,
+                # "proton_count": proton_count,
+                # "proton_ns": proton_ns,
+                # "proton_util_compute": proton_util_compute,
+                # "proton_util_bw": proton_util_bw,
+                "captured": captured,
+            }
+
+            if add_triton_dejavu_envs:
+                dejavu_envs = {}
+                _skip_dejavu_envs = [
+                    "_TRITON_DEJAVU_DETERMINED_CUDA_VERSION",
+                    "DEBUG",
+                    "STORAGE",
+                ]
+                for env in os.environ.keys():
+                    if "TRITON_DEJAVU_" in env:
+                        if any([skip_s in env for skip_s in _skip_dejavu_envs]):
+                            continue
+                        dejavu_envs[env] = os.environ[env]
+                record.update(dejavu_envs)
+
+    except Exception as e:
+        print(e)
+        inner_exception = e
+    finally:
+        # cleanup memory
+        torch.cuda.empty_cache()
+        del key
+        del value
+        del key_cache
+        del value_cache
+        del cloned_key_cache
+        del cloned_value_cache
+        del key_caches
+        del value_caches
+        if inner_exception is not None:
+            raise inner_exception
 
 
 
