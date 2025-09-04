@@ -57,25 +57,25 @@ def reshape_and_cache_kernel_flash(
     block_idx = slot_idx // block_size
     block_offset = slot_idx % block_size
     
-
-    # [TILE_SIZE]   
-    src_key_idx = token_idx * key_stride + tile_pos
-    src_value_idx = token_idx * value_stride + tile_pos
-
-    # [TILE_SIZE]   
-    tgt_idx = block_idx * block_stride + block_offset * page_stride + tile_pos
+    src_key_idx = token_idx * key_stride
+    src_value_idx = token_idx * value_stride
     
-    tgt_key = tl.load(key_ptr + src_key_idx, 
-                      mask = src_key_idx < (token_idx * key_stride + num_heads*head_size)
+    tgt_idx = block_idx * block_stride + block_offset * page_stride
+    
+    # [TILE_SIZE]   
+    tgt_key = tl.load(key_ptr + src_key_idx + tile_pos, 
+                      mask = tile_pos < (num_heads*head_size)
                       )
-    tgt_value = tl.load(value_ptr + src_value_idx, 
-                        mask = src_value_idx < (token_idx * value_stride + num_heads*head_size)
+    # [TILE_SIZE]   
+    tgt_value = tl.load(value_ptr + src_value_idx + tile_pos, 
+                        mask = tile_pos < (num_heads*head_size)
                         )
-    tl.store(key_cache_ptr + tgt_idx, tgt_key, 
-             mask = tgt_idx < (block_idx*block_stride + block_offset*page_stride + num_heads*head_size)
+    
+    tl.store(key_cache_ptr + tgt_idx + tile_pos, tgt_key, 
+             mask = tile_pos < (num_heads*head_size)
              )
-    tl.store(value_cache_ptr + tgt_idx, tgt_value, 
-             mask = tgt_idx < (block_idx*block_stride + block_offset*page_stride + num_heads*head_size)
+    tl.store(value_cache_ptr + tgt_idx + tile_pos, tgt_value, 
+             mask = tile_pos < (num_heads*head_size)
              )
     return
 
