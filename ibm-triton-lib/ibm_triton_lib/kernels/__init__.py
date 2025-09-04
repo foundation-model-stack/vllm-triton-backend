@@ -76,5 +76,6 @@ from .mamba_ssm import selective_state_update
 
 # from .fused_moe import fused_moe
 
-from .reshape_and_cache import reshape_and_cache as triton_reshape_and_cache
+# from .reshape_and_cache import reshape_and_cache as triton_reshape_and_cache
+from .reshape_and_cache_flash import reshape_and_cache_flash as triton_reshape_and_cache_flash
 
