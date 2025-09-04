@@ -35,12 +35,10 @@ def reshape_and_cache_kernel_flash(
     key_cache_ptr,  # [num_blocks, block_size, num_heads, head_size]
     value_cache_ptr,  # [num_blocks, block_size, num_heads, head_size]
     slot_mapping_ptr,  # [num_tokens]
-    num_tokens: tl.int64,
     key_stride: tl.int64,
     value_stride: tl.int64,
     block_stride: tl.int64,
     page_stride: tl.int64,
-    head_stride: tl.int64,
     num_heads: tl.constexpr,
     head_size: tl.constexpr,
     block_size: tl.constexpr,
@@ -104,7 +102,9 @@ def reshape_and_cache_flash(
     value_stride = key.stride()[0]
     block_stride = key_cache.stride()[0]
     page_stride = key_cache.stride()[1]
+
     head_stride = key_cache.stride()[2]
+    assert head_stride == head_size, "only continous heads are supported"
 
     # TODO: static launch grid?
     grid = lambda meta: (int(num_tokens), triton.cdiv(n, meta["TILE_SIZE"]))
@@ -115,19 +115,17 @@ def reshape_and_cache_flash(
         key_cache_ptr=key_cache,
         value_cache_ptr=value_cache,
         slot_mapping_ptr=slot_mapping,
-        num_tokens=num_tokens,
         key_stride=key_stride,
         value_stride=value_stride,
         block_stride=block_stride,
         page_stride=page_stride,
-        head_stride=head_stride,
         num_heads=num_heads,
         head_size=head_size,
         block_size=block_size,
-        TILE_SIZE=128,
-        # TILE_SIZE=n,
-        num_warps=2,
-        num_stages=10,
+        # autotune parameters
+        # TILE_SIZE=128,
+        # num_warps=2,
+        # num_stages=10,
     )
 
     return
