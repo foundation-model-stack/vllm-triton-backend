@@ -2064,10 +2064,10 @@ def test_reshape_and_cache(
         
         # Create the KV caches.
         kv_cache_dtype = "auto"
-        key_cache = torch.randn(
+        key_cache = torch.zeros(
             num_blocks, block_size, num_kv_heads, head_size, dtype=dtype, device=tdev,
         ).contiguous()
-        value_cache = torch.randn(
+        value_cache = torch.zeros(
             num_blocks, block_size, num_kv_heads, head_size, dtype=dtype, device=tdev,
         ).contiguous()
 
@@ -2117,6 +2117,21 @@ def test_reshape_and_cache(
                     # captured += l  # + '|'
                     captured += l  + ' '
         
+        if debug_flag:
+            diff_tensor = torch.where(key_cache != cloned_key_cache, 1.0, 0.0)
+            torch.set_printoptions(profile="full")
+            for b in range(num_blocks):
+                if diff_tensor[b].sum() > 0:
+                    for bi in range(block_size):
+                        if diff_tensor[b, bi].sum() > 0:
+                            print(f" key_cache diff at block {b}, block_index {bi}:")
+                            print(diff_tensor[b, bi, :, :])
+                            # print("key_cache:", key_cache[b, bi, :, :])
+                            # print("reference:", cloned_key_cache[b, bi, :, :])
+                    # print(diff_tensor[b, :, :, :])
+                    # to keep it readable -> just one
+                    break
+        
         # compare
         if enforce_numerical_correctness:
             # assert torch.allclose(ref_out, tri_out, atol=1e-2, rtol=0)
@@ -2129,7 +2144,6 @@ def test_reshape_and_cache(
             pass_t1 = torch.allclose(value_cache, cloned_value_cache, atol=ATOL, rtol=RTOL)
             allclose_pass = pass_t0 and pass_t1
     
-        # benchmark only correct results   
         if do_benchmarks:
 
             if my_name not in pytest.global_pds:

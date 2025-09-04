@@ -30,12 +30,15 @@ def fallback_heuristic(key):
 def reshape_and_cache_kernel_flash(
     key_ptr,            # [num_tokens, num_heads, head_size]
     value_ptr,          # [num_tokens, num_heads, head_size]
-    key_cache_ptr,      # [num_blocks, num_heads, head_size, block_size]
-    value_cache_ptr,    # [num_blocks, num_heads, head_size, block_size]
+    key_cache_ptr,      # [num_blocks, block_size, num_heads, head_size]
+    value_cache_ptr,    # [num_blocks, block_size, num_heads, head_size]
     slot_mapping_ptr,   # [num_tokens]
     num_tokens: tl.int64,
     key_stride: tl.int64,
     value_stride: tl.int64,
+    block_stride: tl.int64,
+    page_stride: tl.int64,
+    head_stride: tl.int64,
     num_heads: tl.constexpr,
     head_size: tl.constexpr,
     block_size: tl.constexpr,
@@ -43,62 +46,61 @@ def reshape_and_cache_kernel_flash(
 
     token_idx = tl.program_id(axis=0)
     slot_idx = tl.load(slot_mapping_ptr + token_idx).to(tl.int64)
-
     if slot_idx < 0:
         # Padding token that should be ignored.
         return
+    
+    tile_i = tl.program_id(axis=1)
+    tile_offs = tl.arange(0, TILE_SIZE)
+    tile_pos = tile_i*TILE_SIZE + tile_offs
         
     block_idx = slot_idx // block_size
     block_offset = slot_idx % block_size
     
-    prog_i = tl.program_id(axis=1)
-    i = prog_i*TILE_SIZE + tl.arange(0, TILE_SIZE)
+
+    # [TILE_SIZE]   
+    src_key_idx = token_idx * key_stride + tile_pos
+    src_value_idx = token_idx * value_stride + tile_pos
+
+    # [TILE_SIZE]   
+    tgt_idx = block_idx * block_stride + block_offset * page_stride + tile_pos
     
-    src_key_idx = token_idx * key_stride + i
-    src_value_idx = token_idx * value_stride + i
-
-    head_idx = i // head_size
-    head_offset = i % head_size
-
-    tgt_key_idx = (block_idx * num_heads * head_size * block_size
-                  + head_idx * head_size * block_size
-                  + head_offset * block_size
-                  + block_offset)
-    tgt_value_idx = (block_idx * num_heads * head_size * block_size 
-                    + head_idx * head_size * block_size 
-                    + head_offset * block_size 
-                    + block_offset)
-    tgt_key = tl.load(key_ptr + src_key_idx, mask = src_key_idx < (num_tokens * key_stride))
-    tgt_value = tl.load(value_ptr + src_value_idx, mask = src_value_idx < (num_tokens * value_stride))
-    tl.store(key_cache_ptr + tgt_key_idx, tgt_key, mask = tgt_key_idx < (block_idx*block_size*num_heads*head_size + block_size*head_size*num_heads))
-    tl.store(value_cache_ptr + tgt_value_idx, tgt_value, mask = tgt_value_idx < (block_idx*block_size*num_heads*head_size + block_size*head_size*num_heads))
+    tgt_key = tl.load(key_ptr + src_key_idx, 
+                      mask = src_key_idx < (token_idx * key_stride + num_heads*head_size)
+                      )
+    tgt_value = tl.load(value_ptr + src_value_idx, 
+                        mask = src_value_idx < (token_idx * value_stride + num_heads*head_size)
+                        )
+    tl.store(key_cache_ptr + tgt_idx, tgt_key, 
+             mask = tgt_idx < (block_idx*block_stride + block_offset*page_stride + num_heads*head_size)
+             )
+    tl.store(value_cache_ptr + tgt_idx, tgt_value, 
+             mask = tgt_idx < (block_idx*block_stride + block_offset*page_stride + num_heads*head_size)
+             )
     return
 
 
 def reshape_and_cache_flash(
         key: torch.Tensor,          # [num_tokens, num_heads, head_size]
         value: torch.Tensor,        # [num_tokens, num_heads, head_size]
-        key_cache: torch.Tensor,    # [num_blocks, num_heads, head_size/x, block_size, x]
-        value_cache: torch.Tensor,  # [num_blocks, num_heads, head_size, block_size]
+        key_cache: torch.Tensor,    # [num_blocks, block_size, num_heads, head_size]
+        value_cache: torch.Tensor,  # [num_blocks, block_size, num_heads, head_size]
         slot_mapping: torch.Tensor  # [num_tokens]
         ):
     num_tokens = key.shape[0]
     num_heads = key.shape[1]
     head_size = key.shape[2]
-    block_size = key_cache.shape[3]
+    block_size = key_cache.shape[1]
     n = num_heads * head_size
 
     key_stride = key.stride()[0]
     value_stride = key.stride()[0]
+    block_stride = key_cache.stride()[0]
+    page_stride = key_cache.stride()[1]
+    head_stride = key_cache.stride()[2]
 
-    # TODO: static launch grid
-
+    # TODO: static launch grid?
     grid = lambda meta: (int(num_tokens), triton.cdiv(n, meta['TILE_SIZE'])) 
-    # print(f'expected grid: {num_tokens}, {triton.cdiv(n, 256)};\n' \
-    #       f'key shape: {key.shape}; value shape: {value.shape};\n' \
-    #       f'key cache shape: {key_cache.shape}; value cache shape: {value_cache.shape}\n' \
-    #       f'key stride: {key.stride()}; value stride: {value.stride()}\n'\
-    #       f'key cache stride: {key_cache.stride()}; value cache stride: {value_cache.stride()}\n')
 
     reshape_and_cache_kernel_flash[grid](
         key_ptr=key, 
@@ -109,9 +111,16 @@ def reshape_and_cache_flash(
         num_tokens=num_tokens,
         key_stride=key_stride, 
         value_stride=value_stride, 
-        num_heads=num_heads, 
+        block_stride=block_stride, 
+        page_stride=page_stride, 
+        head_stride=head_stride,
+        num_heads=num_heads,
         head_size=head_size, 
-        block_size=block_size, 
+        block_size=block_size,
+        TILE_SIZE=128,
+        # TILE_SIZE=n,
+        num_warps = 2,
+        num_stages = 10,
         )
 
     return
