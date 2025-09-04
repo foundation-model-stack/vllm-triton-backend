@@ -56,7 +56,7 @@ class GridTriton3dAttentionCaller(PrefixPrefillCaller):
 
         avg_seqlen_q = query_lens.to(torch.float).mean()
         avg_seqlen_k = seq_lens.to(torch.float).mean()
-    
+
         block_size = value.shape[1]
         num_seqs = len(seq_lens)
         num_query_heads = query.shape[1]
@@ -69,19 +69,29 @@ class GridTriton3dAttentionCaller(PrefixPrefillCaller):
             num_decodes = len(seq_lens)
         else:
             num_decodes = torch.argmax((query_lens != 1).int()).item()
-        
-        BLOCK_M_PREFILL = 64
-        BLOCK_M_DECODE  = 16
-        BLOCK_Q_PREFILL = BLOCK_M_PREFILL * num_kv_heads // num_query_heads
-        BLOCK_Q_DECODE  = BLOCK_M_DECODE  * num_kv_heads // num_query_heads
 
-        block_q_seq_boundaries = torch.cumsum(torch.cat([torch.tensor([0], dtype=query_lens.dtype, device=query_lens.device), torch.ceil(query_lens[num_decodes:] / BLOCK_Q_PREFILL).to(torch.int)]), dim=0)
+        BLOCK_M_PREFILL = 64
+        BLOCK_M_DECODE = 16
+        BLOCK_Q_PREFILL = BLOCK_M_PREFILL * num_kv_heads // num_query_heads
+        BLOCK_Q_DECODE = BLOCK_M_DECODE * num_kv_heads // num_query_heads
+
+        block_q_seq_boundaries = torch.cumsum(
+            torch.cat(
+                [
+                    torch.tensor([0], dtype=query_lens.dtype, device=query_lens.device),
+                    torch.ceil(query_lens[num_decodes:] / BLOCK_Q_PREFILL).to(
+                        torch.int
+                    ),
+                ]
+            ),
+            dim=0,
+        )
         num_q_blocks = block_q_seq_boundaries[-1].item()
 
         # use_split_kv = (num_q_blocks * self.num_heads_kv < 128)
         use_split_kv = force_selection == 3
 
-        NUM_SEGMENTS=16
+        NUM_SEGMENTS = 16
 
         if use_split_kv:
             segm_output = torch.empty(
@@ -144,7 +154,7 @@ class GridTriton3dAttentionCaller(PrefixPrefillCaller):
                 BLOCK_M_DECODE=BLOCK_M_DECODE,
                 BLOCK_Q_DECODE=BLOCK_Q_DECODE,
                 num_q_blocks=num_q_blocks,
-                block_q_seq_boundaries=block_q_seq_boundaries
+                block_q_seq_boundaries=block_q_seq_boundaries,
             )
 
         return call_and_process_output
@@ -190,4 +200,3 @@ class GridTriton2dAttentionCaller(GridTriton3dAttentionCaller):
             softmax_scale,
             force_selection=2,
         )
-

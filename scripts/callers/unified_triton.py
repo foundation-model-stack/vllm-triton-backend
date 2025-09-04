@@ -18,7 +18,11 @@
 import torch
 import triton
 
-from ibm_triton_lib.kernels import unified_attention, unified_attention_simple, unified_attention_tuned
+from ibm_triton_lib.kernels import (
+    unified_attention,
+    unified_attention_simple,
+    unified_attention_tuned,
+)
 from .base import PrefixPrefillCaller
 
 
@@ -267,7 +271,7 @@ class TunedUnifiedTriton2dAttentionCaller(PrefixPrefillCaller):
 
         avg_seqlen_q = query_lens.to(torch.float).mean()
         avg_seqlen_k = seq_lens.to(torch.float).mean()
-    
+
         MAX_SEQ_Q = triton.next_power_of_2(int(max_query_len))
         MAX_SEQ_K = triton.next_power_of_2(int(max_seqlen))
         AVG_SEQ_Q = triton.next_power_of_2(int(avg_seqlen_q))

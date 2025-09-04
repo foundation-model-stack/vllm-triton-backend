@@ -217,7 +217,9 @@ if len(sys.argv) >= 1:
             raise RuntimeError(f"Test config file {envfile_path} does not exist.")
         env_setting = dotenv_values(envfile_path)
         if len(env_setting) == 0:
-            raise RuntimeError(f"Test config file {envfile_path} does not contain valid configs.")
+            raise RuntimeError(
+                f"Test config file {envfile_path} does not contain valid configs."
+            )
         print(f"\nApplied test config: {envfile_path}")
         # filter allowed, convert all to lists
         env_setting_filtered = {
@@ -1043,7 +1045,11 @@ def test_prefix_vllm_v1_attention(
     realistic_prompt_mode = len(prompt_pattern) > 1
     gqa_mode = num_heads[0] != num_heads[1]
 
-    reserved_query_length = None if reserved_query_length in [None, 'none', -1, 0] else int(reserved_query_length)
+    reserved_query_length = (
+        None
+        if reserved_query_length in [None, "none", -1, 0]
+        else int(reserved_query_length)
+    )
     skip_ref_impl = True if reserved_query_length is not None else False
 
     if torch.cuda.get_device_capability()[0] < 8:
@@ -1071,8 +1077,10 @@ def test_prefix_vllm_v1_attention(
     if implementation == Implementation.GRID_TRITON_3D and decode_share != 1.0:
         pytest.skip("not supported")
 
-
-    if batch_composition == BatchComposition.ALTERNATING and implementation == Implementation.FLASH_ATTN:
+    if (
+        batch_composition == BatchComposition.ALTERNATING
+        and implementation == Implementation.FLASH_ATTN
+    ):
         pytest.skip("not supported")
 
     # TODO: Error: "Offset increment outside graph capture"
@@ -1217,7 +1225,9 @@ def test_prefix_vllm_v1_attention(
         query_tensor_num_tokens_reserved = total_query_tokens
         if reserved_query_length is not None:
             query_tensor_num_tokens_reserved = reserved_query_length
-        query = torch.empty(query_tensor_num_tokens_reserved, num_query_heads, head_size, dtype=dtype)
+        query = torch.empty(
+            query_tensor_num_tokens_reserved, num_query_heads, head_size, dtype=dtype
+        )
         query.uniform_(-max_value, max_value)
 
         key = torch.empty(total_token_num, num_kv_heads, head_size, dtype=dtype)
@@ -1411,7 +1421,7 @@ def test_prefix_vllm_v1_attention(
             triton.testing.assert_close(ref_output, output, atol=ATOL, rtol=RTOL)
             allclose_pass = True
         elif skip_ref_impl:
-            allclose_pass = 'skipped'
+            allclose_pass = "skipped"
         else:
             allclose_pass = torch.allclose(ref_output, output, atol=ATOL, rtol=RTOL)
 
@@ -1811,9 +1821,12 @@ def test_fused_moe(
     my_name = my_id.split("[")[0]
     my_instance = my_id.split("[")[1][:-1]
 
-    if implementation not in [Implementation.TRITON_TUNED, Implementation.TRITON_FALLBACK]:
+    if implementation not in [
+        Implementation.TRITON_TUNED,
+        Implementation.TRITON_FALLBACK,
+    ]:
         pytest.skip()
-   
+
     def torch_moe(a, w1, w2, score, topk):
         B, D = a.shape
         a = a.view(B, -1, D).repeat(1, topk, 1).reshape(-1, D)
@@ -1825,12 +1838,15 @@ def test_fused_moe(
         for i in range(w1.shape[0]):
             mask = topk_ids == i
             if mask.sum():
-                out[mask] = SiluAndMul()(
-                    a[mask] @ w1[i].transpose(0, 1)) @ w2[i].transpose(0, 1)
-        return (out.view(B, -1, w2.shape[1]) *
-                topk_weight.view(B, -1, 1).to(out.dtype)).sum(dim=1)
+                out[mask] = SiluAndMul()(a[mask] @ w1[i].transpose(0, 1)) @ w2[
+                    i
+                ].transpose(0, 1)
+        return (
+            out.view(B, -1, w2.shape[1]) * topk_weight.view(B, -1, 1).to(out.dtype)
+        ).sum(dim=1)
 
     from ibm_triton_lib.kernels import fused_moe
+
     # my_experts = TritonExperts()
     # fused_moe = my_experts.apply
 
@@ -1840,8 +1856,8 @@ def test_fused_moe(
     # m = batch_size * seqlen
     num_tokens = batch_size * seqlen
     m = num_tokens
-    n  = int(n//tp)
-    
+    n = int(n // tp)
+
     # ATOL = 1e-2
     # TODO
     ATOL = max(1e-2, 2 * max_value)
@@ -1854,16 +1870,22 @@ def test_fused_moe(
     torch_output = None
     triton_output = None
 
-    inner_exception = None 
-    try: 
+    inner_exception = None
+    try:
 
-        a = torch.randn((m, k), device=tdev, dtype=dtype).normal_(mean=0.0, std=0.5 * max_value)
+        a = torch.randn((m, k), device=tdev, dtype=dtype).normal_(
+            mean=0.0, std=0.5 * max_value
+        )
         # w1 = torch.randn((e, n, k), device=tdev, dtype=dtype).normal_(mean=0.0, std=0.5 * max_value)
         # w2 = torch.randn((e, k, n//2), device=tdev, dtype=dtype).normal_(mean=0.0, std=0.5 * max_value)
-        w1 = torch.randn((e, 2 * n, k), device=tdev, dtype=dtype).normal_(mean=0.0, std=0.5 * max_value)
-        w2 = torch.randn((e, k, n), device=tdev, dtype=dtype).normal_(mean=0.0, std=0.5 * max_value)
+        w1 = torch.randn((e, 2 * n, k), device=tdev, dtype=dtype).normal_(
+            mean=0.0, std=0.5 * max_value
+        )
+        w2 = torch.randn((e, k, n), device=tdev, dtype=dtype).normal_(
+            mean=0.0, std=0.5 * max_value
+        )
         score = torch.randn((m, e), device=tdev, dtype=dtype)
-    
+
         input_gating = torch.empty(num_tokens, e, dtype=torch.float32, device=tdev)
 
         if enforce_numerical_correctness:
@@ -1883,29 +1905,46 @@ def test_fused_moe(
                 each token is repeated, and N is the output feature dimension.
         """
 
-        
-        use_default_config = True if implementation == Implementation.TRITON_FALLBACK else False
-        triton_output = fused_moe(a, w1, w2, input_gating, topk,
-                                  renormalize=True, use_default_config=use_default_config) #inplace=True ? 
+        use_default_config = (
+            True if implementation == Implementation.TRITON_FALLBACK else False
+        )
+        triton_output = fused_moe(
+            a,
+            w1,
+            w2,
+            input_gating,
+            topk,
+            renormalize=True,
+            use_default_config=use_default_config,
+        )  # inplace=True ?
         assert triton_output is not None
-        
-        captured = ''
+
+        captured = ""
         if capsys is not None:
             captured_raw = capsys.readouterr()  # returns stdout, stderr
             for l in captured_raw:
                 if len(l) > 0:
                     # captured += l  # + '|'
-                    captured += l  + ' '
-        
+                    captured += l + " "
+
         # compare
-        allclose_pass = float('nan')
+        allclose_pass = float("nan")
         if enforce_numerical_correctness:
-            triton.testing.assert_close(torch_output, triton_output, atol=ATOL, rtol=RTOL)
+            triton.testing.assert_close(
+                torch_output, triton_output, atol=ATOL, rtol=RTOL
+            )
             allclose_pass = True
 
-        call_func_under_test = lambda: fused_moe(a, w1, w2, input_gating, topk, 
-                                                 renormalize=True, inplace=True,
-                                                 use_default_config=use_default_config)
+        call_func_under_test = lambda: fused_moe(
+            a,
+            w1,
+            w2,
+            input_gating,
+            topk,
+            renormalize=True,
+            inplace=True,
+            use_default_config=use_default_config,
+        )
 
         # benchmark only correct results
         if do_benchmarks:
@@ -1922,7 +1961,7 @@ def test_fused_moe(
             record = {
                 "batch_size": batch_size,
                 "seqlen": seqlen,
-                "num_tokens": num_tokens, # redundant?
+                "num_tokens": num_tokens,  # redundant?
                 "N": n,
                 "K": k,
                 "E": e,
@@ -2022,13 +2061,16 @@ def test_reshape_and_cache(
     ATOL = 1e-8
     RTOL = 0
     # RTOL = 1e-2
-    
+
     my_id = request.node.nodeid.split("::")[-1]
     my_name = my_id.split("[")[0]
     my_instance = my_id.split("[")[1][:-1]
     num_kv_heads, num_query_heads = num_heads
 
-    if implementation not in [Implementation.TRITON_RESHAPE_AND_CACHE, Implementation.VLLM_CUDA_RESHAPE_AND_CACHE]:
+    if implementation not in [
+        Implementation.TRITON_RESHAPE_AND_CACHE,
+        Implementation.VLLM_CUDA_RESHAPE_AND_CACHE,
+    ]:
         pytest.skip()
 
     random.seed(seed)
@@ -2049,7 +2091,7 @@ def test_reshape_and_cache(
     key_caches = None
     value_caches = None
 
-    inner_exception = None 
+    inner_exception = None
     try:
         # Create a random slot mapping.
         num_slots = block_size * num_blocks
@@ -2057,18 +2099,32 @@ def test_reshape_and_cache(
             # impossible configuration
             pytest.skip("num_tokens > num_slots, impossible configuration")
         slot_mapping_sample = random.sample(range(num_slots), num_tokens)
-        slot_mapping_t = torch.tensor(slot_mapping_sample, dtype=torch.long, device=tdev)
+        slot_mapping_t = torch.tensor(
+            slot_mapping_sample, dtype=torch.long, device=tdev
+        )
 
-        qkv = torch.randn(num_tokens, 3, num_kv_heads, head_size, dtype=dtype, device=tdev).uniform_(-1 * max_value, max_value)
+        qkv = torch.randn(
+            num_tokens, 3, num_kv_heads, head_size, dtype=dtype, device=tdev
+        ).uniform_(-1 * max_value, max_value)
         _, key, value = qkv.unbind(dim=1)
-        
+
         # Create the KV caches.
         kv_cache_dtype = "auto"
         key_cache = torch.zeros(
-            num_blocks, block_size, num_kv_heads, head_size, dtype=dtype, device=tdev,
+            num_blocks,
+            block_size,
+            num_kv_heads,
+            head_size,
+            dtype=dtype,
+            device=tdev,
         ).contiguous()
         value_cache = torch.zeros(
-            num_blocks, block_size, num_kv_heads, head_size, dtype=dtype, device=tdev,
+            num_blocks,
+            block_size,
+            num_kv_heads,
+            head_size,
+            dtype=dtype,
+            device=tdev,
         ).contiguous()
 
         # Clone the KV caches.
@@ -2078,21 +2134,31 @@ def test_reshape_and_cache(
         # default scales
         k_scale = torch.tensor((max_value / 64.0), device=tdev, dtype=torch.float32)
         v_scale = torch.tensor((max_value / 64.0), device=tdev, dtype=torch.float32)
- 
+
         if implementation == Implementation.TRITON_RESHAPE_AND_CACHE:
             from ibm_triton_lib.kernels import triton_reshape_and_cache_flash
 
-            call_func_under_test = lambda: triton_reshape_and_cache_flash(key, value, key_cache, value_cache,
-                                     slot_mapping_t)
+            call_func_under_test = lambda: triton_reshape_and_cache_flash(
+                key, value, key_cache, value_cache, slot_mapping_t
+            )
 
         elif implementation == Implementation.VLLM_CUDA_RESHAPE_AND_CACHE:
             from vllm import _custom_ops as ops
+
             # opcheck(torch.ops._C_cache_ops.reshape_and_cache_flash,
             # (key, value, key_cache, value_cache, slot_mapping, kv_cache_dtype,
             #  k_scale, v_scale),
             # cond=(head_size == HEAD_SIZES[0]))
-            call_func_under_test = lambda: ops.reshape_and_cache_flash(key, value, key_cache, value_cache,
-                                slot_mapping_t, kv_cache_dtype, k_scale, v_scale)
+            call_func_under_test = lambda: ops.reshape_and_cache_flash(
+                key,
+                value,
+                key_cache,
+                value_cache,
+                slot_mapping_t,
+                kv_cache_dtype,
+                k_scale,
+                v_scale,
+            )
 
         call_func_under_test()
 
@@ -2108,15 +2174,14 @@ def test_reshape_and_cache(
             num_tokens,
         )
 
-
-        captured = ''
+        captured = ""
         if capsys is not None:
             captured_raw = capsys.readouterr()  # returns stdout, stderr
             for l in captured_raw:
                 if len(l) > 0:
                     # captured += l  # + '|'
-                    captured += l  + ' '
-        
+                    captured += l + " "
+
         if debug_flag:
             diff_tensor = torch.where(key_cache != cloned_key_cache, 1.0, 0.0)
             torch.set_printoptions(profile="full")
@@ -2131,19 +2196,25 @@ def test_reshape_and_cache(
                     # print(diff_tensor[b, :, :, :])
                     # to keep it readable -> just one
                     break
-        
+
         # compare
         if enforce_numerical_correctness:
             # assert torch.allclose(ref_out, tri_out, atol=1e-2, rtol=0)
             # for better reports
-            triton.testing.assert_close(key_cache, cloned_key_cache, atol=ATOL, rtol=RTOL)
-            triton.testing.assert_close(value_cache, cloned_value_cache, atol=ATOL, rtol=RTOL)
+            triton.testing.assert_close(
+                key_cache, cloned_key_cache, atol=ATOL, rtol=RTOL
+            )
+            triton.testing.assert_close(
+                value_cache, cloned_value_cache, atol=ATOL, rtol=RTOL
+            )
             allclose_pass = True
         else:
             pass_t0 = torch.allclose(key_cache, cloned_key_cache, atol=ATOL, rtol=RTOL)
-            pass_t1 = torch.allclose(value_cache, cloned_value_cache, atol=ATOL, rtol=RTOL)
+            pass_t1 = torch.allclose(
+                value_cache, cloned_value_cache, atol=ATOL, rtol=RTOL
+            )
             allclose_pass = pass_t0 and pass_t1
-    
+
         if do_benchmarks:
 
             if my_name not in pytest.global_pds:
@@ -2160,10 +2231,10 @@ def test_reshape_and_cache(
                 "batch_size": batch_size,
                 "seqlen": seqlen,
                 "num_tokens": num_tokens,
-                'head_size': head_size,
-                'num_kv_heads': num_kv_heads,
-                'block_size': block_size,
-                'num_blocks': num_blocks,
+                "head_size": head_size,
+                "num_kv_heads": num_kv_heads,
+                "block_size": block_size,
+                "num_blocks": num_blocks,
                 "max_value": max_value,
                 "dtype": dtype,
                 "implementation": implementation,
@@ -2194,15 +2265,13 @@ def test_reshape_and_cache(
                             continue
                         dejavu_envs[env] = os.environ[env]
                 record.update(dejavu_envs)
-            
+
         pytest.global_pds[my_name] = pd.concat(
             [pytest.global_pds[my_name], pd.Series(record).to_frame().T]
         ).reset_index(drop=True)
 
         if pytest.global_pd_file_prefix is not None:
-            filename = os.path.abspath(
-                f"{pytest.global_pd_file_prefix}/{my_name}.csv"
-            )
+            filename = os.path.abspath(f"{pytest.global_pd_file_prefix}/{my_name}.csv")
             write_df_and_chmod(pytest.global_pds[my_name], filename)
 
     except Exception as e:
@@ -2221,7 +2290,6 @@ def test_reshape_and_cache(
         del value_caches
         if inner_exception is not None:
             raise inner_exception
-
 
 
 def measure_benchmarks(
