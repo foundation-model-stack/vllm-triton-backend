@@ -2053,74 +2053,62 @@ def test_reshape_and_cache(
     try:
         # Create a random slot mapping.
         num_slots = block_size * num_blocks
-        # TODO: num_tokens <= num_slots!
         if num_tokens > num_slots:
             # impossible configuration
-            # return as success?
-            return
+            pytest.skip("num_tokens > num_slots, impossible configuration")
         slot_mapping_sample = random.sample(range(num_slots), num_tokens)
-        # slot_mapping_sample = [0, 1, 2]
-        slot_mapping = torch.tensor(slot_mapping_sample, dtype=torch.long, device=tdev)
+        slot_mapping_t = torch.tensor(slot_mapping_sample, dtype=torch.long, device=tdev)
 
         qkv = torch.randn(num_tokens, 3, num_kv_heads, head_size, dtype=dtype, device=tdev).uniform_(-1 * max_value, max_value)
         _, key, value = qkv.unbind(dim=1)
-
+        
         # Create the KV caches.
         kv_cache_dtype = "auto"
-        key_caches, value_caches = create_kv_caches_with_random(
-            num_blocks,
-            block_size,
-            1,
-            num_kv_heads,
-            head_size,
-            max_value,
-            kv_cache_dtype,
-            dtype,
-            seed,
-            device,
-            alignment_optimization=False,
-        )
-
-        key_cache, value_cache = key_caches[0], value_caches[0]
+        key_cache = torch.randn(
+            num_blocks, block_size, num_kv_heads, head_size, dtype=dtype, device=tdev,
+        ).contiguous()
+        value_cache = torch.randn(
+            num_blocks, block_size, num_kv_heads, head_size, dtype=dtype, device=tdev,
+        ).contiguous()
 
         # Clone the KV caches.
         cloned_key_cache = key_cache.clone()
         cloned_value_cache = value_cache.clone()
 
+        # default scales
+        k_scale = torch.tensor((max_value / 64.0), device=tdev, dtype=torch.float32)
+        v_scale = torch.tensor((max_value / 64.0), device=tdev, dtype=torch.float32)
+ 
         if implementation == Implementation.TRITON_RESHAPE_AND_CACHE:
             from ibm_triton_lib.kernels import triton_reshape_and_cache
 
             call_func_under_test = lambda: triton_reshape_and_cache(key, value, key_cache, value_cache,
-                                     slot_mapping)
+                                     slot_mapping_t)
 
         elif implementation == Implementation.VLLM_CUDA_RESHAPE_AND_CACHE:
             from vllm import _custom_ops as ops
-            k_scale = 1.0
-            v_scale = 1.0
-            call_func_under_test = lambda: torch.ops._C_cache_ops.reshape_and_cache_flash(
-                        key,
-                        value,
-                        key_cache,
-                        value_cache,
-                        slot_mapping,
-                        kv_cache_dtype,
-                        k_scale,
-                        v_scale
-                    )
-        
+            # opcheck(torch.ops._C_cache_ops.reshape_and_cache_flash,
+            # (key, value, key_cache, value_cache, slot_mapping, kv_cache_dtype,
+            #  k_scale, v_scale),
+            # cond=(head_size == HEAD_SIZES[0]))
+            call_func_under_test = lambda: ops.reshape_and_cache_flash(key, value, key_cache, value_cache,
+                                slot_mapping_t, kv_cache_dtype, k_scale, v_scale)
+
         call_func_under_test()
 
         # Run the reference implementation.
-        block_indicies = torch.div(slot_mapping, block_size, rounding_mode="floor")
-        block_indicies = block_indicies.cpu().tolist()
-        block_offsets = slot_mapping % block_size
-        block_offsets = block_offsets.cpu().tolist()
-        for i in range(num_tokens):
-            block_idx = block_indicies[i]
-            block_offset = block_offsets[i]
-            cloned_key_cache[block_idx, :, :, block_offset] = key[i]
-            cloned_value_cache[block_idx, :, :, block_offset] = value[i]
-    
+        # NHD layout
+        ref_reshape_and_cache_flash(
+            key,
+            value,
+            cloned_key_cache,
+            cloned_value_cache,
+            slot_mapping_t,
+            block_size,
+            num_tokens,
+        )
+
+
         captured = ''
         if capsys is not None:
             captured_raw = capsys.readouterr()  # returns stdout, stderr
