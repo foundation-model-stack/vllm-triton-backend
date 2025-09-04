@@ -26,7 +26,7 @@ def fallback_heuristic(key):
     use_cuda_graph=True,
     # fallback_heuristic = fallback_heuristic,
     use_bo=True,
-    search_max_search_t=360,
+    search_max_search_t=520,
 )
 @triton.jit
 def reshape_and_cache_kernel_flash(

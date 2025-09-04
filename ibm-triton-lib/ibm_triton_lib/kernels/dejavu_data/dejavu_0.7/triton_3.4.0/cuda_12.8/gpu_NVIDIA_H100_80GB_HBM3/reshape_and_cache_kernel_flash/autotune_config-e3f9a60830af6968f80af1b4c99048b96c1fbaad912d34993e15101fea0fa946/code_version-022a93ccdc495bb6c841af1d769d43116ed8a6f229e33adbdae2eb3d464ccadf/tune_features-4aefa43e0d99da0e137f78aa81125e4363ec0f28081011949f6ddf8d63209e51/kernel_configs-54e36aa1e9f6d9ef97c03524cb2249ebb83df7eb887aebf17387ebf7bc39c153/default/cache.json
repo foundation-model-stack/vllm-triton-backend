@@ -1,0 +1,28 @@
+{
+    "signature": "JITFunction(ibm_triton_lib.kernels.reshape_and_cache_flash:reshape_and_cache_kernel_flash)",
+    "total_bench_time_s": 209.70967984199524,
+    "evaluated_configs": 280,
+    "keys": [
+        "key_stride",
+        "value_stride",
+        "head_size",
+        "num_heads",
+        "block_size"
+    ],
+    "cache": {
+        "('12288', '12288', '128', '32', '16', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.int64')": "TILE_SIZE: 2048, num_warps: 16, num_ctas: 1, num_stages: 12, maxnreg: None"
+    },
+    "timings": {
+        "('12288', '12288', '128', '32', '16', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.int64')": [
+            0.0016467771492898464
+        ]
+    },
+    "timings_data": {
+        "labels": [
+            "ms"
+        ],
+        "rep_t_ms": 100,
+        "warmup_t_ms": 25,
+        "cuda_graphs": true
+    }
+}
