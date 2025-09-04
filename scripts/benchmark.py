@@ -2180,6 +2180,16 @@ def test_reshape_and_cache(
                             continue
                         dejavu_envs[env] = os.environ[env]
                 record.update(dejavu_envs)
+            
+        pytest.global_pds[my_name] = pd.concat(
+            [pytest.global_pds[my_name], pd.Series(record).to_frame().T]
+        ).reset_index(drop=True)
+
+        if pytest.global_pd_file_prefix is not None:
+            filename = os.path.abspath(
+                f"{pytest.global_pd_file_prefix}/{my_name}.csv"
+            )
+            write_df_and_chmod(pytest.global_pds[my_name], filename)
 
     except Exception as e:
         print(e)
