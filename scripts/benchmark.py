@@ -2139,7 +2139,8 @@ def test_reshape_and_cache(
             from ibm_triton_lib.kernels import triton_reshape_and_cache_flash
 
             call_func_under_test = lambda: triton_reshape_and_cache_flash(
-                key, value, key_cache, value_cache, slot_mapping_t
+                key, value, key_cache, value_cache, slot_mapping_t,
+                k_scale, v_scale
             )
 
         elif implementation == Implementation.VLLM_CUDA_RESHAPE_AND_CACHE:
