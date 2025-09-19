@@ -204,7 +204,7 @@ class FlashAttnPrefixPrefillCaller(PrefixPrefillCaller):
                     block_table=block_tables,
                     # window_size=(-1, 1),
                     # softcap=0,
-                    # fa_version=2, # TODO
+                    fa_version=3,  # TODO
                 )
 
         return call_and_process_output

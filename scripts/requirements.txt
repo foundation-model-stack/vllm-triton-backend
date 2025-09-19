@@ -1,0 +1,2 @@
+llnl-hatchet==2025.1.0
+pytest==8.4.1

@@ -67,5 +67,18 @@ from .triton_flash_attention import (
 )
 
 from .triton_unified_attention import unified_attention
+from .triton_unified_attention_simple import (
+    unified_attention as unified_attention_simple,
+)
+from .triton_unified_newtiles import unified_attention as unified_attention_newtiles
+from .triton_unified_attention_tuned import unified_attention as unified_attention_tuned
+from .triton_unified_grid import unified_attention as unified_attention_grid
 
 from .mamba_ssm import selective_state_update
+
+# from .fused_moe import fused_moe
+
+# from .reshape_and_cache import reshape_and_cache as triton_reshape_and_cache
+from .reshape_and_cache_flash import (
+    reshape_and_cache_flash as triton_reshape_and_cache_flash,
+)

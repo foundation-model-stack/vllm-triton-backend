@@ -1,0 +1,78 @@
+{
+    "signature": "JITFunction(ibm_triton_lib.kernels.reshape_and_cache:reshape_and_cache_kernel)",
+    "total_bench_time_s": 3846.4412581920624,
+    "evaluated_configs": 280,
+    "keys": [
+        "key_stride",
+        "value_stride",
+        "head_size",
+        "num_heads",
+        "block_size",
+        "num_tokens",
+        "x"
+    ],
+    "cache": {
+        "('12288', '12288', '128', '32', '16', '16', '1', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.int64')": "THREAD_BLOCK_SIZE: 64, num_warps: 2, num_ctas: 1, num_stages: 2, maxnreg: None",
+        "('12288', '12288', '128', '32', '16', '32', '1', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.int64')": "THREAD_BLOCK_SIZE: 128, num_warps: 8, num_ctas: 1, num_stages: 12, maxnreg: None",
+        "('12288', '12288', '128', '32', '16', '64', '1', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.int64')": "THREAD_BLOCK_SIZE: 128, num_warps: 4, num_ctas: 1, num_stages: 6, maxnreg: None",
+        "('12288', '12288', '128', '32', '16', '128', '1', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.int64')": "THREAD_BLOCK_SIZE: 512, num_warps: 4, num_ctas: 1, num_stages: 6, maxnreg: None",
+        "('12288', '12288', '128', '32', '16', '512', '1', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.int64')": "THREAD_BLOCK_SIZE: 2048, num_warps: 16, num_ctas: 1, num_stages: 6, maxnreg: None",
+        "('12288', '12288', '128', '32', '16', '1024', '1', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.int64')": "THREAD_BLOCK_SIZE: 1024, num_warps: 16, num_ctas: 1, num_stages: 4, maxnreg: None",
+        "('12288', '12288', '128', '32', '16', '2048', '1', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.int64')": "THREAD_BLOCK_SIZE: 1024, num_warps: 8, num_ctas: 1, num_stages: 10, maxnreg: None",
+        "('12288', '12288', '128', '32', '16', '4096', '1', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.int64')": "THREAD_BLOCK_SIZE: 256, num_warps: 16, num_ctas: 1, num_stages: 6, maxnreg: None",
+        "('12288', '12288', '128', '32', '16', '256', '1', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.int64')": "THREAD_BLOCK_SIZE: 2048, num_warps: 2, num_ctas: 1, num_stages: 2, maxnreg: None",
+        "('12288', '12288', '128', '32', '16', '8192', '1', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.int64')": "THREAD_BLOCK_SIZE: 128, num_warps: 8, num_ctas: 1, num_stages: 2, maxnreg: None",
+        "('12288', '12288', '128', '32', '16', '16384', '1', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.int64')": "THREAD_BLOCK_SIZE: 64, num_warps: 2, num_ctas: 1, num_stages: 6, maxnreg: None",
+        "('12288', '12288', '128', '32', '16', '32768', '1', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.int64')": "THREAD_BLOCK_SIZE: 64, num_warps: 2, num_ctas: 1, num_stages: 1, maxnreg: None",
+        "('12288', '12288', '128', '32', '16', '65536', '1', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.int64')": "THREAD_BLOCK_SIZE: 64, num_warps: 4, num_ctas: 1, num_stages: 12, maxnreg: None"
+    },
+    "timings": {
+        "('12288', '12288', '128', '32', '16', '16', '1', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.int64')": [
+            0.0028622609097510576
+        ],
+        "('12288', '12288', '128', '32', '16', '32', '1', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.int64')": [
+            0.0042113387025892735
+        ],
+        "('12288', '12288', '128', '32', '16', '64', '1', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.int64')": [
+            0.006818162277340889
+        ],
+        "('12288', '12288', '128', '32', '16', '128', '1', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.int64')": [
+            0.013140151277184486
+        ],
+        "('12288', '12288', '128', '32', '16', '512', '1', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.int64')": [
+            0.09431570768356323
+        ],
+        "('12288', '12288', '128', '32', '16', '1024', '1', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.int64')": [
+            0.18430711328983307
+        ],
+        "('12288', '12288', '128', '32', '16', '2048', '1', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.int64')": [
+            0.36074793338775635
+        ],
+        "('12288', '12288', '128', '32', '16', '4096', '1', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.int64')": [
+            0.694675862789154
+        ],
+        "('12288', '12288', '128', '32', '16', '256', '1', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.int64')": [
+            0.04490792378783226
+        ],
+        "('12288', '12288', '128', '32', '16', '8192', '1', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.int64')": [
+            1.2438043355941772
+        ],
+        "('12288', '12288', '128', '32', '16', '16384', '1', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.int64')": [
+            1.9996851682662964
+        ],
+        "('12288', '12288', '128', '32', '16', '32768', '1', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.int64')": [
+            3.324680805206299
+        ],
+        "('12288', '12288', '128', '32', '16', '65536', '1', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.float16', 'torch.int64')": [
+            5.870245933532715
+        ]
+    },
+    "timings_data": {
+        "labels": [
+            "ms"
+        ],
+        "rep_t_ms": 100,
+        "warmup_t_ms": 25,
+        "cuda_graphs": true
+    }
+}

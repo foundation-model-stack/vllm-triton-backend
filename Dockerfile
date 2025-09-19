@@ -3,6 +3,7 @@ ARG BASE_UBI_IMAGE_TAG=9.4
 ARG PYTHON_VERSION=3.12
 ARG MAX_JOBS=64
 ARG PIP_VLLM_VERSION=0.8.1
+# TODO add ARG CUDA_VERSION=12-8
 
 ARG VLLM_SOURCE=pip 
 # or VLLM_SOURCE=custom 
@@ -122,6 +123,31 @@ ENV CCACHE_DIR=/root/.cache/ccache
 RUN --mount=type=cache,target=/root/.cache/ccache \
     python3 setup.py bdist_wheel --dist-dir=/workspace/
 
+# ## flashinfer Builder #################################################################
+# FROM vllm-builder_custom AS flashinfer-builder
+# ARG MAX_JOBS
+# 
+# # # build deps?
+# # RUN --mount=type=cache,target=/root/.cache/pip \
+# #     --mount=type=cache,target=/root/.cache/uv \
+# #     uv pip install ninja cmake wheel pybind11 setuptools
+# 
+# WORKDIR /workspace/flashinfer
+# RUN git clone --recursive https://github.com/flashinfer-ai/flashinfer.git
+# 
+# ENV TORCH_CUDA_ARCH_LIST='7.5 8.0 8.9 9.0 10.0+PTX'
+# ENV FLASHINFER_ENABLE_SM90=1
+# RUN --mount=type=cache,target=/root/.cache/pip \
+#     cd flashinfer \
+#     && export TORCH_CUDA_ARCH_LIST=${TORCH_CUDA_ARCH_LIST} export FLASHINFER_ENABLE_SM90=${FLASHINFER_ENABLE_SM90} \
+#     && python -m flashinfer.aot \
+#     && python -m build --no-isolation --wheel
+#     
+#     # uv pip install \
+#     # --no-build-isolation "git+https://github.com/flashinfer-ai/flashinfer@v0.2.6.post1"
+# 
+# RUN ls -al /workspace/flashinfer/flashinfer/dist
+
 ## Runtime #################################################################
 FROM base AS runtime
 
@@ -227,20 +253,54 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     uv pip install pytest llnl-hatchet debugpy
 
 # Install FlashInfer
-RUN PYTHON_VERSION_STR=$(echo ${PYTHON_VERSION} | sed 's/\.//g') && \
-    echo "export PYTHON_VERSION_STR=${PYTHON_VERSION_STR}" >> /etc/environment
+# RUN PYTHON_VERSION_STR=$(echo ${PYTHON_VERSION} | sed 's/\.//g') && \
+#     echo "export PYTHON_VERSION_STR=${PYTHON_VERSION_STR}" >> /etc/environment
+# RUN --mount=type=cache,target=/root/.cache/pip \
+#     . /etc/environment && \
+#     python3 -m pip install https://github.com/flashinfer-ai/flashinfer/releases/download/v0.1.6/flashinfer-0.1.6+cu121torch2.4-cp${PYTHON_VERSION_STR}-cp${PYTHON_VERSION_STR}-linux_x86_64.whl
+# RUN --mount=type=cache,target=/root/.cache/pip \
+#     . /etc/environment && \
+#     uv pip install https://github.com/flashinfer-ai/flashinfer/releases/download/v0.1.6/flashinfer-0.1.6+cu121torch2.4-cp${PYTHON_VERSION_STR}-cp${PYTHON_VERSION_STR}-linux_x86_64.whl
+# RUN --mount=type=cache,target=/root/.cache/pip \
+#     uv pip install flashinfer-python -i https://flashinfer.ai/whl/cu124/torch2.6/ --no-deps
+# RUN --mount=type=cache,target=/root/.cache/pip \
+#     --mount=type=cache,target=/root/.cache/uv \
+#     uv pip install https://github.com/flashinfer-ai/flashinfer/releases/download/v0.2.5/flashinfer_python-0.2.5+cu124torch2.6-cp38-abi3-linux_x86_64.whl#sha256=43d767b912c0c43a04be99595e0123eab9385fc72530a2874b5fb08e3145c0be
+# RUN --mount=type=cache,target=/root/.cache/pip \
+#     --mount=type=cache,target=/root/.cache/uv \
+#     uv pip install torch==2.7.0
+# RUN --mount=type=cache,target=/root/.cache/pip \
+#     --mount=type=cache,target=/root/.cache/uv \
+#     uv pip install https://download.pytorch.org/whl/cu128/flashinfer/flashinfer_python-0.2.5%2Bcu128torch2.7-cp38-abi3-linux_x86_64.whl
+# RUN mkdir /workspace/flashinfer_dist && ls -al /workspace/flashinfer_dist
+# COPY --from=flashinfer-builder /workspace/*.whl /workspace/flashinfer_dist
+# RUN --mount=type=cache,target=/root/.cache/pip \
+#     --mount=type=cache,target=/root/.cache/uv \
+#     uv pip install /workspace/flashinfer_dist/*.whl
+# TODO: we need nvcc for flashinfer installation...custom build fails, see above
+RUN curl -Lo /etc/yum.repos.d/cuda-rhel9.repo \
+        https://developer.download.nvidia.com/compute/cuda/repos/rhel9/x86_64/cuda-rhel9.repo
+RUN microdnf install -y \
+        cuda-nvcc-12-8 cuda-nvtx-12-8 cuda-libraries-devel-12-8 && \
+    microdnf clean all
+ENV CUDA_HOME="/usr/local/cuda" \
+    PATH="${CUDA_HOME}/bin:${PATH}" \
+    LD_LIBRARY_PATH="${CUDA_HOME}/lib64:${CUDA_HOME}/extras/CUPTI/lib64:${LD_LIBRARY_PATH}"
+ENV TORCH_CUDA_ARCH_LIST='7.5 8.0 8.9 9.0 10.0+PTX'
+ENV FLASHINFER_ENABLE_SM90=1
+RUN TORCH_CUDA_ARCH_LIST=${TORCH_CUDA_ARCH_LIST} FLASHINFER_ENABLE_SM90=${FLASHINFER_ENABLE_SM90} uv pip install \
+    --no-build-isolation "git+https://github.com/flashinfer-ai/flashinfer@v0.2.6.post1"
 
-RUN --mount=type=cache,target=/root/.cache/pip \
-    . /etc/environment && \
-    python3 -m pip install https://github.com/flashinfer-ai/flashinfer/releases/download/v0.1.6/flashinfer-0.1.6+cu121torch2.4-cp${PYTHON_VERSION_STR}-cp${PYTHON_VERSION_STR}-linux_x86_64.whl
-
+    
 RUN ln -s ${VIRTUAL_ENV}/lib/python${PYTHON_VERSION}/site-packages/nvidia/cuda_cupti/lib/libcupti.so.12  ${VIRTUAL_ENV}/lib/python${PYTHON_VERSION}/site-packages/nvidia/cuda_cupti/lib/libcupti.so
 
 RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=cache,target=/root/.cache/uv \
     git clone --depth 1 https://github.com/EleutherAI/lm-evaluation-harness && cd lm-evaluation-harness && uv pip install .
 
-RUN git clone --depth 1 https://github.com/IBM/fmwork.git
+# RUN git clone --depth 1 https://github.com/IBM/fmwork.git
+# RUN git clone --depth 1 https://github.com/IBM/fmwork.git
+COPY third_party/fmwork fmwork
 
 ENV STORE_TEST_RESULT_PATH=/results
 
@@ -250,7 +310,7 @@ COPY vllm/tests tests
 COPY ShareGPT_V3_unfiltered_cleaned_split.json ShareGPT_V3_unfiltered_cleaned_split.json
 
 # Copy thid-party kernels and insert into path
-COPY third_party third_party
+COPY third_party/kernels third_party
 ENV PYTHONPATH /workspace
 
 # see https://github.com/IBM/triton-dejavu?tab=readme-ov-file#environment-variables

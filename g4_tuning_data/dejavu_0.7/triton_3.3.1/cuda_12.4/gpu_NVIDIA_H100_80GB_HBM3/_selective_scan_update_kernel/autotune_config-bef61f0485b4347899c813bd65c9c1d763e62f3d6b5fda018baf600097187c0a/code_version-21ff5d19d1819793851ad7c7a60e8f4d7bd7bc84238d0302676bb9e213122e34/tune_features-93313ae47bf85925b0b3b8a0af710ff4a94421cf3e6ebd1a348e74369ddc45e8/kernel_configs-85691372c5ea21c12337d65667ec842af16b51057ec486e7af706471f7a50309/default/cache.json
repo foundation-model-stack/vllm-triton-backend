@@ -1,0 +1,27 @@
+{
+    "signature": "JITFunction(vllm.model_executor.layers.mamba.ops.mamba_ssm:_selective_scan_update_kernel)",
+    "total_bench_time_s": 154.3796603679657,
+    "evaluated_configs": 75,
+    "keys": [
+        "dstate",
+        "BLOCK_SIZE_DSTATE",
+        "dim",
+        "nheads_ngroups_ratio"
+    ],
+    "cache": {
+        "('128', '128', '64', '128')": "BLOCK_SIZE_M: 64, num_warps: 2, num_ctas: 1, num_stages: 1, num_buffers_warp_spec: 0, num_consumer_groups: 0, reg_dec_producer: 0, reg_inc_consumer: 0, maxnreg: None"
+    },
+    "timings": {
+        "('128', '128', '64', '128')": [
+            1.7349423170089722
+        ]
+    },
+    "timings_data": {
+        "labels": [
+            "ms"
+        ],
+        "rep_t_ms": 100,
+        "warmup_t_ms": 25,
+        "cuda_graphs": true
+    }
+}

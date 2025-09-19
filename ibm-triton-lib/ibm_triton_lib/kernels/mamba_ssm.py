@@ -52,23 +52,23 @@ def fallback_heuristic_simple(key):
     return ret
 
 
-@triton_dejavu.jitcache(
-    # TODO
-    check_keys=["dstate", "dim", "nheads_ngroups_ratio"],
-    # TODO
-    check_specialization=[],
-    # TODO
-    assume_const=[],
-    # TODO...can we assume they don't change?
-    autotuner_args=[
-        "BLOCK_SIZE_M",
-        "BLOCK_SIZE_DSTATE",
-        "HAS_STATE_BATCH_INDICES",
-        "HAS_Z",
-        "HAS_D",
-        "HAS_DT_BIAS",
-    ],
-)
+# @triton_dejavu.jitcache(
+#     # TODO
+#     check_keys=["dstate", "dim", "nheads_ngroups_ratio"],
+#     # TODO
+#     check_specialization=[],
+#     # TODO
+#     assume_const=[],
+#     # TODO...can we assume they don't change?
+#     autotuner_args=[
+#         "BLOCK_SIZE_M",
+#         "BLOCK_SIZE_DSTATE",
+#         "HAS_STATE_BATCH_INDICES",
+#         "HAS_Z",
+#         "HAS_D",
+#         "HAS_DT_BIAS",
+#     ],
+# )
 @triton.heuristics({"HAS_DT_BIAS": lambda args: args["dt_bias_ptr"] is not None})
 @triton.heuristics({"HAS_D": lambda args: args["D_ptr"] is not None})
 @triton.heuristics({"HAS_Z": lambda args: args["z_ptr"] is not None})
@@ -85,7 +85,7 @@ def fallback_heuristic_simple(key):
     config_space=triton_dejavu.ConfigSpace(
         {"BLOCK_SIZE_M": [4, 8, 16, 32, 64]},
         num_warps=[2, 4, 8],
-        num_stages=[1, 2, 4, 6, 8],
+        num_stages=[1, 2, 3, 4, 5, 6, 8],
     ),
     key=[
         "dstate",
