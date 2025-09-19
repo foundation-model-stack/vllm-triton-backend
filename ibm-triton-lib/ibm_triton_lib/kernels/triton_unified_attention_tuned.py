@@ -239,13 +239,13 @@ def prefill_heuristics_2d(MAX_SEQ_Q, MAX_SEQ_K, AVG_SEQ_Q, AVG_SEQ_K):
         num_stages=[1, 2, 4, 6, 8],
         # num_consumer_groups=[0, 2, 4],
         # num_buffers_warp_spec=[0, 3, 6],
-        num_consumer_groups=[2, 4],
-        num_buffers_warp_spec=[3, 6],
-        conditions=[
-            # ensure consistency for ws
-            lambda c: (c.num_consumer_groups !=0 and c.num_buffers_warp_spec != 0) \
-                or (c.num_consumer_groups == 0 and c.num_buffers_warp_spec == 0),
-        ]
+        # num_consumer_groups=[2, 4],
+        # num_buffers_warp_spec=[3, 6],
+        # conditions=[
+        #     # ensure consistency for ws
+        #     lambda c: (c.num_consumer_groups !=0 and c.num_buffers_warp_spec != 0) \
+        #         or (c.num_consumer_groups == 0 and c.num_buffers_warp_spec == 0),
+        # ]
     ),
     # this list is longer, since it would be used for multiple models
     key=[

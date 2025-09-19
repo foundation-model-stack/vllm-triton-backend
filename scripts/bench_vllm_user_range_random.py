@@ -40,8 +40,11 @@ def create_dir_if_not_exist(path, mode=0o777):
         except PermissionError as e:
             print(f"can't set permission of directory {path}: {e}")
 
+
 if len(sys.argv) < 6:
-    print(f"Usage: {sys.argv[0]} <model_path> <input-len> <output-len> <testcase_name> <result_path>")
+    print(
+        f"Usage: {sys.argv[0]} <model_path> <input-len> <output-len> <testcase_name> <result_path>"
+    )
     exit(-1)
 
 # num_users_to_test = [1, 2, 4, 8, 16, 32, 64, 128]
@@ -68,10 +71,12 @@ timestamp_f = datetime.now().strftime("%Y-%m-%d_%H%M")
 # result_dir = (
 #     f"/results/{model.replace('/','-')}/{gpu_name}/{testcase_name}/exp_{timestamp_f}/"
 # )
-model_print_path = model.replace('/','-')
-if model_print_path[0:2] == './':
+model_print_path = model.replace("/", "-")
+if model_print_path[0:2] == "./":
     model_print_path = model_print_path[2:]
-result_dir = f"{result_path}/{model_print_path}/{gpu_name}/{testcase_name}/exp_{timestamp_f}/"
+result_dir = (
+    f"{result_path}/{model_print_path}/{gpu_name}/{testcase_name}/exp_{timestamp_f}/"
+)
 
 bench_script = "/workspace/benchmarks/benchmark_serving.py"
 if not os.path.isfile(bench_script):
@@ -90,7 +95,7 @@ for max_concurrency in num_users_to_test:
     #     if max_num_prompts // max_concurrency < max_rounds
     #     else int(max_rounds * max_concurrency)
     # )
-    num_prompts = int(max(min_num_prompts, 2*max_concurrency))
+    num_prompts = int(max(min_num_prompts, 2 * max_concurrency))
     cmd = (
         f"VLLM_USE_V1=1 python {bench_script} "
         f"--model {model} "

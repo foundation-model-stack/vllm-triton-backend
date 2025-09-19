@@ -39,7 +39,7 @@ selected_output_lengths = [32, 128, 256]
 use_cross_product = True
 
 warmup_iterations = 3
-iterations = 5 
+iterations = 5
 
 # =================
 
@@ -65,7 +65,9 @@ def create_dir_if_not_exist(path, mode=0o777):
 
 
 if len(sys.argv) < 5:
-    print(f"Usage: {sys.argv[0]} <model_path> <tp-factor> <testcase_name> <result_path>")
+    print(
+        f"Usage: {sys.argv[0]} <model_path> <tp-factor> <testcase_name> <result_path>"
+    )
     exit(-1)
 
 
@@ -94,17 +96,38 @@ if not os.path.isfile(bench_script):
         exit(-1)
 
 if use_cross_product:
-    zipped_lists = list(product(selected_batch_sizes, selected_input_lengths, selected_output_lengths))
+    zipped_lists = list(
+        product(selected_batch_sizes, selected_input_lengths, selected_output_lengths)
+    )
 else:
-    max_length = max(len(selected_batch_sizes), len(selected_input_lengths), len(selected_output_lengths))
+    max_length = max(
+        len(selected_batch_sizes),
+        len(selected_input_lengths),
+        len(selected_output_lengths),
+    )
     zipped_lists = list(
         zip_longest(
-            chain(selected_batch_sizes, 
-                  repeat(selected_batch_sizes[-1], times=max_length-len(selected_batch_sizes))),
-            chain(selected_input_lengths, 
-                  repeat(selected_input_lengths[-1], times=max_length-len(selected_input_lengths))),
-            chain(selected_output_lengths, 
-                  repeat(selected_output_lengths[-1], times=max_length-len(selected_output_lengths))),
+            chain(
+                selected_batch_sizes,
+                repeat(
+                    selected_batch_sizes[-1],
+                    times=max_length - len(selected_batch_sizes),
+                ),
+            ),
+            chain(
+                selected_input_lengths,
+                repeat(
+                    selected_input_lengths[-1],
+                    times=max_length - len(selected_input_lengths),
+                ),
+            ),
+            chain(
+                selected_output_lengths,
+                repeat(
+                    selected_output_lengths[-1],
+                    times=max_length - len(selected_output_lengths),
+                ),
+            ),
             fillvalue=None,
         )
     )
