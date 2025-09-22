@@ -859,17 +859,18 @@ def unified_attention(
     TILE_SIZE_DECODE_3D = 16
     BLOCK_M_DECODE = 16
     NUM_WARPS_DECODE_2D = 4
+    NUM_STAGES_DECODE_2D = 1
     if torch.version.hip:
         TILE_SIZE_PREFILL = 64
         NUM_STAGES_PREFILL = 1
         NUM_WARPS_PREFILL = 4
-        NUM_STAGES_DECODE = 8
+        NUM_STAGES_DECODE_3D = 8
         NUM_WARPS_DECODE_3D = 8
     else:  # cuda platform
         TILE_SIZE_PREFILL = 16
         NUM_STAGES_PREFILL = 4
         NUM_WARPS_PREFILL = 4
-        NUM_STAGES_DECODE = 1
+        NUM_STAGES_DECODE_3D = 1
         NUM_WARPS_DECODE_3D = 2
     
     BLOCK_Q_PREFILL = BLOCK_M_PREFILL * num_kv_heads // num_query_heads
@@ -997,7 +998,7 @@ def unified_attention(
                 BLOCK_Q=BLOCK_Q_DECODE,
                 TILE_SIZE=TILE_SIZE_DECODE_2D,
                 num_warps=NUM_WARPS_DECODE_2D,
-                num_stages=NUM_STAGES_DECODE,
+                num_stages=NUM_STAGES_DECODE_2D,
             )
         else:
             # for initial version, NUM_SEGMENTS = 16 is chosen as a default
@@ -1075,7 +1076,7 @@ def unified_attention(
                 BLOCK_M=BLOCK_M_DECODE,
                 TILE_SIZE=TILE_SIZE_DECODE_3D,
                 num_warps=NUM_WARPS_DECODE_3D,
-                num_stages=NUM_STAGES_DECODE,
+                num_stages=NUM_STAGES_DECODE_3D,
             )
             reduce_segments[
                 (LAUNCH_GRID_DIM0_3D_REDUCE, num_query_heads)  # num_decodes,
