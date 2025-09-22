@@ -1,0 +1,32 @@
+{
+    "signature": "JITFunction(ibm_triton_lib.kernels.triton_unified_grid:kernel_unified_attention_3d)",
+    "total_bench_time_s": 1735.5574402809143,
+    "evaluated_configs": 540,
+    "keys": [
+        "num_query_heads",
+        "num_queries_per_kv",
+        "BLOCK_SIZE",
+        "HEAD_SIZE",
+        "HEAD_SIZE_PADDED",
+        "SLIDING_WINDOW",
+        "stride_k_cache_3",
+        "stride_v_cache_3",
+        "NUM_SEGMENTS_PER_SEQ"
+    ],
+    "cache": {
+        "('32', '4', '16', '128', '128', '0', '1', '1', '16')": "BLOCK_M: 16, TILE_SIZE: 16, num_warps: 2, num_ctas: 1, num_stages: 1, maxnreg: None"
+    },
+    "timings": {
+        "('32', '4', '16', '128', '128', '0', '1', '1', '16')": [
+            0.0030953725799918175
+        ]
+    },
+    "timings_data": {
+        "labels": [
+            "ms"
+        ],
+        "rep_t_ms": 100,
+        "warmup_t_ms": 25,
+        "cuda_graphs": true
+    }
+}
