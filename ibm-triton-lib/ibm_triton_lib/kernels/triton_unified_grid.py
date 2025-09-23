@@ -860,17 +860,15 @@ def unified_attention(
     BLOCK_M_DECODE = 16
     NUM_WARPS_DECODE_2D = 4
     NUM_STAGES_DECODE_2D = 1
+    NUM_WARPS_PREFILL = 4
+    NUM_STAGES_DECODE_3D = 1
     if torch.version.hip:
         TILE_SIZE_PREFILL = 64
         NUM_STAGES_PREFILL = 1
-        NUM_WARPS_PREFILL = 4
-        NUM_STAGES_DECODE_3D = 8
-        NUM_WARPS_DECODE_3D = 8
+        NUM_WARPS_DECODE_3D = 4
     else:  # cuda platform
         TILE_SIZE_PREFILL = 16
         NUM_STAGES_PREFILL = 4
-        NUM_WARPS_PREFILL = 4
-        NUM_STAGES_DECODE_3D = 1
         NUM_WARPS_DECODE_3D = 2
     
     BLOCK_Q_PREFILL = BLOCK_M_PREFILL * num_kv_heads // num_query_heads
