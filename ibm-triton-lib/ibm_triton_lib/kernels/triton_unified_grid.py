@@ -818,10 +818,10 @@ def unified_attention(
     segm_output,
     segm_max,
     segm_expsum,
-    BLOCK_M_PREFILL,
-    BLOCK_Q_PREFILL,
-    BLOCK_M_DECODE,
-    BLOCK_Q_DECODE,
+    # BLOCK_M_PREFILL,
+    # BLOCK_Q_PREFILL,
+    # BLOCK_M_DECODE,
+    # BLOCK_Q_DECODE,
     num_q_blocks,
     block_q_seq_boundaries,
     alibi_slopes=None,
@@ -845,8 +845,34 @@ def unified_attention(
     num_queries_per_kv = num_query_heads // num_kv_heads
     head_size = q.shape[2]
 
-    TILE_SIZE_PREFILL = 32
-    TILE_SIZE_DECODE = 32
+
+    # old heuristics
+    # BLOCK_M_PREFILL = 64
+    # BLOCK_M_DECODE = 16
+    # TILE_SIZE_PREFILL = 32
+    # TILE_SIZE_DECODE_2D = 32
+    # TILE_SIZE_DECODE_3D = 32
+    
+    # heuristics instead of autotuning
+    BLOCK_M_PREFILL = 16
+    TILE_SIZE_DECODE_2D = 64
+    TILE_SIZE_DECODE_3D = 16
+    BLOCK_M_DECODE = 16
+    NUM_WARPS_DECODE_2D = 4
+    NUM_STAGES_DECODE_2D = 1
+    NUM_WARPS_PREFILL = 4
+    NUM_STAGES_DECODE_3D = 1
+    if torch.version.hip:
+        TILE_SIZE_PREFILL = 64
+        NUM_STAGES_PREFILL = 1
+        NUM_WARPS_DECODE_3D = 4
+    else:  # cuda platform
+        TILE_SIZE_PREFILL = 16
+        NUM_STAGES_PREFILL = 4
+        NUM_WARPS_DECODE_3D = 2
+    
+    BLOCK_Q_PREFILL = BLOCK_M_PREFILL * num_kv_heads // num_query_heads
+    BLOCK_Q_DECODE = BLOCK_M_DECODE * num_kv_heads // num_query_heads
 
     LAUNCH_GRID_DIM0_2D_PREFILL = 32
     LAUNCH_GRID_DIM0_2D_DECODE = 32
@@ -905,9 +931,11 @@ def unified_attention(
             q_block_iterations=(num_q_blocks + LAUNCH_GRID_DIM0_2D_PREFILL - 1)
             // LAUNCH_GRID_DIM0_2D_PREFILL,
             # tunable parameters
-            # BLOCK_M=BLOCK_M_PREFILL,
-            # BLOCK_Q=BLOCK_Q_PREFILL,
-            # TILE_SIZE=TILE_SIZE_PREFILL,
+            BLOCK_M=BLOCK_M_PREFILL,
+            BLOCK_Q=BLOCK_Q_PREFILL,
+            TILE_SIZE=TILE_SIZE_PREFILL,
+            num_warps=NUM_WARPS_PREFILL,
+            num_stages=NUM_STAGES_PREFILL,
         )
 
     # decode
@@ -964,9 +992,11 @@ def unified_attention(
                 q_block_iterations=(num_decodes + LAUNCH_GRID_DIM0_2D_DECODE - 1)
                 // LAUNCH_GRID_DIM0_2D_DECODE,
                 # tunable parameters
-                # BLOCK_M=BLOCK_M_DECODE,
-                # BLOCK_Q=BLOCK_Q_DECODE,
-                # TILE_SIZE=TILE_SIZE_DECODE,
+                BLOCK_M=BLOCK_M_DECODE,
+                BLOCK_Q=BLOCK_Q_DECODE,
+                TILE_SIZE=TILE_SIZE_DECODE_2D,
+                num_warps=NUM_WARPS_DECODE_2D,
+                num_stages=NUM_STAGES_DECODE_2D,
             )
         else:
             # for initial version, NUM_SEGMENTS = 16 is chosen as a default
@@ -1040,9 +1070,11 @@ def unified_attention(
                 seq_idx_iterations=(num_decodes + LAUNCH_GRID_DIM0_3D_DECODE - 1)
                 // LAUNCH_GRID_DIM0_3D_DECODE,
                 # tunable parameters
-                # BLOCK_Q=BLOCK_Q_DECODE,
-                # BLOCK_M=BLOCK_M_DECODE,
-                # TILE_SIZE=TILE_SIZE_DECODE,
+                BLOCK_Q=BLOCK_Q_DECODE,
+                BLOCK_M=BLOCK_M_DECODE,
+                TILE_SIZE=TILE_SIZE_DECODE_3D,
+                num_warps=NUM_WARPS_DECODE_3D,
+                num_stages=NUM_STAGES_DECODE_3D,
             )
             reduce_segments[
                 (LAUNCH_GRID_DIM0_3D_REDUCE, num_query_heads)  # num_decodes,
@@ -1064,5 +1096,7 @@ def unified_attention(
                 seq_idx_iterations=(num_decodes + LAUNCH_GRID_DIM0_3D_REDUCE - 1)
                 // LAUNCH_GRID_DIM0_3D_REDUCE,
                 # tunable parameters
-                # TILE_SIZE=TILE_SIZE_DECODE,
+                TILE_SIZE=TILE_SIZE_DECODE_3D,
+                num_warps=2,
+                num_stages=1,
             )
