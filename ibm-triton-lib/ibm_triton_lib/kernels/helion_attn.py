@@ -29,8 +29,9 @@ def kernel_helion_v0_attention(
     head_size = hl.specialize(t_query.size(2))
     num_kv_heads = hl.specialize(t_key_cache.size(2))
     num_query_heads = hl.specialize(t_query.size(1))
-    block_size = hl.specialize(t_value_cache.size(1))
+    page_size = hl.specialize(t_value_cache.size(1))
     # q_max_range = hl.specialize(t_query.size(0) * num_query_heads)
+    num_queries_per_kv = num_query_heads // num_kv_heads
 
     for seq_idx, kv_head_idx in hl.grid([num_seqs, num_kv_heads]):
         seq_len = t_seq_lens[seq_idx]
@@ -38,16 +39,31 @@ def kernel_helion_v0_attention(
         query_end = t_query_start_lens[seq_idx + 1]
         query_len = query_end - query_start
         context_len = seq_len - query_len
-        for tile_q in hl.tile([query_len, num_query_heads, head_size], block_size=[None, num_query_heads, head_size]):
+        # TODO: enable tuning again
+        for tile_q in hl.tile([query_len, num_query_heads, head_size], block_size=[page_size//num_queries_per_kv, num_queries_per_kv, head_size]):
             q = t_query[tile_q]
             m = hl.full([tile_q[0], tile_q[1]], float("-inf"), dtype=torch.float32)
             l = hl.full([tile_q[0], tile_q[1]], 1.0, dtype=torch.float32)
             acc = hl.zeros(tile_q, dtype=torch.float32)
-            for tile_b in hl.tile([math.ceil(num_seqs/block_size)], block_size=[None]):
-                # TODO: only one tile_b? 
-                k = t_key_cache[tile_b + t_block_tables[seq_idx+tile_b], :, kv_head_idx, :]
-                v = t_value_cache[tile_b + t_block_tables[seq_idx+tile_b], :, kv_head_idx, :]
-                qk = (q @ k) * scale
+            # no [] for 1d...here! 
+            # for tile_b in hl.tile(math.ceil(num_seqs/page_size), block_size=None):
+            # TODO: make block size depending on tile_q
+            for tile_b in hl.tile(math.ceil(num_seqs/page_size), block_size=1):
+            # for tile_b in hl.tile([seq_idx, 0], [seq_idx, math.ceil(num_seqs/block_size)], block_size=[1, None]):
+                # k = t_key_cache[tile_b + t_block_tables[(seq_idx, )+tile_b], :, kv_head_idx, :]
+                # v = t_value_cache[tile_b + t_block_tables[seq_idx+tile_b], :, kv_head_idx, :]
+                blk_idxs = t_block_tables[seq_idx, tile_b]
+                # blk_idxs = t_block_tables[tile_b]
+                k = t_key_cache[blk_idxs, :, kv_head_idx, :]
+                # k = torch.take(t_key_cache[:, :, kv_head_idx, :], torch.broadcast_to(blk_idxs[0, :], t_key_cache.shape()), 0)
+                # k = torch.take_along_dim(t_key_cache[:, :, kv_head_idx, :], torch.broadcast_to(blk_idxs[0, :], t_key_cache.shape()), 0)
+                # k = torch.take_along_dim(t_key_cache[:, :, kv_head_idx, :], blk_idxs.unsqueeze(1).unsqueeze(2).to(torch.long), 0)
+                v = t_value_cache[blk_idxs, :, kv_head_idx, :]
+                # qk = (q @ k) * scale
+                # qk = torch.bmm(q, k.transpose(1, 2)) * scale
+                q_view = q.reshape([-1, num_query_heads, head_size])
+                k_view = k.reshape([-1, page_size, head_size]).transpose(1, 2)
+                qk = torch.bmm(q_view, k_view) * scale
                 m_j = torch.maximum(m, torch.amax(qk, 1))
                 p = torch.exp2(qk - m_j[:, :, None])
                 l_j = torch.sum(p, 1)
