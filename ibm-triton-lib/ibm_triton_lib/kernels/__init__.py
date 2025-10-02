@@ -82,3 +82,5 @@ from .mamba_ssm import selective_state_update
 from .reshape_and_cache_flash import (
     reshape_and_cache_flash as triton_reshape_and_cache_flash,
 )
+
+from .helion_attn import helion_attention

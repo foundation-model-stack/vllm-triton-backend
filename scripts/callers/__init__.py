@@ -68,3 +68,5 @@ from .grid_triton import (
     GridTriton2dAttentionCaller,
     GridTriton3dAttentionCaller,
 )
+
+from .helion_v0 import HelionV0AttentionCaller

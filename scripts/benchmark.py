@@ -79,6 +79,7 @@ class Implementation(Enum):
     GRID_TRITON_2D = 22
     TRITON_RESHAPE_AND_CACHE = 23
     VLLM_CUDA_RESHAPE_AND_CACHE = 24
+    HELION_V0 = 25
 
 
 class BenchmarkMode(Enum):
@@ -1071,6 +1072,7 @@ def test_prefix_vllm_v1_attention(
         Implementation.UNF_TRITON_2D_TUNED,
         Implementation.GRID_TRITON_2D,
         Implementation.GRID_TRITON_3D,
+        Implementation.HELION_V0,
     ]:
         pytest.skip()
 
@@ -1353,6 +1355,8 @@ def test_prefix_vllm_v1_attention(
             from callers import GridTriton3dAttentionCaller as Caller
         elif implementation == Implementation.GRID_TRITON_2D:
             from callers import GridTriton2dAttentionCaller as Caller
+        elif implementation == Implementation.HELION_V0:
+            from callers import HelionV0AttentionCaller as Caller
 
         if Caller.requires_allocated_output:
             output = torch.empty_like(query)

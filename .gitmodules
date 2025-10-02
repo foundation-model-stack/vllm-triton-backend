@@ -10,3 +10,6 @@
 [submodule "third_party/fmwork"]
 	path = third_party/fmwork
 	url = git@github.com:bringlein/fmwork.git
+[submodule "helion"]
+	path = helion
+	url = https://github.com/pytorch/helion.git
