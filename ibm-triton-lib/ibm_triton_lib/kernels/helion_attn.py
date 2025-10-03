@@ -40,11 +40,18 @@ def kernel_helion_v0_attention(
         query_len = query_end - query_start
         context_len = seq_len - query_len
         # TODO: enable tuning again
-        for tile_q in hl.tile([query_len, num_query_heads, head_size], block_size=[page_size//num_queries_per_kv, num_queries_per_kv, head_size]):
-            q = t_query[tile_q]
-            m = hl.full([tile_q[0], tile_q[1]], float("-inf"), dtype=torch.float32)
-            l = hl.full([tile_q[0], tile_q[1]], 1.0, dtype=torch.float32)
-            acc = hl.zeros(tile_q, dtype=torch.float32)
+        # tiles are 1D...
+        for tile_qb, tile_qhead, tile_headsize in hl.tile([query_len, num_query_heads, head_size], block_size=[page_size//num_queries_per_kv, num_queries_per_kv, head_size]):
+            # q = t_query[tile_q]
+            q = t_query[tile_qb, tile_qhead, tile_headsize]
+            # m = hl.full([tile_q.size(0) * tile_q.size(1)], float("-inf"), dtype=torch.float32)
+            # l = hl.full([tile_q[0] * tile_q[1]], 1.0, dtype=torch.float32)
+            m = hl.full([tile_qb.block_size * tile_qhead.block_size], float("-inf"), dtype=torch.float32)
+            l = hl.full([tile_qb.block_size * tile_qhead.block_size], 1.0, dtype=torch.float32)
+            # TODO: needs to become tunable
+            # m = hl.full(page_size * num_queries_per_kv * head_size, float("-inf"), dtype=torch.float32)
+            # l = hl.full(page_size * num_queries_per_kv * head_size, 1.0, dtype=torch.float32)
+            acc = hl.zeros([tile_qb.block_size * tile_qhead.block_size, tile_headsize], dtype=torch.float32)
             # no [] for 1d...here! 
             # for tile_b in hl.tile(math.ceil(num_seqs/page_size), block_size=None):
             # TODO: make block size depending on tile_q
@@ -75,7 +82,8 @@ def kernel_helion_v0_attention(
                 acc = acc + (p @ v)
             
             acc = acc / l[:, :, None]
-            t_output[tile_q] = acc
+            # t_output[tile_q] = acc
+            t_output[tile_qb, tile_qhead, tile_headsize] = acc
 
 
 
