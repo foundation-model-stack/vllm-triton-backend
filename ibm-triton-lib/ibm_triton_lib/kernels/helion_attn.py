@@ -24,6 +24,7 @@ def kernel_helion_v0_attention(
     num_seqs,
     #  head_size,
     #  head_size_padded,
+    # tiles_per_page=2,
 ):
     head_size = hl.specialize(t_query.size(2))
     num_kv_heads = hl.specialize(t_key_cache.size(2))
@@ -31,6 +32,7 @@ def kernel_helion_v0_attention(
     page_size = hl.specialize(t_value_cache.size(1))
     # q_max_range = hl.specialize(t_query.size(0) * num_query_heads)
     num_queries_per_kv = num_query_heads // num_kv_heads
+    # tiles_per_page = hl.specialize(tiles_per_page)
 
     # assert does not help type inference, apparently
     # assert head_size == t_key_cache.size(3) == t_value_cache.size(3)
@@ -41,6 +43,7 @@ def kernel_helion_v0_attention(
         query_end = t_query_start_lens[seq_idx + 1]
         query_len = query_end - query_start
         context_len = seq_len - query_len
+        pages_per_seq = (seq_len + page_size - 1) // page_size  # math.ceil not traceable?
         for tile_m in hl.tile(kv_head_idx * num_queries_per_kv, (kv_head_idx+1)*num_queries_per_kv, 
                               block_size=None):
         # [] around dimension and block_size must match!
@@ -48,12 +51,14 @@ def kernel_helion_v0_attention(
             for tile_q in hl.tile(query_start, query_end, block_size=tile_m.block_size // num_queries_per_kv):
                 # (tile_q, tile_m, HEAD_SIZE)
                 q = t_query[tile_q, tile_m, :]
-                m = torch.full([tile_m.block_size], float("-inf"), dtype=torch.float32)
+                block_m_size = tile_m.block_size * tile_q.block_size
+                m = torch.full([block_m_size], float("-inf"), dtype=torch.float32)
                 # m = hl.full([tile_m], float("-inf"), dtype=torch.float32)
                 l = torch.full_like(m, 1.0)
                 # (tile_m, HEAD_SIZE)
-                acc = hl.zeros([tile_m.block_size, head_size], dtype=torch.float32)
-                for tile_n in hl.tile(seq_len, block_size=None):
+                acc = hl.zeros([block_m_size, head_size], dtype=torch.float32)
+                # for tile_n in hl.tile(seq_len, block_size=tiles_per_page * page_size):
+                for tile_n in hl.tile(pages_per_seq, block_size=1):
                     # for tile_b in hl.tile(math.ceil(tile_n.block_size / page_size), block_size=):
                     # blk_idxs = t_block_tables[seq_idx, tile_n.begin // page_size : tile_n.end // page_size]
                     
@@ -63,16 +68,19 @@ def kernel_helion_v0_attention(
                     # blk_idxs_bc = torch.broadcast_to(blk_idxs, (tile_n.block_size, page_size))
                     # blk_idxs_bc = blk_idxs.unsqueeze(1).expand(-1, page_size).view(-1)
                     # (tile_n, PAGE_SIZE, 1, HEAD_SIZE)
-                    k = t_key_cache[blk_idxs, page_size, kv_head_idx, head_size]
+                    # k = t_key_cache[blk_idxs, page_size, kv_head_idx, head_size]
+                    k = t_key_cache[blk_idxs.view(-1), :, kv_head_idx, :]
                     # (tile_n, PAGE_SIZE, HEAD_SIZE)
                     v = t_value_cache[blk_idxs, :, kv_head_idx, :]
                     # # (tile_m, HEAD_SIZE)
-                    # q_view = q.view([tile_m.block_size * tile_q.block_size, head_size])
+                    q_view = q.view([block_m_size, head_size])
                     # # (HEAD_SIZE, tile_n)
-                    # k_view = k.view([tile_n.block_size * page_size, head_size]).transpose(0, 1)
-                    # # (tile_m, tile_n)
-                    # qk = torch.mm(q_view, k_view) * scale
-                    qk = torch.bmm(q, k.transpose(1, 2)) * scale
+                    k_view = k.view([tile_n.block_size * page_size, head_size]).transpose(0, 1)
+                    # (tile_m, tile_n)
+                    qk = torch.mm(q_view, k_view) * scale
+                    # to check the shape...
+                    qk = qk.view([block_m_size, tile_n.block_size * page_size])
+                    # qk = torch.bmm(q, k.transpose(1, 2)) * scale
                     # (tile_m)
                     m_j = torch.maximum(m, torch.amax(qk, 1))
                     # (tile_m, tile_n)
@@ -87,13 +95,13 @@ def kernel_helion_v0_attention(
                     m = m_j
 
                     # (tile_n, HEAD_SIZE)
-                    v_view = v.view([-1, head_size])
+                    v_view = v.view([tile_n.block_size * page_size, head_size])
                     # (tile_m, HEAD_SIZE)
-                    acc += torch.mm(p, v_view)
+                    acc += torch.mm(p.to(v.dtype), v_view)
 
-            # epilogue
-            acc = acc / l[:, :, None]
-            t_output[tile_q, tile_m, :] = acc
+                # epilogue
+                acc = acc / l[:, None]
+                t_output[tile_q, tile_m, :] = acc.view([tile_q.block_size, tile_m.block_size, head_size])
 
 
 
