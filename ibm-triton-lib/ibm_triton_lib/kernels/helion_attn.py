@@ -7,7 +7,12 @@ import helion.language as hl
 
 import math
 
-@helion.kernel
+@helion.kernel(
+     use_default_config=True,
+     config=helion.Config(
+        block_sizes=[16]
+        ),   
+    )
 def kernel_helion_v0_attention(
     t_output,  # [num_tokens, num_query_heads, head_size]
     t_query,  # [num_tokens, num_query_heads, head_size]
