@@ -1085,6 +1085,10 @@ def test_prefix_vllm_v1_attention(
     ):
         pytest.skip("not supported")
 
+    # # TODO
+    # if implementation == Implementation.HELION_V0 and seqlen < 32:
+    #     pytest.skip("not supported")
+
     # TODO: Error: "Offset increment outside graph capture"
     #  for triton and flash_attn
     # if benchmark_mode == BenchmarkMode.CUDA_GRAPHS:

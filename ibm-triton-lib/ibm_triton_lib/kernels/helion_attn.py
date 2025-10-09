@@ -24,6 +24,8 @@ def kernel_helion_v0_attention(
     # v_scale,
     t_query_start_lens, # [num_seqs+1]
     num_seqs,
+    # max_seqlen,
+    # max_query_len,
 ):
     head_size = hl.specialize(t_query.size(2))
     num_kv_heads = hl.specialize(t_key_cache.size(2))
@@ -31,6 +33,8 @@ def kernel_helion_v0_attention(
     page_size = hl.specialize(t_value_cache.size(1))
     num_queries_per_kv = num_query_heads // num_kv_heads
     # tiles_per_page = hl.specialize(tiles_per_page)
+    # pages_per_seq = (max_seqlen + page_size - 1) // page_size
+    # assert pages_per_seq == t_block_tables.size(1)
 
     # assert does not help type inference, apparently
     # assert head_size == t_key_cache.size(3) == t_value_cache.size(3)
@@ -45,28 +49,31 @@ def kernel_helion_v0_attention(
         # [] around dimension and block_size must match!
         for tile_m in hl.tile(kv_head_idx * num_queries_per_kv, (kv_head_idx+1)*num_queries_per_kv, 
                               block_size=None):
-            for tile_q in hl.tile(query_start, query_end, block_size=tile_m.block_size // num_queries_per_kv):
+            # q_block_size = tile_m.block_size // num_queries_per_kv if query_len >= tile_m.block_size // num_queries_per_kv else max_query_len
+            q_block_size = tile_m.block_size // num_queries_per_kv
+            for tile_q in hl.tile(query_start, query_end, block_size=q_block_size):
+                block_m_size = tile_m.block_size * tile_q.block_size
                 # (tile_q, tile_m, HEAD_SIZE)
                 q = t_query[tile_q, tile_m, :]
-                block_m_size = tile_m.block_size * tile_q.block_size
+                # (tile_m, HEAD_SIZE)
+                q_view = q.view([block_m_size, head_size])
                 m = torch.full([block_m_size], float("-inf"), dtype=torch.float32)
                 l = torch.full_like(m, 1.0)
                 # (tile_m, HEAD_SIZE)
                 acc = hl.zeros([block_m_size, head_size], dtype=torch.float32)
                 for tile_n in hl.tile(pages_per_seq, block_size=1):
-                    blk_idxs = t_block_tables[seq_idx, tile_n]
+                    block_n_size = tile_n.block_size * page_size
+                    blk_idxs = t_block_tables[seq_idx, tile_n].view(-1)
                     # (tile_n, PAGE_SIZE, 1, HEAD_SIZE)
                     k = t_key_cache[blk_idxs, :, kv_head_idx, :]
                     # (tile_n, PAGE_SIZE, HEAD_SIZE)
                     v = t_value_cache[blk_idxs, :, kv_head_idx, :]
-                    # # (tile_m, HEAD_SIZE)
-                    q_view = q.view([block_m_size, head_size])
-                    # # (HEAD_SIZE, tile_n)
-                    k_view = k.view([tile_n.block_size * page_size, head_size]).transpose(0, 1)
+                    # (HEAD_SIZE, tile_n)
+                    k_view = k.view([block_n_size, head_size]).transpose(0, 1)
                     # (tile_m, tile_n)
                     qk = torch.mm(q_view, k_view) * scale
                     # to check the shape...
-                    # qk = qk.view([block_m_size, tile_n.block_size * page_size])
+                    # qk = qk.view([block_m_size, block_n_size])
                     # (tile_m)
                     m_j = torch.maximum(m, torch.amax(qk, 1))
                     # (tile_m, tile_n)
@@ -128,22 +135,6 @@ def helion_attention(
     num_queries_per_kv = num_query_heads // num_kv_heads
     head_size = q.shape[2]
 
-    # BLOCK_M = 32
-    # BLOCK_Q = BLOCK_M // num_queries_per_kv
-
-    # Ideally we would launch with kernel with:
-    # \sum_i[ceil(query_len[i] / BLOCK_Q)] blocks.
-    # However, it is slow to realize the query_lens on cpu.
-    # Instead we use upper-bound:
-    # \sum_i[ceil(query_len[i] / BLOCK_Q)]
-    #   <= \sum_i[floor(query_len[i] / BLOCK_Q) + 1]
-    #    = \sum_i[floor(query_len[i] / BLOCK_Q)] + num_seqs
-    #   <= floor(\sum_i(query_len[i]) / BLOCK_Q) + num_seqs
-    #    = floor(q.shape[0] / BLOCK_Q) + num_seqs
-    # total_num_q_blocks = q.shape[0] // BLOCK_Q + num_seqs
-
-    # grid = (q.shape[0] // (BLOCK_M // num_queries_per_kv) + num_seqs, num_kv_heads)
-
     kernel_helion_v0_attention(
         t_output=out,
         t_query=q,
@@ -156,6 +147,8 @@ def helion_attention(
         # v_scale=v_descale,
         t_query_start_lens=cu_seqlens_q,
         num_seqs=num_seqs,
+        # max_seqlen=1,
+        # max_query_len=max_seqlen_q,
     )
 
 
