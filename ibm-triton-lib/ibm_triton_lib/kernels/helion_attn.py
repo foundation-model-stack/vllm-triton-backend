@@ -10,9 +10,9 @@ import helion.language as hl
      # use_default_config=True,
      config=helion.Config(
         # block_sizes=[16]
-        block_sizes=[4]
+        block_sizes=[4, 1]
         ),   
-     # allow_warp_specialize=True,
+    allow_warp_specialize=True,
      # dot_precision='ieee',
      # static_shapes=True,
      # configs=[
@@ -58,20 +58,15 @@ def kernel_helion_v0_attention(
             for tile_m in hl.tile(kv_head_idx * num_queries_per_kv, (kv_head_idx+1)*num_queries_per_kv, 
                               block_size=num_queries_per_kv):
                 block_m_size = tile_m.block_size * tile_q.block_size
-                # block_m_size = tile_m_size * tile_q.block_size
                 # (tile_q, tile_m, HEAD_SIZE)
                 q = t_query[tile_q, tile_m, :]
-                # q = t_query[tile_q, tile_m_start:tile_m_end, :]
-                # q = t_query[tile_q, 
-                #             (kv_head_idx*num_queries_per_kv) + tile_m.start:(kv_head_idx*num_queries_per_kv) + tile_m.end,
-                #             :]
                 # (tile_m, HEAD_SIZE)
                 q_view = q.view([block_m_size, head_size])
                 m = torch.full([block_m_size], float("-inf"), dtype=torch.float32)
                 l = torch.full_like(m, 1.0)
                 # (tile_m, HEAD_SIZE)
                 acc = hl.zeros([block_m_size, head_size], dtype=torch.float32)
-                for tile_n in hl.tile(pages_per_seq, block_size=1):
+                for tile_n in hl.tile(pages_per_seq, block_size=None):
                     block_n_size = tile_n.block_size * page_size
                     blk_idxs = t_block_tables[seq_idx, tile_n].view(-1)
                     # (tile_n, PAGE_SIZE, 1, HEAD_SIZE)
@@ -105,7 +100,6 @@ def kernel_helion_v0_attention(
                 # epilogue
                 acc = acc / l[:, None]
                 t_output[tile_q, tile_m, :] = acc.view([tile_q.block_size, tile_m.block_size, head_size])
-                # t_output[tile_q, tile_m_start:tile_m_end, :] = acc.view([tile_q.block_size, tile_m_size, head_size])
 
 
 
