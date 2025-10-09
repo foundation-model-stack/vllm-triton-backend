@@ -7,10 +7,11 @@ import helion.language as hl
 
 
 @helion.kernel(
-     use_default_config=True,
-     # config=helion.Config(
-     #    block_sizes=[16]
-     #    ),   
+     # use_default_config=True,
+     config=helion.Config(
+        # block_sizes=[16]
+        block_sizes=[4]
+        ),   
      # allow_warp_specialize=True,
      # dot_precision='ieee',
      # static_shapes=True,
@@ -52,17 +53,10 @@ def kernel_helion_v0_attention(
         query_len = query_end - query_start
         context_len = seq_len - query_len
         pages_per_seq = (seq_len + page_size - 1) // page_size  # math.ceil not traceable in hl.tile?
-        for tile_m in hl.tile(kv_head_idx * num_queries_per_kv, (kv_head_idx+1)*num_queries_per_kv, 
-                              block_size=None):
-        # for block_m in hl.tile(num_queries_per_kv, block_size=None):
-        #     tile_m_size = 2**block_m.block_size
-        #     tile_m_start = (kv_head_idx * num_queries_per_kv) + (block_m.index * tile_m_size)
-        #     tile_m_end = tile_m_start + tile_m_size
-        #     # q_block_size = tile_m.block_size // num_queries_per_kv
-        #     q_block_size = tile_m_size // num_queries_per_kv
-        # for tile_m in hl.tile(num_queries_per_kv, block_size=None):
-            q_block_size = tile_m.block_size // num_queries_per_kv
-            for tile_q in hl.tile(query_start, query_end, block_size=q_block_size):
+
+        for tile_q in hl.tile(query_start, query_end, block_size=None):
+            for tile_m in hl.tile(kv_head_idx * num_queries_per_kv, (kv_head_idx+1)*num_queries_per_kv, 
+                              block_size=num_queries_per_kv):
                 block_m_size = tile_m.block_size * tile_q.block_size
                 # block_m_size = tile_m_size * tile_q.block_size
                 # (tile_q, tile_m, HEAD_SIZE)
