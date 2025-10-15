@@ -41,8 +41,7 @@ if __name__ == "__main__":
     from vllm.distributed import cleanup_dist_env_and_memory
 
     llm = LLM(
-        # model="/mnt/nvme5n1p1/zrlngl/fmaas/models/llama3.1-8b-instruct/",
-        model="/net/storage149/autofs/css22/nmg/models/hf/meta-llama/Llama-3.1-8B-Instruct/main/",
+        model="./models/hf/meta-llama/Llama-3.1-8B-Instruct/main/",
         # max_model_len=2048,
         # enforce_eager=True,
         enable_prefix_caching=False,
