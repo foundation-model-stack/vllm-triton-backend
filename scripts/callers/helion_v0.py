@@ -84,6 +84,7 @@ class HelionV0AttentionCaller(PrefixPrefillCaller):
                 k_descale=None,  # TODO?
                 v_descale=None,  # TODO?
                 alibi_slopes=None,
+                is_decode_only=bool(max_query_len == 1),
             )
 
         return call_and_process_output
