@@ -5,20 +5,34 @@ import torch
 import helion
 import helion.language as hl
 
+configs = []
+# add default config first
+# configs.append(helion.Config(block_sizes = [4, 1]))
+for multi_q_size in range(2, 8):
+    for multi_page_size in [1, 2, 4, 8, 16]:
+        for pidt in ["flat", "xyz", "persistent_blocked", "persistent_interleaved"]:
+            for nw in [2, 4, 8]:
+                for ns in [1,2,3,4,8]:
+                    configs.append(helion.Config(block_sizes = [2**multi_q_size, multi_page_size],
+                                    pid_type=pidt,
+                                    num_warps=nw,
+                                    num_stages=ns))
+
 
 @helion.kernel(
-     # use_default_config=True,
-     config=helion.Config(
-        # block_sizes=[16]
-        block_sizes=[4, 1]
-        ),   
+    # use_default_config=True,
+    # config=helion.Config(
+    #    # block_sizes=[16]
+    #    block_sizes=[4, 1]
+    #    ),   
     allow_warp_specialize=True,
-     # dot_precision='ieee',
-     # static_shapes=True,
-     # configs=[
-     #     helion.Config(block_sizes=[bs]) for bs in [16, 32, 64, 128]
-     # ]
-    )
+    # dot_precision='ieee',
+    # static_shapes=True,
+    # configs=[
+    #     helion.Config(block_sizes=[bs]) for bs in [16, 32, 64, 128]
+    # ]
+    configs=configs,
+)
 def kernel_helion_v0_attention(
     t_output,  # [num_tokens, num_query_heads, head_size]
     t_query,  # [num_tokens, num_query_heads, head_size]
@@ -31,8 +45,10 @@ def kernel_helion_v0_attention(
     # v_scale,
     t_query_start_lens, # [num_seqs+1]
     num_seqs,
+    # unused, to trigger autotuning...?
     # max_seqlen,
     # max_query_len,
+    is_decode_only: hl.constexpr,
 ):
     head_size = hl.specialize(t_query.size(2))
     num_kv_heads = hl.specialize(t_key_cache.size(2))
@@ -45,6 +61,7 @@ def kernel_helion_v0_attention(
 
     # assert does not help type inference, apparently
     # assert head_size == t_key_cache.size(3) == t_value_cache.size(3)
+    # is_decode_only = hl.specialize(is_decode_only)
 
     for seq_idx, kv_head_idx in hl.grid([num_seqs, num_kv_heads]):
         seq_len = t_seq_lens[seq_idx]
@@ -122,6 +139,7 @@ def helion_attention(
     k_descale,
     v_descale,
     alibi_slopes=None,
+    is_decode_only=False,
 ):
     assert causal, "Only causal attention is supported"
     assert q_descale is None, "Q scales not supported"
@@ -152,8 +170,10 @@ def helion_attention(
         # v_scale=v_descale,
         t_query_start_lens=cu_seqlens_q,
         num_seqs=num_seqs,
-        # max_seqlen=1,
+        # max_seqlen=max_seqlen_k,
         # max_query_len=max_seqlen_q,
+        # is_decode_only=bool(max_seqlen_q.max() == 1),  # extra bool to avoid tensor creation
+        is_decode_only=bool(is_decode_only),
     )
 
 
