@@ -19,20 +19,29 @@ for multi_q_size in range(2, 8):
                                     num_stages=ns))
 
 
-@helion.kernel(
-    # use_default_config=True,
-    # config=helion.Config(
-    #    # block_sizes=[16]
-    #    block_sizes=[4, 1]
-    #    ),   
+# @helion.kernel(
+#     # use_default_config=True,
+#     # config=helion.Config(
+#     #    # block_sizes=[16]
+#     #    block_sizes=[4, 1]
+#     #    ),   
+#     allow_warp_specialize=True,
+#     # dot_precision='ieee',
+#     # static_shapes=True,
+#     # configs=[
+#     #     helion.Config(block_sizes=[bs]) for bs in [16, 32, 64, 128]
+#     # ]
+#     configs=configs,
+# )
+@helion.kernel(config=helion.Config(block_sizes=[32, 2], indexing='pointer', 
+    l2_groupings=[1], load_eviction_policies=['', '', '', '', '', '', ''], 
+    loop_orders=[[0, 1]], num_stages=1, num_warps=8, pid_type='xyz', 
+    range_flattens=[None, None, None, None], range_multi_buffers=[None, None, None, None], 
+    range_num_stages=[], range_unroll_factors=[0, 0, 0, 0], 
+    range_warp_specializes=[]), 
+    static_shapes=True,
     allow_warp_specialize=True,
-    # dot_precision='ieee',
-    # static_shapes=True,
-    # configs=[
-    #     helion.Config(block_sizes=[bs]) for bs in [16, 32, 64, 128]
-    # ]
-    configs=configs,
-)
+    )
 def kernel_helion_v0_attention(
     t_output,  # [num_tokens, num_query_heads, head_size]
     t_query,  # [num_tokens, num_query_heads, head_size]
@@ -48,7 +57,7 @@ def kernel_helion_v0_attention(
     # unused, to trigger autotuning...?
     # max_seqlen,
     # max_query_len,
-    is_decode_only: hl.constexpr,
+    # is_decode_only: hl.constexpr,
 ):
     head_size = hl.specialize(t_query.size(2))
     num_kv_heads = hl.specialize(t_key_cache.size(2))
@@ -68,8 +77,8 @@ def kernel_helion_v0_attention(
         query_start = t_query_start_lens[seq_idx]
         query_end = t_query_start_lens[seq_idx + 1]
         query_len = query_end - query_start
-        context_len = seq_len - query_len
-        pages_per_seq = (seq_len + page_size - 1) // page_size  # math.ceil not traceable in hl.tile?
+        # context_len = seq_len - query_len
+        pages_per_seq = (seq_len + page_size - 1) // page_size 
 
         for tile_q in hl.tile(query_start, query_end, block_size=None):
             for tile_m in hl.tile(kv_head_idx * num_queries_per_kv, (kv_head_idx+1)*num_queries_per_kv, 
@@ -173,7 +182,7 @@ def helion_attention(
         # max_seqlen=max_seqlen_k,
         # max_query_len=max_seqlen_q,
         # is_decode_only=bool(max_seqlen_q.max() == 1),  # extra bool to avoid tensor creation
-        is_decode_only=bool(is_decode_only),
+        # is_decode_only=bool(is_decode_only),
     )
 
 
