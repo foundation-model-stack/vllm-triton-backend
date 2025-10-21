@@ -1,5 +1,12 @@
 # vllm-triton-backend
 
+:information_source: This repository was used to develop the now community-maintained [Triton Backend in vLLM V1 (`triton_attn`)](https://github.com/vllm-project/vllm/blob/main/vllm/v1/attention/backends/triton_attn.py). We consider the testing and microbenchmark scripts as well as the development tools (UBI container, proton viewer) still useful (and also use it ourselves), but the latest triton attention kernels are now maintained and developed in vLLM: [`vllm/vllm/attention/ops/`](https://github.com/vllm-project/vllm/tree/main/vllm/attention/ops). The kernels contained in this repository `vllm-triton-backend/ibm-triton-lib` are only updated on an unregular basis. 
+We may archive this repository in the near future. 
+
+
+* * *
+
+
 This repo contains:
 
 - A Triton-only attention backend for vLLM, implemented as [vLLM platform plugin](https://docs.vllm.ai/en/latest/design/plugin_system.html), see [`ibm-triton-lib/ibm_triton_lib/backend`](./ibm-triton-lib/ibm_triton_lib/backend/). 
