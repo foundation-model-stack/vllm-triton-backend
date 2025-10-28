@@ -33,12 +33,9 @@ for multi_q_size in range(2, 8):
 #     # ]
 #     configs=configs,
 # )
-@helion.kernel(config=helion.Config(block_sizes=[32, 2], indexing='pointer', 
-    l2_groupings=[1], load_eviction_policies=['', '', '', '', '', '', ''], 
-    loop_orders=[[0, 1]], num_stages=1, num_warps=8, pid_type='xyz', 
-    range_flattens=[None, None, None, None], range_multi_buffers=[None, None, None, None], 
-    range_num_stages=[], range_unroll_factors=[0, 0, 0, 0], 
-    range_warp_specializes=[]), 
+@helion.kernel(
+    config=helion.Config(block_sizes=[32, 2], indexing='pointer', 
+    l2_groupings=[1], num_stages=1, num_warps=8, pid_type='xyz',), 
     static_shapes=True,
     allow_warp_specialize=True,
     )

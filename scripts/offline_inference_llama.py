@@ -22,11 +22,11 @@ import time
 # to enable debug printing
 # os.environ["TRITON_BACKEND_DEBUG"] = "1"
 
-# to use triton_attn backend
+os.environ["VLLM_PLUGINS"] = ""  
+
 os.environ["VLLM_USE_V1"] = "1"
-os.environ["VLLM_ATTENTION_BACKEND"] = "TRITON_ATTN_VLLM_V1"
-# os.environ["VLLM_TRITON_ENABLE_JITCACHE"] = "1"
-os.environ["VLLM_TRITON_ENABLE_JITCACHE"] = "0"
+# os.environ["VLLM_ATTENTION_BACKEND"] = "TRITON_ATTN_VLLM_V1"
+os.environ["VLLM_ATTENTION_BACKEND"] = "EXPERIMENTAL_HELION_ATTN"
 
 # enable torch profiler, can also be set on cmd line
 # enable_profiling = True
@@ -38,14 +38,13 @@ if enable_profiling:
 
 if __name__ == "__main__":
     from vllm import LLM, SamplingParams
-    from vllm.distributed import cleanup_dist_env_and_memory
 
     llm = LLM(
         # model="meta-llama/Llama-3.1-8B-Instruct",
         model=f"{os.environ["MY_MODEL_PATH"]}",
         # max_model_len=2048,
         # enforce_eager=True,
-        enable_prefix_caching=False,
+        # enable_prefix_caching=False,
     )
 
     # batch_size = 32
@@ -55,8 +54,10 @@ if __name__ == "__main__":
     # ignore_eos=True)
 
     prompts = [
+        # "some long sequence that prevents helion from crashing....juts adding here: Repeat after me: Tiling! some long sequence that prevents helion from crashing....juts adding here: Repeat after me: Tiling!",
         "Zurich is a beautiful city with",
         "San Francisco is a large city with",
+        "some long sequence that prevents helion from crashing....juts adding here: Repeat after me: Tiling!",
         # "Provide a list of instructions for preparing chicken soup for a family "
         # "of four.",
         # "Skating and cross country skiing technique differ in",
@@ -64,16 +65,15 @@ if __name__ == "__main__":
 
     print(
         f"SETUP: vllm backend: {os.environ['VLLM_ATTENTION_BACKEND']}  "
-        f"  JITCache: {os.environ['VLLM_TRITON_ENABLE_JITCACHE']}    "
     )
     print(f"Inference with {len(prompts)} prompts...")
     if enable_profiling:
         llm.start_profile()
     t0 = time.time()
-    # outputs = llm.generate(prompts, sampling_params)
-    outputs = []
-    for prompt in prompts:
-        outputs.append(llm.generate(prompt, sampling_params))
+    outputs = llm.generate(prompts, sampling_params)
+    # outputs = []
+    # for prompt in prompts:
+    #     outputs.append(llm.generate(prompt, sampling_params))
 
     if enable_profiling:
         llm.stop_profile()
@@ -82,7 +82,7 @@ if __name__ == "__main__":
     print(f"inference time: {t1-t0:.5f}s")
 
     for output in outputs:
-        output = output[0]  # in case of loop above
+        # output = output[0]  # in case of loop above
         prompt = output.prompt
         generated_text = output.outputs[0].text
         print(f"Prompt: {prompt!r}, Generated text: {generated_text!r}")
