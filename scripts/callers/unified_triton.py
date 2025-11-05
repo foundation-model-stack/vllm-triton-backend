@@ -15,6 +15,7 @@
 #  *******************************************************************************/
 #
 
+import os
 import torch
 import triton
 
@@ -84,8 +85,37 @@ class UnifiedTriton3dAttentionCaller(PrefixPrefillCaller):
                 # avg_seqlen_q=avg_seqlen_q,
                 # avg_seqlen_k=avg_seqlen_k,
                 force_selection=force_selection,
-            )
-
+           )
+        
+        if os.environ.get("USE_UPSTREAM_IF_PRESENT", "0") == "1" and force_selection == None:
+            try:
+                from vllm.attention.ops.triton_unified_attention import unified_attention as vllm_unified_attention
+                print("using upstream vllm version of unified attention")
+                def call_and_process_output():
+                    return vllm_unified_attention(
+                        q=query,
+                        k=key_cache,
+                        v=value_cache,
+                        out=output,
+                        cu_seqlens_q=start_loc,
+                        max_seqlen_q=max_query_len,
+                        seqused_k=seq_lens,
+                        max_seqlen_k=max_seqlen,
+                        softmax_scale=softmax_scale,
+                        causal=True,
+                        window_size=(-1, -1),
+                        block_table=block_tables,
+                        softcap=0,
+                        q_descale=None,
+                        k_descale=None,  # TODO?
+                        v_descale=None,  # TODO?
+                        alibi_slopes=None,
+                        # avg_seqlen_q=avg_seqlen_q,
+                        # avg_seqlen_k=avg_seqlen_k,
+                   )
+            except ModuleNotFoundError:
+                print("cannot overwrite unified_attention: vllm not present")
+    
         return call_and_process_output
 
     @staticmethod

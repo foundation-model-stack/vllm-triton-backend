@@ -15,6 +15,7 @@
 #  *******************************************************************************/
 #
 
+import os
 import torch
 
 from ibm_triton_lib.kernels import helion_attention
@@ -65,7 +66,6 @@ class HelionV0AttentionCaller(PrefixPrefillCaller):
         query_lens = torch.diff(start_loc)
 
         def call_and_process_output():
-            # k must have shape (num_blocks, page_block_size, num_heads_k, head_size)
             return helion_attention(
                 q=query,
                 k=key_cache,
@@ -86,6 +86,34 @@ class HelionV0AttentionCaller(PrefixPrefillCaller):
                 alibi_slopes=None,
                 is_decode_only=bool(max_query_len == 1),
             )
+        
+        if os.environ.get("USE_UPSTREAM_IF_PRESENT", "0") == "1":
+            try:
+                from vllm.attention.ops.helion_unified_attention import helion_unified_attention as vllm_helion_attention
+                print("using vllm version of helion attention")
+                def call_and_process_output():
+                    return vllm_helion_attention(
+                        q=query,
+                        k=key_cache,
+                        v=value_cache,
+                        out=output,
+                        cu_seqlens_q=start_loc,
+                        max_seqlen_q=max_query_len,
+                        seqused_k=seq_lens,
+                        max_seqlen_k=max_seqlen,
+                        softmax_scale=softmax_scale,
+                        causal=True,
+                        window_size=(-1, -1),
+                        block_table=block_tables,
+                        softcap=0,
+                        q_descale=None,
+                        k_descale=None,  # TODO?
+                        v_descale=None,  # TODO?
+                        alibi_slopes=None,
+                    )
+        
+            except ModuleNotFoundError:
+                print("cannot overwrite helion_attention: vllm not present")
 
         return call_and_process_output
 

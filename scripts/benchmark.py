@@ -261,6 +261,10 @@ if len(sys.argv) >= 1:
             and env_setting["TRITON_BACKEND_DEBUG"] == "1"
         ):
             debug_flag = True
+        if ("USE_UPSTREAM_IF_PRESENT" in env_setting
+            and "USE_UPSTREAM_IF_PRESENT" not in os.environ
+        ):
+            os.environ["USE_UPSTREAM_IF_PRESENT"] = env_setting["USE_UPSTREAM_IF_PRESENT"]
 
 if len(MY_IUT) > 0:
     IMPLEMENTATION_UT = []
@@ -1065,7 +1069,7 @@ def test_prefix_vllm_v1_attention(
         Implementation.UNF_TRITON_3D,
         Implementation.UNF_TRITON_2D,
         Implementation.UNF_TRITON_2D_SIMPLE,
-        # Implementation.UNF_TRITON_AUTO,
+        Implementation.UNF_TRITON_AUTO,
         Implementation.NT_UNF_TRITON_3D,
         Implementation.NT_UNF_TRITON_2D,
         # Implementation.NT_UNF_TRITON_AUTO,
