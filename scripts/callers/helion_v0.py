@@ -114,6 +114,23 @@ class HelionV0AttentionCaller(PrefixPrefillCaller):
         
             except ModuleNotFoundError:
                 print("cannot overwrite helion_attention: vllm not present")
+        
+        if os.environ.get("USE_HELION_OVERWRITES", "0") == "1":
+            from ..helion_replacements.v0 import kernel_helion_v0_attention
+            print("using helion overwrite")
+            def call_and_process_output():
+                num_seqs = len(seq_lens)
+                return kernel_helion_v0_attention(
+                    t_output=output,
+                    t_query=query,
+                    t_key_cache=key_cache,
+                    t_value_cache=value_cache,
+                    t_block_tables=block_tables,
+                    t_seq_lens=seq_lens,
+                    scale=softmax_scale,
+                    t_query_start_lens=start_loc,
+                    num_seqs=num_seqs,
+                )
 
         return call_and_process_output
 

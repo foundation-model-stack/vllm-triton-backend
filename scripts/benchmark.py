@@ -265,6 +265,10 @@ if len(sys.argv) >= 1:
             and "USE_UPSTREAM_IF_PRESENT" not in os.environ
         ):
             os.environ["USE_UPSTREAM_IF_PRESENT"] = env_setting["USE_UPSTREAM_IF_PRESENT"]
+        if ("USE_HELION_OVERWRITES" in env_setting
+            and "USE_HELION_OVERWRITES" not in os.environ
+        ):
+            os.environ["USE_HELION_OVERWRITES"] = env_setting["USE_HELION_OVERWRITES"]
 
 if len(MY_IUT) > 0:
     IMPLEMENTATION_UT = []
