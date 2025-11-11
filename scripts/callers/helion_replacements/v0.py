@@ -56,8 +56,8 @@ def _helion_kernel_helion_v0_attention(t_seq_lens, t_query_start_lens, t_query, 
             # src[helion_unified_attention.py:53]: block_m_size = tile_m.block_size * tile_q.block_size
             mul_2 = _BLOCK_SIZE_2 * _BLOCK_SIZE_3
             # src[helion_unified_attention.py:55]: q = t_query[tile_q, tile_m, :].view([block_m_size, head_size])
-            load = tl.load(t_query + (indices_13[:, None, None] * 4096 + indices_12[None, :, None] * 128 + indices_15[None, None, :] * 1), mask_2[:, None, None], other=0)
-            q = tl.reshape(load, [_BLOCK_SIZE_2 * _BLOCK_SIZE_3, 128])
+            q = tl.load(t_query + (indices_13[:, None, None] * 4096 + indices_12[None, :, None] * 128 + indices_15[None, None, :] * 1), mask_2[:, None, None], other=0)
+            # q = tl.reshape(load, [_BLOCK_SIZE_2 * _BLOCK_SIZE_3, 128])
             # src[helion_unified_attention.py:58]: m = hl.full([block_m_size], float("-inf"), dtype=torch.float32) # device=q.device)
             m = tl.full([_BLOCK_SIZE_2 * _BLOCK_SIZE_3], float('-inf'), tl.float32)
             # src[helion_unified_attention.py:60]: l = hl.full([block_m_size], 1.0, dtype=torch.float32)

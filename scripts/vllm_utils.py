@@ -19,7 +19,7 @@
 from typing import List, Optional, Tuple, Union
 from vllm.platforms import current_platform
 import torch
-from vllm.utils import get_kv_cache_torch_dtype
+from vllm.utils.torch_utils import get_kv_cache_torch_dtype
 
 
 def _generate_random_fp8(

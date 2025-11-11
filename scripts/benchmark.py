@@ -43,7 +43,6 @@ from vllm_utils import (
 )
 from torch_utils import get_gpu_label, end2end_bench
 from ibm_triton_lib.utils.triton_utils import get_runtime_label
-from roofline.proton_viewer import parse
 
 # let the three most used variables be overwritten separately
 STORE_TEST_RESULT_PATH = os.environ.get("STORE_TEST_RESULT_PATH", None)
@@ -587,6 +586,7 @@ def test_decode_vllm_v0_attention(
             if profiling_started:
                 proton.finalize()
                 # readout
+                from roofline.proton_viewer import parse
                 metrics = ["util_flops", "util_bytes"]
                 filter_for = ".*triton.*"
                 proton_graph = parse(
@@ -901,6 +901,7 @@ def test_prefill_vllm_v0_attention(
             if profiling_started:
                 proton.finalize()
                 # readout
+                from roofline.proton_viewer import parse
                 metrics = ["util_flops", "util_bytes"]
                 filter_for = ".*triton.*"
                 proton_graph = parse(
@@ -1486,6 +1487,7 @@ def test_prefix_vllm_v1_attention(
             if profiling_started:
                 proton.finalize()
                 # readout
+                from roofline.proton_viewer import parse
                 metrics = ["util_flops", "util_bytes"]
                 filter_for = ".*triton.*"
                 proton_graph = parse(

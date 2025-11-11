@@ -36,7 +36,7 @@ else:
     from vllm.platforms.rocm import RocmPlatform
 
 
-from vllm.platforms.interface import DeviceCapability, Platform, PlatformEnum, _Backend
+from vllm.platforms.interface import DeviceCapability, Platform, PlatformEnum
 
 if TYPE_CHECKING:
     from vllm.config import VllmConfig

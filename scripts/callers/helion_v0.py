@@ -63,7 +63,9 @@ class HelionV0AttentionCaller(PrefixPrefillCaller):
         num_queries_per_kv = num_query_heads // num_kv_heads
         head_size = query.shape[2]
 
-        query_lens = torch.diff(start_loc)
+        # query_lens = torch.diff(start_loc)
+        print(seq_lens)
+        print(start_loc)
 
         def call_and_process_output():
             return helion_attention(
@@ -84,7 +86,7 @@ class HelionV0AttentionCaller(PrefixPrefillCaller):
                 k_descale=None,  # TODO?
                 v_descale=None,  # TODO?
                 alibi_slopes=None,
-                is_decode_only=bool(max_query_len == 1),
+                # is_decode_only=bool(max_query_len == 1),
             )
         
         if os.environ.get("USE_UPSTREAM_IF_PRESENT", "0") == "1":
@@ -112,11 +114,12 @@ class HelionV0AttentionCaller(PrefixPrefillCaller):
                         alibi_slopes=None,
                     )
         
-            except ModuleNotFoundError:
+            except ModuleNotFoundError as e:
+                print(e)
                 print("cannot overwrite helion_attention: vllm not present")
         
         if os.environ.get("USE_HELION_OVERWRITES", "0") == "1":
-            from ..helion_replacements.v0 import kernel_helion_v0_attention
+            from .helion_replacements.v0 import kernel_helion_v0_attention
             print("using helion overwrite")
             def call_and_process_output():
                 num_seqs = len(seq_lens)
