@@ -1166,8 +1166,8 @@ def test_prefix_vllm_v1_attention(
     max_seq_len = max(seq_lens)
 
     # TODO
-    if implementation == Implementation.HELION_V0 and max_seq_len < 32:
-        pytest.skip("not supported")
+    # if implementation == Implementation.HELION_V0 and max_seq_len < 32:
+    #     pytest.skip("not supported")
 
     # BatchComposition.DEC_PRE is default
     if batch_composition == BatchComposition.PRE_DEC:
@@ -1376,7 +1376,9 @@ def test_prefix_vllm_v1_attention(
             from callers import HelionV0AttentionCaller as Caller
 
         if Caller.requires_allocated_output:
-            output = torch.empty_like(query)
+            # output = torch.empty_like(query)
+            # output = torch.zeros_like(query)
+            output = torch.empty_like(query).fill_(42)
 
         if implementation in [
             Implementation.BASELINE_TRITON,
@@ -1436,6 +1438,18 @@ def test_prefix_vllm_v1_attention(
                 if len(l) > 0:
                     # captured += l  # + '|'
                     captured += l + " "
+        
+        # torch.set_printoptions(profile="full")
+        # for q_idx in range(ref_output.shape[0]):
+        #     if not torch.allclose(ref_output[q_idx], output[q_idx], atol=ATOL, rtol=RTOL):
+        #         print(f"missmatch in {q_idx}:")
+        #         for h_idx in range(ref_output.shape[1]):
+        #             if not torch.allclose(ref_output[q_idx, h_idx], output[q_idx, h_idx], atol=ATOL, rtol=RTOL):
+        #                 print(f"missmatch in {q_idx}-{h_idx}:")
+        #                 print(ref_output[q_idx, h_idx])
+        #                 print(output[q_idx, h_idx])
+        #         break
+        
         # compare
         if enforce_numerical_correctness and not skip_ref_impl:
             # for better reports

@@ -65,13 +65,18 @@ class HelionV0AttentionCaller(PrefixPrefillCaller):
         num_queries_per_kv = num_query_heads // num_kv_heads
         head_size = query.shape[2]
 
-        query_slots_mapping = torch.empty([query.shape[0]], dtype=seq_lens.dtype)
-        for si in range(0, seq_lens.shape[0]):
-            query_slots_mapping[start_loc[si]:start_loc[si+1]] = si
+        # query_slots_mapping = torch.empty([query.shape[0]], dtype=seq_lens.dtype)
+        # for si in range(0, seq_lens.shape[0]):
+        #     query_slots_mapping[start_loc[si]:start_loc[si+1]] = si
 
         # query_lens = torch.diff(start_loc)
+        torch.set_printoptions(profile="full")
         # print(seq_lens)
         # print(start_loc)
+        # print(query_slots_mapping)
+        # print(query_slots_mapping.view(-1, 32))
+        # print(block_tables.shape)
+        # print(block_tables)
 
         def call_and_process_output():
             return helion_attention(
@@ -113,8 +118,9 @@ class HelionV0AttentionCaller(PrefixPrefillCaller):
                         causal=True,
                         window_size=(-1, -1),
                         block_table=block_tables,
-                        query_slots_mapping=query_slots_mapping,
+                        # query_slots_mapping=query_slots_mapping,
                         max_query_len_int=max_query_len_int,
+                        num_seqs=num_seqs,
                         softcap=0,
                         q_descale=None,
                         k_descale=None,  # TODO?
