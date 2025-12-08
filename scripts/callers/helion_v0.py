@@ -50,7 +50,7 @@ class HelionV0AttentionCaller(PrefixPrefillCaller):
             shape = [num_tokens, num_heads, head_size]
         """
 
-        max_query_len = query_lens.max()
+        max_query_len = query_lens.max().cpu().item()
         max_seqlen = seq_lens.max()
     
         max_query_len_int=int(max_query_len)
@@ -119,7 +119,7 @@ class HelionV0AttentionCaller(PrefixPrefillCaller):
                         window_size=(-1, -1),
                         block_table=block_tables,
                         # query_slots_mapping=query_slots_mapping,
-                        max_query_len_int=max_query_len_int,
+                        # max_query_len_int=max_query_len_int,
                         num_seqs=num_seqs,
                         softcap=0,
                         q_descale=None,

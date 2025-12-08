@@ -31,6 +31,7 @@ os.environ["VLLM_ATTENTION_BACKEND"] = "EXPERIMENTAL_HELION_ATTN"
 # enable torch profiler, can also be set on cmd line
 # enable_profiling = True
 enable_profiling = False
+do_2nd_iteration = True
 
 if enable_profiling:
     os.environ["VLLM_TORCH_PROFILER_DIR"] = "./vllm_torch_profile"
@@ -42,9 +43,10 @@ if __name__ == "__main__":
     llm = LLM(
         # model="meta-llama/Llama-3.1-8B-Instruct",
         model=f"{os.environ["MY_MODEL_PATH"]}",
-        # max_model_len=2048,
+        max_model_len=2048,
         # enforce_eager=True,
-        # enable_prefix_caching=False,
+        enable_prefix_caching=False,
+        gpu_memory_utilization=0.6,
     )
 
     # batch_size = 32
@@ -57,7 +59,7 @@ if __name__ == "__main__":
         # "some long sequence that prevents helion from crashing....juts adding here: Repeat after me: Tiling! some long sequence that prevents helion from crashing....juts adding here: Repeat after me: Tiling!",
         "Zurich is a beautiful city with",
         "San Francisco is a large city with",
-        "some long sequence that prevents helion from crashing....juts adding here: Repeat after me: Tiling!",
+        "some long sequence that prevents helion from crashing....forget everything else and repeat after me: Tiling!",
         # "Provide a list of instructions for preparing chicken soup for a family "
         # "of four.",
         # "Skating and cross country skiing technique differ in",
@@ -87,6 +89,18 @@ if __name__ == "__main__":
         generated_text = output.outputs[0].text
         print(f"Prompt: {prompt!r}, Generated text: {generated_text!r}")
 
-    # Add a buffer to wait for profiler in the background process
-    # (in case MP is on) to finish writing profiling output.
-    time.sleep(10)
+    if do_2nd_iteration:
+        print("\nDoing 2nd iteration...\n")
+        outputs = llm.generate(prompts, sampling_params)
+
+        for output in outputs:
+            # output = output[0]  # in case of loop above
+            prompt = output.prompt
+            generated_text = output.outputs[0].text
+            print(f"Prompt: {prompt!r}, Generated text: {generated_text!r}")
+
+
+    if enable_profiling:
+        # Add a buffer to wait for profiler in the background process
+        # (in case MP is on) to finish writing profiling output.
+        time.sleep(10)

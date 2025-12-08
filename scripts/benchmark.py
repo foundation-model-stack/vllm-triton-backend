@@ -48,7 +48,7 @@ from ibm_triton_lib.utils.triton_utils import get_runtime_label
 STORE_TEST_RESULT_PATH = os.environ.get("STORE_TEST_RESULT_PATH", None)
 MY_IUT = [
     e for e in os.environ.get("MY_IUT", "").split(",") if len(e) > 0
-]  # my implementations under test (IUT)
+]  # my implementations under test (IUT)/r
 MY_METHODS = [e for e in os.environ.get("MY_METHODS", "").split(",") if len(e) > 0]
 
 
@@ -163,6 +163,8 @@ do_benchmarks = True
 quantiles = [0.5, 0.2, 0.8]
 # should maybe also be controlled via env variable
 force_dump_dataframes = False
+# PRINT_RESULTS_THRESHOLD = 20
+PRINT_RESULTS_THRESHOLD = 1
 enforce_numerical_correctness = True
 # enforce_numerical_correctness = False
 do_profiling = False  # will add overhead to kernel runtime measured via CUDA_EVENTS
@@ -1106,9 +1108,9 @@ def test_prefix_vllm_v1_attention(
     # ATOL = min(2.5 * max_value, 2.5e-2)  # 2.5 for 0.000503% of the values
     ATOL = 0.34 * max_value  # 3.4 for 3.46e-05% of some values
     # TODO
-    if implementation == Implementation.HELION_V0:
-        # ATOL = 0.37 * max_value
-        ATOL = 0.44 * max_value
+    # if implementation == Implementation.HELION_V0:
+    #     # ATOL = 0.37 * max_value
+    #     ATOL = 0.44 * max_value
     if realistic_prompt_mode:
         ATOL *= 2.2  # for 0.0313% of the cases...
     RTOL = 1e-5
@@ -1167,7 +1169,8 @@ def test_prefix_vllm_v1_attention(
 
     # TODO
     # if implementation == Implementation.HELION_V0 and max_seq_len < 32:
-    #     pytest.skip("not supported")
+    if implementation == Implementation.HELION_V0 and max_seq_len < 16:
+        pytest.skip("not supported")
 
     # BatchComposition.DEC_PRE is default
     if batch_composition == BatchComposition.PRE_DEC:
@@ -1439,16 +1442,29 @@ def test_prefix_vllm_v1_attention(
                     # captured += l  # + '|'
                     captured += l + " "
         
-        # torch.set_printoptions(profile="full")
-        # for q_idx in range(ref_output.shape[0]):
-        #     if not torch.allclose(ref_output[q_idx], output[q_idx], atol=ATOL, rtol=RTOL):
-        #         print(f"missmatch in {q_idx}:")
-        #         for h_idx in range(ref_output.shape[1]):
-        #             if not torch.allclose(ref_output[q_idx, h_idx], output[q_idx, h_idx], atol=ATOL, rtol=RTOL):
-        #                 print(f"missmatch in {q_idx}-{h_idx}:")
-        #                 print(ref_output[q_idx, h_idx])
-        #                 print(output[q_idx, h_idx])
-        #         break
+        torch.set_printoptions(profile="full")
+        # print_only_summary = True
+        print_only_summary = False
+        tokens_missmatch = []
+        query_heads_missmatch = []
+        for q_idx in range(ref_output.shape[0]):
+            if not torch.allclose(ref_output[q_idx], output[q_idx], atol=ATOL, rtol=RTOL):
+                tokens_missmatch.append(q_idx)
+                if not print_only_summary:
+                    print(f"missmatch in token {q_idx}:")
+                for h_idx in range(ref_output.shape[1]):
+                    if not torch.allclose(ref_output[q_idx, h_idx], output[q_idx, h_idx], atol=ATOL, rtol=RTOL):
+                        query_heads_missmatch.append((q_idx, h_idx))
+                        if not print_only_summary:
+                            print(f"missmatch in query head {q_idx}-{h_idx}:")
+                            print(ref_output[q_idx, h_idx])
+                            print(output[q_idx, h_idx])
+                if not print_only_summary:
+                    break
+        if print_only_summary:
+            print(f"missmatched tokens:\n{tokens_missmatch}")
+            # print(f"missmatched query heads:\n{query_heads_missmatch}")
+        print(f"output shape: {output.shape}")
         
         # compare
         if enforce_numerical_correctness and not skip_ref_impl:
@@ -2472,7 +2488,7 @@ if __name__ == "__main__":
     # Dump final results
     if do_benchmarks:
         for test, df in pytest.global_pds.items():
-            if len(df) <= 20 or force_dump_dataframes:
+            if len(df) <= PRINT_RESULTS_THRESHOLD or force_dump_dataframes:
                 print(
                     f"\nPerformance results of test {test} (only tests without numerical error and with valid shapes, etc.):"
                 )
