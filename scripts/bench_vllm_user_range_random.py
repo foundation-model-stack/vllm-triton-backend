@@ -78,13 +78,6 @@ result_dir = (
     f"{result_path}/{model_print_path}/{gpu_name}/{testcase_name}/exp_{timestamp_f}/"
 )
 
-bench_script = "/workspace/benchmarks/benchmark_serving.py"
-if not os.path.isfile(bench_script):
-    bench_script = "./vllm-triton-backend/vllm/benchmarks/benchmark_serving.py"
-    if not os.path.isfile(bench_script):
-        print(f"can't find benchmark script benchmark_serving.py")
-        exit(-1)
-
 # os.system(f"mkdir -p {result_dir}")
 create_dir_if_not_exist_recursive(result_dir)
 
@@ -96,9 +89,9 @@ for max_concurrency in num_users_to_test:
     #     else int(max_rounds * max_concurrency)
     # )
     num_prompts = int(max(min_num_prompts, 2 * max_concurrency))
+    # assuming vllm is present in the environment
     cmd = (
-        f"VLLM_USE_V1=1 python {bench_script} "
-        f"--model {model} "
+        f"vllm bench serve --model {model} "
         f"--dataset-name random --random-input-len={input_len} --random-output-len={output_len} --ignore-eos "
         f"--save-result --result-dir {result_dir} --max-concurrency {max_concurrency} "
         f"--percentile-metrics ttft,tpot,itl,e2el --metric-percentiles 20,50,80,99 "
