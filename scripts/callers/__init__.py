@@ -21,7 +21,7 @@ try:
         FlashAttnPrefillCaller,
         FlashAttnPrefixPrefillCaller,
     )
-except ModuleNotFoundError:
+except (ModuleNotFoundError, ImportError):
     pass
 
 try:
