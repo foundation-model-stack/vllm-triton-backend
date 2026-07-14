@@ -41,14 +41,16 @@ def create_dir_if_not_exist(path, mode=0o777):
             print(f"can't set permission of directory {path}: {e}")
 
 
-if len(sys.argv) < 6:
+if len(sys.argv) < 7:
     print(
-        f"Usage: {sys.argv[0]} <model_path> <input-len> <output-len> <testcase_name> <result_path>"
+        f"Usage: {sys.argv[0]} <model_path> <input-len> <output-len> <testcase_name> <result_path> <port>"
     )
     exit(-1)
 
 # num_users_to_test = [1, 2, 4, 8, 16, 32, 64, 128]
-num_users_to_test = [1, 2, 4, 8, 16, 32, 64]
+# num_users_to_test = [1, 2, 4, 8, 16, 32, 64]
+# num_users_to_test = [1, 8, 32]
+num_users_to_test = [8, 32]
 gpu_name = torch.cuda.get_device_name().replace(" ", "_").replace("/", "_")
 
 # model = "/model/llama3.1-8b/instruct/"
@@ -57,12 +59,14 @@ input_len = sys.argv[2]
 output_len = sys.argv[3]
 testcase_name = sys.argv[4]
 result_path = os.path.abspath(sys.argv[5])
+vllm_port = sys.argv[6]
 
 # max_rounds = 128
 # max_rounds = 64
 # max_rounds = 16
 # max_num_prompts = 1000
-min_num_prompts = 16
+# min_num_prompts = 16
+min_num_prompts = 4
 
 bench_repetitions = 3
 
@@ -96,7 +100,7 @@ for max_concurrency in num_users_to_test:
         f"--save-result --result-dir {result_dir} --max-concurrency {max_concurrency} "
         f"--percentile-metrics ttft,tpot,itl,e2el --metric-percentiles 20,50,80,99 "
         f"--num-prompts {num_prompts} "
-        f"--port 8803"
+        f"--port {vllm_port}"
     )
     for i in range(bench_repetitions):
         print(
